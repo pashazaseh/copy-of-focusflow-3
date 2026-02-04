@@ -68,7 +68,10 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
 
     // Form State
     const [editingId, setEditingId] = useState<string | null>(null); 
-    const [selectedDateForEvent, setSelectedDateForEvent] = useState(new Date().toISOString().split('T')[0]);
+    const [selectedDateForEvent, setSelectedDateForEvent] = useState(() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    });
     const [newEventTitle, setNewEventTitle] = useState('');
     const [newEventTime, setNewEventTime] = useState('');
     const [newEventType, setNewEventType] = useState<CustomEvent['type']>('meeting');

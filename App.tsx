@@ -1,37 +1,44 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, lazy, Suspense, useCallback } from 'react';
 import { MacWindow } from './components/MacWindow';
-import { Sidebar, StoredNavConfig, NAV_ITEMS_DEF } from './components/Sidebar';
-import { Heatmap } from './components/Heatmap';
-import { InsightsPanel } from './components/InsightsPanel';
-import { StatisticsPanel } from './components/StatisticsPanel';
-import { TimerPanel } from './components/TimerPanel';
-import { CountdownPanel } from './components/CountdownPanel';
-import { CalendarPanel } from './components/CalendarPanel';
-import { SettingsPanel } from './components/SettingsPanel';
+import { Sidebar } from './components/Sidebar';
 import { QuickTimerOverlay } from './components/QuickTimerOverlay';
-import { StudyLog, ViewMode, HeatmapTheme, UserGoals, Project, CustomEvent, MenuBarConfig, SidebarConfig, SettingsTab } from './types';
-import * as storage from './services/storageService';
+import { ViewMode, HeatmapTheme, UserGoals } from './types';
+import { AppProvider, useTheme, useProjects, useLogs, useUI, useTimerContext } from './AppContext';
+import { TimerPanel } from './components/TimerPanel';
 
-function App() {
+// Lazy load heavy components
+const CalendarPanel = lazy(() => import('./components/CalendarPanel').then(m => ({ default: m.CalendarPanel })));
+const StatisticsPanel = lazy(() => import('./components/StatisticsPanel').then(m => ({ default: m.StatisticsPanel })));
+const CountdownPanel = lazy(() => import('./components/CountdownPanel').then(m => ({ default: m.CountdownPanel })));
+const SettingsPanel = lazy(() => import('./components/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
+const Heatmap = lazy(() => import('./components/Heatmap').then(m => ({ default: m.Heatmap })));
+const InsightsPanel = lazy(() => import('./components/InsightsPanel').then(m => ({ default: m.InsightsPanel })));
+
+// Add loading fallback
+const PanelLoader = () => (
+  <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+    <div className="text-center">
+      <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+      <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+    </div>
+  </div>
+);
+
+function FocusFlowContent() {
+  // --- Context Hooks ---
+  const { isDarkMode, toggleTheme } = useTheme();
+  const { projects, currentProjectId, setCurrentProjectId, createProject, deleteProject, updateProjects } = useProjects();
+  const { logs, goals, saveLog, deleteLog, updateGoals } = useLogs();
+  const { currentView, setCurrentView, settingsTab, setSettingsTab, navConfig, setNavConfig, sidebarConfig, setSidebarConfig, menuBarConfig, setMenuBarConfig } = useUI();
+  const { pendingQuickTimer, setPendingQuickTimer } = useTimerContext();
+
   // --- Quick Timer Overlay Mode Check ---
   const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
   if (searchParams.get('mode') === 'quick') {
       return <QuickTimerOverlay />;
   }
 
-  const [currentView, setCurrentView] = useState<ViewMode>(ViewMode.DASHBOARD);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
-  
-  // Lazy init for projects
-  const [projects, setProjects] = useState<Project[]>(() => storage.getProjects());
-  const [currentProjectId, setCurrentProjectId] = useState<string>(() => {
-      const p = storage.getProjects();
-      const active = p.find(proj => !proj.isArchived);
-      return active ? active.id : p[0].id;
-  });
-
-  const [logs, setLogs] = useState<StudyLog[]>([]);
-  const [goals, setGoals] = useState<UserGoals>({ weekly: 40, monthly: 160, yearly: 2000 });
+  const [timerViewInitialized, setTimerViewInitialized] = useState(false);
   
   // Dashboard state
   // Use local date string for initial selected date to match heatmap logic
@@ -41,240 +48,30 @@ function App() {
   });
   const [hoursInput, setHoursInput] = useState<number | string>('');
   const [notesInput, setNotesInput] = useState<string>('');
-  const [heatmapTheme, setHeatmapTheme] = useState<HeatmapTheme>('green');
   
-  // Goals Editing State
-  const [isEditingGoals, setIsEditingGoals] = useState(false);
-  const [tempGoals, setTempGoals] = useState<UserGoals>(goals);
-  
-  // Quick Timer Start State
-  const [pendingQuickTimer, setPendingQuickTimer] = useState<{ duration: number; timestamp: number } | null>(null);
-
-  // Persist Goal View Mode
-  const [goalViewMode, setGoalViewMode] = useState<'rings' | 'bars' | 'pie'>(() => {
-      if (typeof window !== 'undefined') {
-          return (localStorage.getItem('focusflow_goal_view_mode') as 'rings' | 'bars' | 'pie') || 'rings';
-      }
-      return 'rings';
-  });
-
-  const [showGoalSettings, setShowGoalSettings] = useState(false);
-  const goalSettingsRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLDivElement>(null); 
 
-  // Sidebar Config State
-  const [navConfig, setNavConfig] = useState<StoredNavConfig[]>([]);
-  const [sidebarConfig, setSidebarConfig] = useState<SidebarConfig>(() => storage.getSidebarConfig());
-
-  // Menu Bar Config State
-  const [menuBarConfig, setMenuBarConfig] = useState<MenuBarConfig>(() => storage.getMenuBarConfig());
-
-  // Theme state
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('focusflow_theme');
-      if (saved) return saved === 'dark';
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    return false;
-  });
-
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+    if (currentView === ViewMode.TIMER) setTimerViewInitialized(true);
+  }, [currentView]);
 
   const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
-  const notifiedEventsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!storage.isInitialized()) {
-        console.log("First time initialization: Seeding sample data...");
-        storage.seedData();
-        storage.seedCountdowns();
-        storage.setInitialized();
-    }
-
-    setLogs(storage.getLogs());
-    const loadedGoals = storage.getGoals();
-    setGoals(loadedGoals);
-    setTempGoals(loadedGoals);
-    
-    // Ensure current project ID is valid and active if possible
-    const currentP = projects.find(p => p.id === currentProjectId);
-    if (!currentP || currentP.isArchived) {
-        const active = projects.find(p => !p.isArchived);
-        if (active) {
-            setCurrentProjectId(active.id);
-            setHeatmapTheme(active.theme);
-        } else if (projects.length > 0) {
-            // If all archived, just show the first one
-            setCurrentProjectId(projects[0].id);
-            setHeatmapTheme(projects[0].theme);
-        }
-    } else {
-        setHeatmapTheme(currentP.theme);
-    }
-
-    const savedConfig = localStorage.getItem('focusflow_sidebar_config_v1');
-    if (savedConfig) {
-        try {
-            const parsed = JSON.parse(savedConfig) as StoredNavConfig[];
-            const merged = [...parsed];
-            NAV_ITEMS_DEF.forEach(def => {
-                if (!merged.find(item => item.view === def.view)) {
-                    merged.push({ view: def.view, isVisible: true });
-                }
-            });
-            setNavConfig(merged);
-        } catch (e) {
-            setNavConfig(NAV_ITEMS_DEF.map(item => ({ view: item.view, isVisible: true })));
-        }
-    } else {
-        setNavConfig(NAV_ITEMS_DEF.map(item => ({ view: item.view, isVisible: true })));
-    }
-
-    if (Notification.permission !== "granted") {
-        Notification.requestPermission();
-    }
-
-    if (window.electronAPI && window.electronAPI.onQuickTimerTriggered) {
-        window.electronAPI.onQuickTimerTriggered((minutes) => {
-            // Update timer state only; do not trigger navigation or view mounting
-            setPendingQuickTimer({ duration: minutes, timestamp: Date.now() });
-        });
-    }
-
-    const reminderInterval = setInterval(checkReminders, 30000); 
-
-    const handleClickOutside = (event: MouseEvent) => {
-        if (goalSettingsRef.current && !goalSettingsRef.current.contains(event.target as Node)) {
-            setShowGoalSettings(false);
-        }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-
-    return () => {
-        clearInterval(reminderInterval);
-        document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  useEffect(() => {
-      localStorage.setItem('focusflow_goal_view_mode', goalViewMode);
-  }, [goalViewMode]);
-
-  const handleUpdateNavConfig = (newConfig: StoredNavConfig[]) => {
-      setNavConfig(newConfig);
-      localStorage.setItem('focusflow_sidebar_config_v1', JSON.stringify(newConfig));
-  };
-
-  const handleUpdateMenuBarConfig = (newConfig: MenuBarConfig) => {
-      setMenuBarConfig(newConfig);
-      storage.saveMenuBarConfig(newConfig);
-  };
-
-  const handleUpdateSidebarConfig = (newConfig: SidebarConfig) => {
-      setSidebarConfig(newConfig);
-      storage.saveSidebarConfig(newConfig);
-  };
-
-  const checkReminders = () => {
-      if (Notification.permission !== "granted") return;
-
-      const events = storage.getCustomEvents();
-      const now = new Date();
-      
-      events.forEach(event => {
-          if (!event.reminderMinutes || !event.time) return;
-          
-          const parts = event.date.split('-');
-          const y = parseInt(parts[0], 10);
-          const m = parseInt(parts[1], 10);
-          const d = parseInt(parts[2], 10);
-          
-          const eventDateObj = new Date(y, m - 1, d);
-          const todayStr = now.toISOString().split('T')[0];
-          
-          let occursToday = false;
-          if (event.recurrence === 'daily') {
-               occursToday = now >= eventDateObj;
-          } else if (event.recurrence === 'weekly') {
-               occursToday = now >= eventDateObj && now.getDay() === eventDateObj.getDay();
-          } else if (event.recurrence === 'monthly') {
-               occursToday = now >= eventDateObj && now.getDate() === eventDateObj.getDate();
-          } else {
-               occursToday = event.date === todayStr;
-          }
-
-          if (occursToday) {
-              const partsTime = event.time?.split(':') || ['0', '0'];
-              const h = parseInt(partsTime[0], 10);
-              const min = parseInt(partsTime[1], 10);
-              
-              const eventTime = new Date(now);
-              eventTime.setHours(h, min, 0, 0);
-
-              const triggerTime = new Date(eventTime.getTime() - (event.reminderMinutes! * 60 * 1000));
-              const diff = now.getTime() - triggerTime.getTime();
-              
-              if (diff >= 0 && diff < 90000) {
-                  const occurrenceId = `${event.id}-${todayStr}`;
-                  if (!notifiedEventsRef.current.has(occurrenceId)) {
-                      new Notification(`Reminder: ${event.title}`, {
-                          body: `Event starts in ${event.reminderMinutes} minutes.`,
-                          icon: '/favicon.ico' 
-                      });
-                      notifiedEventsRef.current.add(occurrenceId);
-                  }
-              }
-          }
-      });
-  };
-
-  useEffect(() => {
-      const project = projects.find(p => p.id === currentProjectId);
-      if (project) {
-          setHeatmapTheme(project.theme);
-      }
       const projectLog = logs.find(l => l.date === selectedDate && l.projectId === currentProjectId);
       setHoursInput(projectLog ? projectLog.hours : '');
       setNotesInput(projectLog ? projectLog.notes || '' : '');
   }, [currentProjectId, projects, selectedDate, logs]);
 
-  const toggleTheme = () => {
-    const newMode = !isDarkMode;
-    setIsDarkMode(newMode);
-    localStorage.setItem('focusflow_theme', newMode ? 'dark' : 'light');
-  };
-
   const handleUpdateGoals = (newGoals: UserGoals) => {
-      setGoals(newGoals);
-      setTempGoals(newGoals);
-      storage.saveGoals(newGoals);
-      setIsEditingGoals(false);
-  };
-
-  const saveLogEntry = (date: string, hours: number, notes?: string, customProjectId?: string) => {
-      const targetProject = customProjectId || currentProjectId;
-      if (!targetProject) return;
-      const newLogs = storage.saveLog({
-          date: date,
-          hours: hours,
-          notes: notes,
-          projectId: targetProject
-      });
-      setLogs(newLogs);
+      updateGoals(newGoals);
   };
 
   const handleSaveLog = (e: React.FormEvent) => {
     e.preventDefault();
     const h = Number(hoursInput);
     if (isNaN(h) || h < 0 || h > 24) return;
-    saveLogEntry(selectedDate, h, notesInput);
+    saveLog(selectedDate, h, notesInput);
   };
 
   const handleTimerSave = (sessionHours: number, sessionNote?: string, sessionProjectId?: string) => {
@@ -286,31 +83,26 @@ function App() {
       const existing = logs.find(l => l.date === today && l.projectId === targetProject);
       const totalHours = (existing ? existing.hours : 0) + sessionHours;
       const mergedNotes = existing ? (existing.notes ? existing.notes + '; ' + sessionNote : sessionNote) : sessionNote;
-      saveLogEntry(today, totalHours, mergedNotes, targetProject);
+      saveLog(today, totalHours, mergedNotes, targetProject);
   };
   
   const handleDeleteLog = () => {
       const confirmed = window.confirm("Are you sure you want to delete this entry?");
       if (confirmed && currentProjectId) {
-          const newLogs = storage.deleteLog(selectedDate, currentProjectId);
-          setLogs(newLogs);
+          deleteLog(selectedDate, currentProjectId);
           setHoursInput('');
           setNotesInput('');
       }
   };
 
-  const handleDayClick = (date: string) => {
+  const handleDayClick = useCallback((date: string) => {
     setSelectedDate(date);
-    const existing = logs.find(l => l.date === date && l.projectId === currentProjectId);
-    setHoursInput(existing ? existing.hours : '');
-    setNotesInput(existing ? existing.notes || '' : '');
-    if (currentView !== ViewMode.DASHBOARD) {
-        setCurrentView(ViewMode.DASHBOARD);
-    }
-    if (formRef.current) {
-        formRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  };
+    // Logic to scroll or switch view is handled by effects or user action, 
+    // but here we just set date. The effect above syncs inputs.
+    // If we want to switch view:
+    if (currentView !== ViewMode.DASHBOARD) setCurrentView(ViewMode.DASHBOARD);
+    if (formRef.current) formRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [currentView, setCurrentView]);
   
   const handleEditLogFromStats = (date: string) => {
       handleDayClick(date);
@@ -322,41 +114,10 @@ function App() {
       setSelectedDate(date);
   };
 
-  const handleCreateProject = (name: string, theme: HeatmapTheme) => {
-      const newProject: Project = { id: Date.now().toString(), name, theme, createdAt: new Date().toISOString(), sortOrder: projects.length, isArchived: false };
-      const updatedProjects = storage.saveProject(newProject);
-      setProjects(updatedProjects);
-      setCurrentProjectId(newProject.id);
-  };
-
-  const handleDeleteProject = (id: string) => {
-      const updatedProjects = storage.deleteProject(id);
-      setProjects(updatedProjects);
-      if (currentProjectId === id && updatedProjects.length > 0) {
-          setCurrentProjectId(updatedProjects[0].id);
-      }
-  };
-
-  const handleUpdateProjects = (updatedProjects: Project[]) => {
-      setProjects(updatedProjects);
-      storage.updateProjectsList(updatedProjects);
-      
-      // If current project is now archived, switch to an active one
-      const current = updatedProjects.find(p => p.id === currentProjectId);
-      if (current && current.isArchived) {
-          const firstActive = updatedProjects.find(p => !p.isArchived);
-          if (firstActive) {
-              setCurrentProjectId(firstActive.id);
-          }
-      }
-  };
-
   const handleThemeChange = (newTheme: HeatmapTheme) => {
-      setHeatmapTheme(newTheme);
-      const updatedProjects = projects.map(p => p.id === currentProjectId ? {...p, theme: newTheme} : p);
-      setProjects(updatedProjects);
-      const activeP = updatedProjects.find(p => p.id === currentProjectId);
-      if (activeP) storage.saveProject(activeP);
+      const updated = projects.map(p => p.id === currentProjectId ? {...p, theme: newTheme} : p);
+      updateProjects(updated);
+      // Note: updateProjects in context also saves to storage
   };
 
   const handleConsumeQuickTimer = () => {
@@ -366,6 +127,12 @@ function App() {
   const handleManageProjects = () => {
       setCurrentView(ViewMode.SETTINGS);
       setSettingsTab('projects');
+  };
+
+  // Helper for safe local date parsing
+  const parseDate = (dateStr: string) => {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      return new Date(y, m - 1, d);
   };
 
   // --- Calculations ---
@@ -381,14 +148,14 @@ function App() {
       const monday = new Date(now.getTime());
       monday.setDate(diff);
       monday.setHours(0,0,0,0);
-      return logs.filter(l => new Date(l.date) >= monday).reduce((acc, curr) => acc + curr.hours, 0);
+      return logs.filter(l => parseDate(l.date) >= monday).reduce((acc, curr) => acc + curr.hours, 0);
   }, [logs]);
 
   const streaks = useMemo(() => {
       if (logs.length === 0) return { current: 0, longest: 0 };
       const activeDates = Array.from(new Set<string>(logs.filter(l => l.hours > 0).map(l => l.date))).sort();
       if (activeDates.length === 0) return { current: 0, longest: 0 };
-      const timestamps = activeDates.map((d: string) => new Date(d).setHours(0,0,0,0));
+      const timestamps = activeDates.map((d: string) => parseDate(d).getTime());
       let longest = 1;
       let currentRun = 1;
       for (let i = 1; i < timestamps.length; i++) {
@@ -417,6 +184,7 @@ function App() {
   
   // Effective Weekly Goal (Project overrides Global)
   const effectiveWeeklyGoal = activeProject?.weeklyGoal || goals.weekly;
+  const heatmapTheme = activeProject?.theme || 'green';
 
   useEffect(() => {
       if (menuBarConfig.mode === 'none' || menuBarConfig.mode === 'timer') {
@@ -455,8 +223,8 @@ function App() {
             projects={projects}
             currentProjectId={currentProjectId}
             onSelectProject={setCurrentProjectId}
-            onCreateProject={handleCreateProject}
-            onDeleteProject={handleDeleteProject}
+            onCreateProject={createProject}
+            onDeleteProject={deleteProject}
             navConfig={navConfig}
             onManageProjects={handleManageProjects}
             sidebarConfig={sidebarConfig}
@@ -464,19 +232,23 @@ function App() {
         
         <div className="flex-1 bg-white dark:bg-gray-900 relative overflow-hidden flex flex-col transition-colors duration-300">
           
-          <div className={currentView === ViewMode.TIMER ? 'h-full' : 'hidden'}>
-             <TimerPanel 
-                onSaveSession={handleTimerSave} 
-                projectId={currentProjectId} 
-                projects={projects}
-                menuBarConfig={menuBarConfig}
-                externalStart={pendingQuickTimer}
-                onConsumeExternalStart={handleConsumeQuickTimer}
-            />
-          </div>
+          {/* TimerPanel must be outside Suspense to prevent unmounting when other tabs load */}
+          {(currentView === ViewMode.TIMER || timerViewInitialized) && (
+            <div className={currentView === ViewMode.TIMER ? "h-full" : "hidden"}>
+                <TimerPanel 
+                  onSaveSession={handleTimerSave} 
+                  projectId={currentProjectId} 
+                  projects={projects}
+                  menuBarConfig={menuBarConfig}
+                  externalStart={pendingQuickTimer}
+                  onConsumeExternalStart={handleConsumeQuickTimer}
+              />
+            </div>
+          )}
 
-          {currentView === ViewMode.DASHBOARD && (
-            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto bg-gray-50/50 dark:bg-black/20">
+          <Suspense fallback={<PanelLoader />}>
+            {currentView === ViewMode.DASHBOARD && (
+              <div className="flex-1 flex flex-col min-h-0 overflow-y-auto bg-gray-50/50 dark:bg-black/20">
               <div className="p-8 pb-0">
                 <header className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                   <div className="bg-white dark:bg-[#1c1c1e] rounded-3xl p-6 border border-gray-200 dark:border-gray-700/50 shadow-sm flex flex-col justify-center h-32">
@@ -572,59 +344,68 @@ function App() {
 
                 <div className="mb-8 w-full"><Heatmap data={projectLogs} year={currentYear} onDayClick={handleDayClick} isDarkMode={isDarkMode} theme={heatmapTheme} onThemeChange={handleThemeChange} /></div>
               </div>
-            </div>
-          )}
+              </div>
+            )}
 
-          {currentView === ViewMode.STATISTICS && (
-            <StatisticsPanel 
-                logs={projectLogs} 
-                allLogs={logs}
-                projects={projects}
-                goals={goals} 
-                onUpdateGoals={handleUpdateGoals}
-                onEditLog={handleEditLogFromStats}
-                projectId={currentProjectId}
-                totalHours={totalHours}
-                streak={streaks.current}
-            />
-          )}
+            {currentView === ViewMode.STATISTICS && (
+              <StatisticsPanel 
+                  logs={projectLogs} 
+                  allLogs={logs}
+                  projects={projects}
+                  goals={goals} 
+                  onUpdateGoals={handleUpdateGoals}
+                  onEditLog={handleEditLogFromStats}
+                  projectId={currentProjectId}
+                  totalHours={totalHours}
+                  streak={streaks.current}
+              />
+            )}
 
-          {currentView === ViewMode.COUNTDOWN && (
-            <CountdownPanel />
-          )}
+            {currentView === ViewMode.COUNTDOWN && (
+              <CountdownPanel />
+            )}
 
-          {currentView === ViewMode.CALENDAR && (
-            <CalendarPanel 
-                logs={logs} 
-                projects={projects}
-            />
-          )}
+            {currentView === ViewMode.CALENDAR && (
+              <CalendarPanel 
+                  logs={logs} 
+                  projects={projects}
+              />
+            )}
 
-          {currentView === ViewMode.INSIGHTS && (
-            <InsightsPanel logs={projectLogs} />
-          )}
+            {currentView === ViewMode.INSIGHTS && (
+              <InsightsPanel logs={projectLogs} />
+            )}
 
-          {currentView === ViewMode.SETTINGS && (
-            <SettingsPanel 
-                navConfig={navConfig} 
-                onUpdateNavConfig={handleUpdateNavConfig}
-                isDarkMode={isDarkMode}
-                onToggleTheme={toggleTheme}
-                menuBarConfig={menuBarConfig}
-                onUpdateMenuBarConfig={handleUpdateMenuBarConfig}
-                projects={projects}
-                onCreateProject={handleCreateProject}
-                onDeleteProject={handleDeleteProject}
-                onUpdateProjects={handleUpdateProjects}
-                activeTab={settingsTab}
-                onTabChange={setSettingsTab}
-                sidebarConfig={sidebarConfig}
-                onUpdateSidebarConfig={handleUpdateSidebarConfig}
-            />
-          )}
+            {currentView === ViewMode.SETTINGS && (
+              <SettingsPanel 
+                  navConfig={navConfig} 
+                  onUpdateNavConfig={setNavConfig}
+                  isDarkMode={isDarkMode}
+                  onToggleTheme={toggleTheme}
+                  menuBarConfig={menuBarConfig}
+                  onUpdateMenuBarConfig={setMenuBarConfig}
+                  projects={projects}
+                  onCreateProject={createProject}
+                  onDeleteProject={deleteProject}
+                  onUpdateProjects={updateProjects}
+                  activeTab={settingsTab}
+                  onTabChange={setSettingsTab}
+                  sidebarConfig={sidebarConfig}
+                  onUpdateSidebarConfig={setSidebarConfig}
+              />
+            )}
+          </Suspense>
         </div>
       </MacWindow>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <AppProvider>
+      <FocusFlowContent />
+    </AppProvider>
   );
 }
 

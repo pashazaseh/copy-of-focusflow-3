@@ -457,9 +457,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     
     const handleDragStart = (e: React.DragEvent, index: number) => {
       setDraggingIndex(index);
-      e.dataTransfer.effectAllowed = "move";
-    git config --global user.name "Your Name"
-    git config --global user.email "you@example.com"      
+      e.dataTransfer.effectAllowed = "move";  
       // FIXED: Create a proper ghost element with dimensions and content
       // This prevents the yellow rectangle bug caused by browser fallback
       const ghost = document.createElement('div');

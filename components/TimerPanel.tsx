@@ -51,7 +51,10 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   // Manual Session Form State
   const [manualProject, setManualProject] = useState(projectId);
   const [manualDesc, setManualDesc] = useState('');
-  const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
+  const [manualDate, setManualDate] = useState(() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  });
   const [manualTime, setManualTime] = useState('12:00');
   const [manualDuration, setManualDuration] = useState(25);
   const [manualType, setManualType] = useState<'POMO'|'STOPWATCH'>('POMO');
@@ -490,7 +493,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   }, [sessions]);
 
   // Visuals
-  const radius = 135; 
+  const radius = 42; 
   const circumference = 2 * Math.PI * radius;
   let progress = 0;
   if (mode === 'POMO') {
@@ -730,17 +733,17 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
 
                  {/* Timer Circle - Responsive */}
                  <div className="relative w-full max-w-[340px] aspect-square flex items-center justify-center mb-8 group">
-                     <svg className="w-full h-full transform -rotate-90 drop-shadow-2xl" viewBox="0 0 340 340">
+                     <svg className="w-full h-full transform -rotate-90 drop-shadow-2xl" viewBox="0 0 100 100">
                          <defs>
                              <linearGradient id="focusGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#60A5FA" /><stop offset="100%" stopColor="#3B82F6" /></linearGradient>
                              <linearGradient id="breakGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#34D399" /><stop offset="100%" stopColor="#10B981" /></linearGradient>
                              <linearGradient id="stopwatchGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#FBBF24" /><stop offset="100%" stopColor="#F59E0B" /></linearGradient>
                          </defs>
-                         <circle cx="170" cy="170" r={radius} className="stroke-gray-100 dark:stroke-[#252527] transition-colors duration-300" strokeWidth="6" fill="transparent" />
-                         <circle cx="170" cy="170" r={radius} stroke={`url(#${mode === 'POMO' ? (phase === 'FOCUS' ? 'focusGradient' : 'breakGradient') : 'stopwatchGradient'})`} strokeWidth="6" fill="transparent" strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" className={`transition-all duration-1000 ease-linear ${isActive && 'drop-shadow-[0_0_15px_rgba(59,130,246,0.4)]'}`}/>
+                         <circle cx="50" cy="50" r={radius} className="stroke-gray-100 dark:stroke-[#252527] transition-colors duration-300" strokeWidth="4" fill="transparent" />
+                         <circle cx="50" cy="50" r={radius} stroke={`url(#${mode === 'POMO' ? (phase === 'FOCUS' ? 'focusGradient' : 'breakGradient') : 'stopwatchGradient'})`} strokeWidth="4" fill="transparent" strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" className={`transition-all duration-1000 ease-linear ${isActive && 'drop-shadow-[0_0_15px_rgba(59,130,246,0.4)]'}`}/>
                      </svg>
                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                         <div className={`text-6xl sm:text-7xl md:text-8xl font-bold tracking-tighter tabular-nums font-mono transition-colors duration-300 ${themeColor} drop-shadow-md`}>{formatTime(timeLeft)}</div>
+                         <div className={`text-7xl md:text-8xl font-bold tracking-tight tabular-nums select-none transition-colors duration-300 ${themeColor} drop-shadow-md`}>{formatTime(timeLeft)}</div>
                      </div>
                  </div>
 
