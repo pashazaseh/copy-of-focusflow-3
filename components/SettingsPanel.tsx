@@ -1,0 +1,1148 @@
+import React, { useRef, useState, useEffect, useMemo } from 'react';
+import * as storage from '../services/storageService';
+import { StoredNavConfig, NAV_ITEMS_DEF } from './Sidebar';
+import { TimerSettings, CountdownItem, MenuBarConfig, MenuBarMode, Project, HeatmapTheme, SidebarConfig, SettingsTab } from '../types';
+
+interface SettingsPanelProps {
+    navConfig: StoredNavConfig[];
+    onUpdateNavConfig: (config: StoredNavConfig[]) => void;
+    isDarkMode: boolean;
+    onToggleTheme: () => void;
+    menuBarConfig: MenuBarConfig;
+    onUpdateMenuBarConfig: (config: MenuBarConfig) => void;
+    projects: Project[];
+    onCreateProject: (name: string, theme: HeatmapTheme) => void;
+    onDeleteProject: (id: string) => void;
+    onUpdateProjects: (projects: Project[]) => void;
+    activeTab: SettingsTab;
+    onTabChange: (tab: SettingsTab) => void;
+    sidebarConfig: SidebarConfig;
+    onUpdateSidebarConfig: (config: SidebarConfig) => void;
+}
+
+export const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
+    navConfig, 
+    onUpdateNavConfig, 
+    isDarkMode, 
+    onToggleTheme, 
+    menuBarConfig, 
+    onUpdateMenuBarConfig,
+    projects,
+    onCreateProject,
+    onDeleteProject,
+    onUpdateProjects,
+    activeTab,
+    onTabChange,
+    sidebarConfig,
+    onUpdateSidebarConfig
+}) => {
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+    const [copyStatus, setCopyStatus] = useState<string>('');
+    const [isSafetyLocked, setIsSafetyLocked] = useState(true);
+
+    // Project Manager State
+    const [managerTab, setManagerTab] = useState<'active'|'archived'>('active');
+    const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+    const [editName, setEditName] = useState('');
+    const [editTheme, setEditTheme] = useState<HeatmapTheme>('green');
+    const [editGoal, setEditGoal] = useState<number>(0);
+    
+    // Project Creation State
+    const [isCreatingProject, setIsCreatingProject] = useState(false);
+    const [newProjectName, setNewProjectName] = useState('');
+    const [newProjectTheme, setNewProjectTheme] = useState<HeatmapTheme>('green');
+
+    // Timer Settings State
+    const [timerSettings, setTimerSettings] = useState<TimerSettings>(storage.getTimerSettings());
+    const [timerVolume, setTimerVolume] = useState<number>(() => {
+        const v = localStorage.getItem('focusflow_timer_volume');
+        return v ? parseFloat(v) : 0.5;
+    });
+
+    // Permission States
+    const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
+        typeof Notification !== 'undefined' ? Notification.permission : 'default'
+    );
+
+    // Menu Bar Data
+    const [countdowns, setCountdowns] = useState<CountdownItem[]>([]);
+
+    // Calendar Integration State
+    const [googleClientId, setGoogleClientId] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('google_client_id') || '';
+        return '';
+    });
+    const [isImportingBirthdays, setIsImportingBirthdays] = useState(false);
+    const [tokenClient, setTokenClient] = useState<any>(null);
+
+    // Init Data
+    useEffect(() => {
+        setCountdowns(storage.getCountdowns());
+        
+        if (typeof (window as any).google === 'undefined') {
+            // Only attempt to load external scripts if online
+            if (navigator.onLine) {
+                const script = document.createElement('script');
+                script.src = 'https://accounts.google.com/gsi/client';
+                script.async = true;
+                script.defer = true;
+                script.onload = () => {
+                    if (googleClientId) initTokenClient(googleClientId);
+                };
+                script.onerror = () => console.warn("Google Script failed to load (offline)");
+                document.body.appendChild(script);
+            }
+        } else if (googleClientId) {
+            initTokenClient(googleClientId);
+        }
+    }, [googleClientId]);
+
+    const initTokenClient = (clientId: string) => {
+        if (typeof (window as any).google !== 'undefined') {
+            const client = (window as any).google.accounts.oauth2.initTokenClient({
+                client_id: clientId,
+                // Request broader scope for reading calendars
+                scope: 'https://www.googleapis.com/auth/calendar.readonly', 
+                callback: (resp: any) => {
+                    if (resp.access_token) importBirthdays(resp.access_token);
+                    else {
+                        setIsImportingBirthdays(false);
+                        console.error("OAuth error:", resp);
+                    }
+                },
+            });
+            setTokenClient(client);
+        }
+    };
+
+    // --- Export Handlers ---
+
+    const handleExportJSON = () => {
+        const data = storage.exportData();
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `focusflow_backup_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleExportCSV = () => {
+        const csv = storage.exportLogsToCSV();
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `focusflow_logs_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleExportBirthdaysCSV = () => {
+        const csv = storage.exportBirthdaysToCSV();
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `focusflow_birthdays_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleCopyToClipboard = () => {
+        const data = storage.exportData();
+        navigator.clipboard.writeText(data).then(() => {
+            setCopyStatus('Copied!');
+            setTimeout(() => setCopyStatus(''), 2000);
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+            setCopyStatus('Failed');
+        });
+    };
+
+    // --- Import Handlers ---
+
+    const handleImportClick = () => {
+        if (confirm("WARNING: Importing data will completely OVERWRITE your current logs, settings, and projects.\n\nAre you sure you want to proceed?")) {
+            fileInputRef.current?.click();
+        }
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const content = event.target?.result as string;
+            if (content) {
+                const result = storage.importData(content);
+                if (result.success) {
+                    alert('Data imported successfully. The application will now reload.');
+                    window.location.reload();
+                } else {
+                    alert(`Import Failed: ${result.message}`);
+                }
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    };
+
+    // --- Timer Settings Handlers ---
+    const handleTimerSettingChange = (key: keyof TimerSettings, value: any) => {
+        const newSettings = { ...timerSettings, [key]: value };
+        setTimerSettings(newSettings);
+        storage.saveTimerSettings(newSettings);
+    };
+
+    const handlePresetChange = (type: 'quickDurations' | 'shortBreakPresets', index: number, value: number) => {
+        const newPresets = [...timerSettings[type]];
+        newPresets[index] = value;
+        const newSettings = { ...timerSettings, [type]: newPresets };
+        setTimerSettings(newSettings);
+        storage.saveTimerSettings(newSettings);
+    };
+
+    const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = parseFloat(e.target.value);
+        setTimerVolume(val);
+        localStorage.setItem('focusflow_timer_volume', val.toString());
+    };
+
+    // --- Permissions Logic ---
+    const requestNotificationPermission = () => {
+        if (!("Notification" in window)) {
+            alert("This browser does not support desktop notifications.");
+            return;
+        }
+        Notification.requestPermission().then((permission) => {
+            setNotificationPermission(permission);
+            if (permission === "granted") {
+                new Notification("FocusFlow", { body: "Notifications enabled successfully!" });
+            }
+        });
+    };
+
+    const testNotification = () => {
+        if (notificationPermission === "granted") {
+            new Notification("Test Alert", { body: "This is a test notification from FocusFlow." });
+        } else {
+            alert("Notifications are not enabled. Please enable them first.");
+        }
+    };
+
+    const testSound = () => {
+        // Changed to local asset for offline support
+        const audio = new Audio('./assets/alarm.mp3');
+        audio.volume = timerVolume;
+        audio.play().catch(e => alert("Could not play sound. Check if 'alarm.mp3' exists in assets."));
+    };
+
+    // --- Project Management Handlers ---
+    const displayedManagerProjects = useMemo(() => {
+        const list = managerTab === 'active' 
+            ? projects.filter(p => !p.isArchived) 
+            : projects.filter(p => p.isArchived);
+        return list.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    }, [projects, managerTab]);
+
+    const moveProject = (index: number, direction: 'up' | 'down') => {
+        const newList = [...displayedManagerProjects];
+
+        if (direction === 'up' && index > 0) {
+            [newList[index], newList[index - 1]] = [newList[index - 1], newList[index]];
+        } else if (direction === 'down' && index < newList.length - 1) {
+            [newList[index], newList[index + 1]] = [newList[index + 1], newList[index]];
+        } else {
+            return;
+        }
+
+        const updates = new Map(newList.map((p, i) => [p.id, i]));
+
+        const newProjects = projects.map(p => {
+            if (updates.has(p.id)) {
+                return { ...p, sortOrder: updates.get(p.id)! };
+            }
+            return p;
+        });
+        
+        // Sort global list to ensure consistency
+        newProjects.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        onUpdateProjects(newProjects);
+    };
+
+    const startEditingProject = (p: Project) => {
+        setEditingProjectId(p.id);
+        setEditName(p.name);
+        setEditTheme(p.theme);
+        setEditGoal(p.weeklyGoal || 0);
+    };
+
+    const saveProjectEdit = () => {
+        if (editingProjectId) {
+            const newProjects = projects.map(p => {
+                if (p.id === editingProjectId) {
+                    return { ...p, name: editName, theme: editTheme, weeklyGoal: editGoal > 0 ? editGoal : undefined };
+                }
+                return p;
+            });
+            onUpdateProjects(newProjects);
+            setEditingProjectId(null);
+        }
+    };
+
+    const toggleProjectArchive = (id: string) => {
+        const newProjects = projects.map(p => {
+            if (p.id === id) return { ...p, isArchived: !p.isArchived };
+            return p;
+        });
+        onUpdateProjects(newProjects);
+    };
+
+    const handleCreateNewProject = () => {
+        if (!newProjectName.trim()) return;
+        onCreateProject(newProjectName, newProjectTheme);
+        setNewProjectName('');
+        setIsCreatingProject(false);
+    };
+
+
+    // --- Danger Zone ---
+    const handleClearLogs = () => {
+        if(confirm("Are you sure you want to delete ALL study logs? This cannot be undone.")) {
+            storage.clearLogs();
+            if (!storage.isInitialized()) storage.setInitialized();
+            window.location.reload();
+        }
+    };
+
+    const handleClearSettings = () => {
+        if(confirm("Are you sure you want to reset timer settings and goals?")) {
+            storage.clearSettings();
+            window.location.reload();
+        }
+    };
+
+    const handleClearCountdowns = () => {
+        if(confirm("Are you sure you want to delete all countdowns and calendar events?")) {
+            storage.clearCountdowns();
+            window.location.reload();
+        }
+    };
+
+    const handleFactoryReset = () => {
+        if (confirm("DANGER: This will delete ALL your data, logs, projects, and settings. This action cannot be undone.\n\nType 'DELETE' to confirm.")) {
+            const check = prompt("Type 'DELETE' to confirm factory reset:");
+            if (check === 'DELETE') {
+                storage.clearAllData();
+                storage.setInitialized(); 
+                window.location.reload();
+            }
+        }
+    };
+
+    // --- Google Calendar Logic ---
+
+    const handleSaveClientId = () => {
+        localStorage.setItem('google_client_id', googleClientId);
+        initTokenClient(googleClientId);
+        alert("Client ID Saved.");
+    };
+
+    const handleImportBirthdaysClick = () => {
+        if (!googleClientId) {
+            alert("Please enter a Google Client ID in the 'Integrations & API' section first.");
+            return;
+        }
+        setIsImportingBirthdays(true);
+        if (tokenClient) {
+            tokenClient.requestAccessToken();
+        } else {
+             // Fallback if client wasn't ready
+             initTokenClient(googleClientId);
+             setTimeout(() => {
+                 if ((window as any).google && (window as any).google.accounts) {
+                     alert("Google Services are initializing. Please try again.");
+                 }
+                 setIsImportingBirthdays(false);
+             }, 1000);
+        }
+    };
+
+    const importBirthdays = async (accessToken: string) => {
+        try {
+            let targetCalendarId = 'addressbook#contacts@group.v.calendar.google.com';
+            let calendarFound = false;
+
+            // 1. List Calendars
+            const calListRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            
+            if (calListRes.ok) {
+                const calList = await calListRes.json();
+                const birthdayCal = calList.items.find((c: any) => 
+                    c.id === 'addressbook#contacts@group.v.calendar.google.com' || 
+                    c.id === '#contacts@group.v.calendar.google.com' ||
+                    (c.summary && c.summary.toLowerCase().includes('birthday'))
+                );
+                if (birthdayCal) {
+                    targetCalendarId = birthdayCal.id;
+                    calendarFound = true;
+                }
+            }
+
+            // 2. Fetch Events
+            const now = new Date();
+            const nextYear = new Date();
+            nextYear.setFullYear(now.getFullYear() + 1);
+            
+            const eventsRes = await fetch(
+                `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(targetCalendarId)}/events?timeMin=${now.toISOString()}&timeMax=${nextYear.toISOString()}&singleEvents=true&orderBy=startTime`,
+                { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            
+            if (!eventsRes.ok) {
+                throw new Error(calendarFound ? 'Failed to fetch events from Birthday calendar.' : 'Could not find Birthday calendar.');
+            }
+            
+            const eventsData = await eventsRes.json();
+            let importedCount = 0;
+            
+            if (eventsData.items) {
+                const currentCountdowns = storage.getCountdowns();
+                const newItems: CountdownItem[] = [];
+                
+                eventsData.items.forEach((evt: any) => {
+                    if (!evt.start || !evt.start.date) return;
+                    const cleanTitle = evt.summary.replace(/'s Birthday|’s Birthday/gi, "").trim();
+                    
+                    const exists = currentCountdowns.some(c => c.title === cleanTitle && c.type === 'birthday') || newItems.some(n => n.title === cleanTitle);
+                    
+                    if (!exists) {
+                        newItems.push({
+                            id: Date.now().toString() + Math.random().toString().slice(2, 8),
+                            title: cleanTitle,
+                            date: evt.start.date,
+                            type: 'birthday',
+                            color: 'orange',
+                            recurrence: 'yearly',
+                            isArchived: false
+                        });
+                        importedCount++;
+                    }
+                });
+                
+                newItems.forEach(item => storage.saveCountdown(item));
+            }
+            alert(`Successfully imported ${importedCount} birthdays.`);
+        } catch (e: any) {
+            console.error(e);
+            alert(`Error importing: ${e.message}`);
+        } finally {
+            setIsImportingBirthdays(false);
+        }
+    };
+
+    // --- Navigation Customization Handlers ---
+    
+    const handleDragStart = (e: React.DragEvent, index: number) => {
+      setDraggingIndex(index);
+      e.dataTransfer.effectAllowed = "move";
+    git config --global user.name "Your Name"
+    git config --global user.email "you@example.com"      
+      // FIXED: Create a proper ghost element with dimensions and content
+      // This prevents the yellow rectangle bug caused by browser fallback
+      const ghost = document.createElement('div');
+      ghost.style.position = 'absolute';
+      ghost.style.top = '-9999px';  // Position off-screen
+      ghost.style.width = '200px';
+      ghost.style.height = '40px';
+      ghost.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';  // Blue tint
+      ghost.style.border = '2px dashed rgba(59, 130, 246, 0.5)';
+      ghost.style.borderRadius = '12px';
+      ghost.style.display = 'flex';
+      ghost.style.alignItems = 'center';
+      ghost.style.justifyContent = 'center';
+      ghost.style.fontSize = '14px';
+      ghost.style.fontWeight = '600';
+      ghost.style.color = '#3b82f6';
+      ghost.textContent = '↕️ Moving...';
+      
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 100, 20);  // Center the drag image
+      
+      // FIXED: Remove after a safe delay (was 0ms, now 100ms)
+      // This gives browser time to capture the drag image before removal
+      setTimeout(() => {
+          if (document.body.contains(ghost)) {
+              document.body.removeChild(ghost);
+          }
+      }, 100);
+    };
+
+    const handleDragOver = (e: React.DragEvent, index: number) => {
+      e.preventDefault();
+      if (draggingIndex === null || draggingIndex === index) return;
+      
+      const newConfig = [...navConfig];
+      const draggedItem = newConfig[draggingIndex];
+      newConfig.splice(draggingIndex, 1);
+      newConfig.splice(index, 0, draggedItem);
+      
+      onUpdateNavConfig(newConfig);
+      setDraggingIndex(index);
+    };
+
+    const handleDragEnd = () => {
+      setDraggingIndex(null);
+    };
+
+    const toggleVisibility = (index: number) => {
+      const newConfig = [...navConfig];
+      newConfig[index].isVisible = !newConfig[index].isVisible;
+      onUpdateNavConfig(newConfig);
+    };
+
+    const handleResetConfig = () => {
+        const defaultConf = NAV_ITEMS_DEF.map(item => ({ view: item.view, isVisible: true }));
+        onUpdateNavConfig(defaultConf);
+    };
+
+    return (
+        <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50/50 dark:bg-gray-900 transition-colors duration-300">
+            <div className="p-8 h-full overflow-y-auto custom-scrollbar">
+                <div className="max-w-4xl mx-auto space-y-6 animate-fade-in-up">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div>
+                            <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h2>
+                            <p className="text-gray-500 dark:text-gray-400 mt-1">Manage preferences, projects, and data.</p>
+                        </div>
+                        
+                        {/* Tab Navigation */}
+                        <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl shadow-inner overflow-x-auto no-scrollbar">
+                            {(['general', 'timer', 'projects', 'integrations', 'data'] as SettingsTab[]).map(tab => (
+                                <button
+                                    key={tab}
+                                    onClick={() => onTabChange(tab)}
+                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wide whitespace-nowrap ${
+                                        activeTab === tab 
+                                        ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm' 
+                                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                    }`}
+                                >
+                                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    
+                    {/* Content Area */}
+                    <div className="space-y-6">
+                        
+                        {/* === GENERAL TAB === */}
+                        {activeTab === 'general' && (
+                            <>
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Appearance</h3>
+                                    <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                        <div>
+                                            <p className="font-semibold text-gray-900 dark:text-white">Dark Mode</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">Toggle application appearance</p>
+                                        </div>
+                                        <button 
+                                            onClick={onToggleTheme}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isDarkMode ? 'bg-blue-600' : 'bg-gray-200'}`}
+                                        >
+                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isDarkMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">Navigation & Sidebar</h3>
+                                        <button onClick={handleResetConfig} className="text-xs text-gray-500 hover:text-blue-500 underline">Reset Default</button>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {/* Sidebar Widgets */}
+                                        <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                            <div>
+                                                <p className="font-semibold text-gray-900 dark:text-white">Weekly Goal Widget</p>
+                                                <p className="text-xs text-gray-500 dark:text-gray-400">Show weekly progress at sidebar bottom</p>
+                                            </div>
+                                            <button 
+                                                onClick={() => onUpdateSidebarConfig({ ...sidebarConfig, showWeeklyGoalWidget: !sidebarConfig.showWeeklyGoalWidget })}
+                                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${sidebarConfig.showWeeklyGoalWidget ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                                            >
+                                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${sidebarConfig.showWeeklyGoalWidget ? 'translate-x-6' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+
+                                        <div className="w-full h-px bg-gray-100 dark:bg-gray-700"></div>
+
+                                        {/* Nav Items */}
+                                        <div className="space-y-2 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                            {navConfig.map((item, index) => {
+                                                const def = NAV_ITEMS_DEF.find(d => d.view === item.view);
+                                                if (!def) return null;
+                                                
+                                                return (
+                                                    <div 
+                                                        key={item.view}
+                                                        draggable
+                                                        onDragStart={(e) => handleDragStart(e, index)}
+                                                        onDragOver={(e) => handleDragOver(e, index)}
+                                                        onDragEnd={handleDragEnd}
+                                                        className={`flex items-center p-3 rounded-xl bg-white dark:bg-[#252527] border border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 cursor-move transition-all ${draggingIndex === index ? 'opacity-50' : 'opacity-100 shadow-sm'}`}
+                                                    >
+                                                        <div className="mr-3 text-gray-400 cursor-move shrink-0">
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                                                        </div>
+                                                        <div className={`p-1.5 rounded-lg mr-3 shrink-0 ${item.isVisible ? 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 opacity-50'}`}>
+                                                            {def.icon}
+                                                        </div>
+                                                        <span className={`flex-1 font-bold text-sm ${item.isVisible ? 'text-gray-900 dark:text-white' : 'text-gray-400 line-through'}`}>
+                                                            {def.label}
+                                                        </span>
+                                                        <div className="relative flex items-center justify-end w-10">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={item.isVisible} 
+                                                                onChange={() => toggleVisibility(index)}
+                                                                className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Menu Bar Display</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Display Mode</label>
+                                            <select 
+                                                value={menuBarConfig.mode} 
+                                                onChange={(e) => onUpdateMenuBarConfig({ ...menuBarConfig, mode: e.target.value as MenuBarMode })}
+                                                className="w-full px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                            >
+                                                <option value="none">None (Icon Only)</option>
+                                                <option value="today">Today's Hours</option>
+                                                <option value="remaining">Remaining (Daily Goal)</option>
+                                                <option value="streak">Current Streak</option>
+                                                <option value="xp">Total XP</option>
+                                                <option value="motivation">Motivation</option>
+                                                <option value="timer">Active Timer</option>
+                                                <option value="countdown_closest">Closest Countdown</option>
+                                                <option value="countdown_custom">Custom Countdown</option>
+                                            </select>
+                                        </div>
+                                        {menuBarConfig.mode === 'countdown_custom' && (
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Select Countdown</label>
+                                                <select 
+                                                    value={menuBarConfig.customCountdownId || ''} 
+                                                    onChange={(e) => onUpdateMenuBarConfig({ ...menuBarConfig, customCountdownId: e.target.value })}
+                                                    className="w-full px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                >
+                                                    <option value="">Select an event...</option>
+                                                    {countdowns.map(c => (
+                                                        <option key={c.id} value={c.id}>{c.title}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {/* === PROJECTS TAB === */}
+                        {activeTab === 'projects' && (
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm min-h-[500px] flex flex-col">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">Project Manager</h3>
+                                    <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl">
+                                        <button 
+                                            onClick={() => setManagerTab('active')} 
+                                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${managerTab === 'active' ? 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}
+                                        >
+                                            Active
+                                        </button>
+                                        <button 
+                                            onClick={() => setManagerTab('archived')} 
+                                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${managerTab === 'archived' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}
+                                        >
+                                            Archived
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                {/* Add Project Button / Form */}
+                                {managerTab === 'active' && (
+                                    <div className="mb-4">
+                                        {!isCreatingProject ? (
+                                            <button 
+                                                onClick={() => setIsCreatingProject(true)}
+                                                className="w-full py-3 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl text-gray-400 dark:text-gray-500 font-bold text-sm hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-500 dark:hover:text-blue-400 transition-all flex items-center justify-center gap-2"
+                                            >
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                                Add New Project
+                                            </button>
+                                        ) : (
+                                            <div className="bg-white dark:bg-[#1c1c1e] rounded-xl p-4 border border-blue-200 dark:border-blue-900/50 shadow-lg animate-fade-in-down">
+                                                <div className="flex justify-between items-center mb-4">
+                                                    <h4 className="text-sm font-bold text-gray-900 dark:text-white">New Project</h4>
+                                                    <button onClick={() => setIsCreatingProject(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                    </button>
+                                                </div>
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Name</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={newProjectName} 
+                                                            onChange={(e) => setNewProjectName(e.target.value)} 
+                                                            className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 dark:text-white"
+                                                            placeholder="Project Name"
+                                                            autoFocus
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-2 ml-1">Theme</label>
+                                                        <div className="flex gap-3">
+                                                            {(['green', 'blue', 'orange', 'purple'] as HeatmapTheme[]).map(t => (
+                                                                <button 
+                                                                    key={t} 
+                                                                    onClick={() => setNewProjectTheme(t)} 
+                                                                    className={`w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center ${
+                                                                        t === 'green' ? 'bg-green-500 border-green-200 dark:border-green-900' : 
+                                                                        t === 'blue' ? 'bg-blue-500 border-blue-200 dark:border-blue-900' : 
+                                                                        t === 'orange' ? 'bg-orange-500 border-orange-200 dark:border-orange-900' : 
+                                                                        'bg-purple-500 border-purple-200 dark:border-purple-900'
+                                                                    } ${newProjectTheme === t ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-gray-500 scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}`} 
+                                                                >
+                                                                    {newProjectTheme === t && <div className="w-2 h-2 bg-white rounded-full shadow-sm" />}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={handleCreateNewProject}
+                                                        disabled={!newProjectName.trim()}
+                                                        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-500/20 transition-all"
+                                                    >
+                                                        Create Project
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
+                                    {displayedManagerProjects.length === 0 && (
+                                        <div className="text-center py-20 text-gray-400 text-sm">No projects found.</div>
+                                    )}
+                                    {displayedManagerProjects.map((p, index) => (
+                                        <div key={p.id} className="bg-gray-50 dark:bg-gray-900/30 rounded-xl p-4 border border-gray-200 dark:border-gray-700/50 group transition-all hover:border-blue-300 dark:hover:border-blue-500/50">
+                                            {editingProjectId === p.id ? (
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Project Name</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={editName} 
+                                                            onChange={(e) => setEditName(e.target.value)} 
+                                                            className="w-full px-4 py-2.5 bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 dark:text-white transition-all shadow-sm"
+                                                            placeholder="e.g. Work, Study"
+                                                            autoFocus
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-2 ml-1">Color Theme</label>
+                                                            <div className="flex gap-3">
+                                                                {(['green', 'blue', 'orange', 'purple'] as HeatmapTheme[]).map(t => (
+                                                                    <button 
+                                                                        key={t} 
+                                                                        onClick={() => setEditTheme(t)} 
+                                                                        className={`w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center ${
+                                                                            t === 'green' ? 'bg-green-500 border-green-200 dark:border-green-900' : 
+                                                                            t === 'blue' ? 'bg-blue-500 border-blue-200 dark:border-blue-900' : 
+                                                                            t === 'orange' ? 'bg-orange-500 border-orange-200 dark:border-orange-900' : 
+                                                                            'bg-purple-500 border-purple-200 dark:border-purple-900'
+                                                                        } ${editTheme === t ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-gray-500 scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}`} 
+                                                                    >
+                                                                        {editTheme === t && <div className="w-2 h-2 bg-white rounded-full shadow-sm" />}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Weekly Goal (Hrs)</label>
+                                                            <div className="relative">
+                                                                <input 
+                                                                    type="number" 
+                                                                    value={editGoal || ''} 
+                                                                    onChange={(e) => setEditGoal(parseInt(e.target.value))} 
+                                                                    placeholder="Global Default"
+                                                                    className="w-full px-4 py-2.5 bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 dark:text-white transition-all shadow-sm"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex gap-3 pt-2 border-t border-gray-200 dark:border-gray-700/50">
+                                                        <button onClick={() => setEditingProjectId(null)} className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 text-xs font-bold py-2.5 rounded-xl transition-colors">Cancel</button>
+                                                        <button onClick={saveProjectEdit} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl transition-colors shadow-lg shadow-blue-500/20">Save Changes</button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-4 overflow-hidden">
+                                                        <div className="flex flex-col gap-1">
+                                                            {managerTab === 'active' && (
+                                                                <button onClick={() => moveProject(index, 'up')} disabled={index === 0} className="text-gray-300 hover:text-blue-500 disabled:opacity-20"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" /></svg></button>
+                                                            )}
+                                                            {managerTab === 'active' && (
+                                                                <button onClick={() => moveProject(index, 'down')} disabled={index === displayedManagerProjects.length - 1} className="text-gray-300 hover:text-blue-500 disabled:opacity-20"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg></button>
+                                                            )}
+                                                        </div>
+                                                        <div className={`w-3 h-3 rounded-full shrink-0 ${p.theme === 'green' ? 'bg-green-500' : p.theme === 'blue' ? 'bg-blue-500' : p.theme === 'orange' ? 'bg-orange-500' : 'bg-purple-500'}`}></div>
+                                                        <div className="truncate">
+                                                            <p className="font-bold text-base text-gray-900 dark:text-white truncate">{p.name}</p>
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                                {p.weeklyGoal ? `Goal: ${p.weeklyGoal}h/wk` : 'Global Goal'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button onClick={() => startEditingProject(p)} className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors" title="Edit">
+                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                        </button>
+                                                        <button onClick={() => toggleProjectArchive(p.id)} className="p-2 text-gray-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors" title={p.isArchived ? "Restore" : "Archive"}>
+                                                            {p.isArchived ? (
+                                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+                                                            ) : (
+                                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                                                            )}
+                                                        </button>
+                                                        <button onClick={() => { if(confirm('Delete project permanently?')) onDeleteProject(p.id); }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" title="Delete">
+                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* === TIMER TAB === */}
+                        {activeTab === 'timer' && (
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Timer Configuration</h3>
+                                
+                                <div className="space-y-6">
+                                    {/* ... Timer settings ... */}
+                                    <div className="flex gap-4">
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Focus</label>
+                                            <div className="relative">
+                                                <input type="number" value={timerSettings.pomoDuration} onChange={(e) => handleTimerSettingChange('pomoDuration', parseInt(e.target.value))} className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white font-bold" />
+                                            </div>
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Short Break</label>
+                                            <div className="relative">
+                                                <input type="number" value={timerSettings.shortBreakDuration} onChange={(e) => handleTimerSettingChange('shortBreakDuration', parseInt(e.target.value))} className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white font-bold" />
+                                            </div>
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Long Break</label>
+                                            <div className="relative">
+                                                <input type="number" value={timerSettings.longBreakDuration} onChange={(e) => handleTimerSettingChange('longBreakDuration', parseInt(e.target.value))} className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white font-bold" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Volume</label>
+                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center space-x-3 h-[42px]">
+                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                                            <input 
+                                                type="range" 
+                                                min="0" 
+                                                max="1" 
+                                                step="0.1" 
+                                                value={timerVolume} 
+                                                onChange={handleVolumeChange} 
+                                                className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-600" 
+                                            />
+                                            <span className="text-xs font-mono text-gray-500 w-8 text-right">{(timerVolume * 100).toFixed(0)}%</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Audio Check */}
+                                    <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                        <div>
+                                            <p className="font-semibold text-gray-900 dark:text-white">Audio Playback</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Verify sound is working</p>
+                                        </div>
+                                        <button 
+                                            onClick={testSound}
+                                            className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-gray-700 dark:text-gray-200"
+                                        >
+                                            Test Sound
+                                        </button>
+                                    </div>
+
+                                    <div className="border-t border-gray-100 dark:border-gray-700 pt-6">
+                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Quick Access Presets</label>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            {/* Focus Presets */}
+                                            <div className="space-y-2">
+                                                <span className="text-xs text-gray-400 font-medium">Focus Timer Shortcuts</span>
+                                                <div className="flex gap-2">
+                                                    {timerSettings.quickDurations.map((duration, index) => (
+                                                        <div key={`focus-${index}`} className="relative flex-1">
+                                                            <input 
+                                                                type="number" 
+                                                                value={duration}
+                                                                onChange={(e) => handlePresetChange('quickDurations', index, parseInt(e.target.value))}
+                                                                className="w-full bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                            />
+                                                            <span className="absolute right-1 top-1.5 text-[10px] text-gray-400 pointer-events-none">m</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Short Break Presets */}
+                                            <div className="space-y-2">
+                                                <span className="text-xs text-gray-400 font-medium">Short Break Shortcuts</span>
+                                                <div className="flex gap-2">
+                                                    {timerSettings.shortBreakPresets.map((duration, index) => (
+                                                        <div key={`break-${index}`} className="relative flex-1">
+                                                            <input 
+                                                                type="number" 
+                                                                value={duration}
+                                                                onChange={(e) => handlePresetChange('shortBreakPresets', index, parseInt(e.target.value))}
+                                                                className="w-full bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-green-500"
+                                                            />
+                                                            <span className="absolute right-1 top-1.5 text-[10px] text-gray-400 pointer-events-none">m</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ... (Integrations and Data Tabs remain same but updated with activeTab logic if needed) ... */}
+                        {/* === INTEGRATIONS TAB === */}
+                        {activeTab === 'integrations' && (
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Integrations & API</h3>
+                                <div className="space-y-6">
+                                    {/* Google Client ID */}
+                                    <div>
+                                        <div className="flex justify-between items-center mb-2">
+                                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Google Client ID</label>
+                                            <span className="text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-medium">Calendar</span>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input 
+                                                type="text" 
+                                                value={googleClientId}
+                                                onChange={(e) => setGoogleClientId(e.target.value)}
+                                                placeholder="apps.googleusercontent.com"
+                                                className="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-900 dark:text-white transition-all font-mono"
+                                            />
+                                            <button 
+                                                onClick={handleSaveClientId}
+                                                className="px-5 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-white dark:text-gray-900 dark:border-transparent dark:hover:bg-gray-200 text-gray-900 text-sm font-bold rounded-xl transition-colors"
+                                            >
+                                                Save
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-2">Required for syncing birthdays and events from Google Calendar.</p>
+                                    </div>
+
+                                    <div className="w-full h-px bg-gray-100 dark:bg-gray-700"></div>
+
+                                    {/* Gemini Status */}
+                                    <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                        <div className="flex items-center space-x-3">
+                                            <div className="p-1.5 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+                                                <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-gray-900 dark:text-white text-sm">Gemini AI Service</p>
+                                                <p className="text-xs text-gray-500 dark:text-gray-400">AI Coach & Habit Analysis</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+                                            <span className="text-xs font-bold text-green-600 dark:text-green-400 uppercase tracking-wide">Active</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* === DATA TAB === */}
+                        {activeTab === 'data' && (
+                            <div className="space-y-6">
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Backup & Export</h3>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        {/* JSON Column */}
+                                        <div className="space-y-4">
+                                            <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">Full Backup (JSON)</h4>
+                                            
+                                            <button onClick={handleExportJSON} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all">
+                                                <div className="text-left">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">Download Backup</span>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400">Save full state to file</span>
+                                                </div>
+                                                <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                            </button>
+
+                                            <button onClick={handleCopyToClipboard} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all">
+                                                <div className="text-left">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">{copyStatus || 'Copy to Clipboard'}</span>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400">Copy JSON for quick transfer</span>
+                                                </div>
+                                                <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                            </button>
+
+                                            <button onClick={handleImportClick} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all">
+                                                <div className="text-left">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">Restore Backup</span>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400">Overwrite current data</span>
+                                                </div>
+                                                <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                            </button>
+                                            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
+                                        </div>
+
+                                        {/* CSV Column */}
+                                        <div className="space-y-4">
+                                            <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">CSV Exports</h4>
+                                            <button onClick={handleExportCSV} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all">
+                                                <div className="text-left">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">Export Logs</span>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400">Study sessions data</span>
+                                                </div>
+                                                <div className="flex items-center space-x-3">
+                                                    <span className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded text-[10px] font-bold text-gray-600 dark:text-gray-300">.CSV</span>
+                                                    <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                </div>
+                                            </button>
+                                            <button onClick={handleExportBirthdaysCSV} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all">
+                                                <div className="text-left">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">Export Birthdays</span>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400">Calendar events data</span>
+                                                </div>
+                                                <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="border border-red-200 dark:border-red-900/30 bg-red-50 dark:bg-red-900/10 rounded-2xl p-6">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <div>
+                                            <h3 className="text-lg font-bold text-red-700 dark:text-red-400">Danger Zone</h3>
+                                            <p className="text-sm text-red-600/70 dark:text-red-400/70">Irreversible actions regarding your data.</p>
+                                        </div>
+                                        
+                                        {/* Safety Lock */}
+                                        <div className="flex items-center bg-white dark:bg-red-900/20 px-3 py-1.5 rounded-full border border-red-100 dark:border-red-800/30">
+                                            <span className="text-xs font-bold text-red-600 dark:text-red-400 mr-2 uppercase tracking-wide">Safety Lock</span>
+                                            <button 
+                                                onClick={() => setIsSafetyLocked(!isSafetyLocked)}
+                                                className={`relative w-10 h-5 rounded-full transition-colors duration-200 focus:outline-none ${isSafetyLocked ? 'bg-red-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                                            >
+                                                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${isSafetyLocked ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                                        <button 
+                                            onClick={handleClearLogs}
+                                            disabled={isSafetyLocked}
+                                            className={`px-4 py-3 rounded-lg text-xs font-bold shadow-sm transition-all text-center ${
+                                                isSafetyLocked 
+                                                ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-70' 
+                                                : 'bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-100 dark:border-red-800'
+                                            }`}
+                                        >
+                                            Clear Logs
+                                        </button>
+                                        <button 
+                                            onClick={handleClearSettings}
+                                            disabled={isSafetyLocked}
+                                            className={`px-4 py-3 rounded-lg text-xs font-bold shadow-sm transition-all text-center ${
+                                                isSafetyLocked 
+                                                ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-70' 
+                                                : 'bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-100 dark:border-red-800'
+                                            }`}
+                                        >
+                                            Clear Settings
+                                        </button>
+                                        <button 
+                                            onClick={handleClearCountdowns}
+                                            disabled={isSafetyLocked}
+                                            className={`px-4 py-3 rounded-lg text-xs font-bold shadow-sm transition-all text-center ${
+                                                isSafetyLocked 
+                                                ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-70' 
+                                                : 'bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-100 dark:border-red-800'
+                                            }`}
+                                        >
+                                            Clear Countdown
+                                        </button>
+                                        <button 
+                                            onClick={handleFactoryReset}
+                                            disabled={isSafetyLocked}
+                                            className={`px-4 py-3 rounded-lg text-xs font-bold shadow-sm transition-all text-center ${
+                                                isSafetyLocked 
+                                                ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-70' 
+                                                : 'bg-red-600 hover:bg-red-700 text-white border border-red-600'
+                                            }`}
+                                        >
+                                            Factory Reset
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
