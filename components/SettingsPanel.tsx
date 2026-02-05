@@ -918,7 +918,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                                     onClick={() => onUpdateSidebarConfig({ ...sidebarConfig, [widgetKey]: !sidebarConfig[widgetKey as keyof SidebarConfig] })}
                                                                     className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${sidebarConfig[widgetKey as keyof SidebarConfig] ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
                                                                 >
-                                                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${sidebarConfig[widgetKey as keyof SidebarConfig] ? 'translate-x-4.5' : 'translate-x-1'}`} />
+                                                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${sidebarConfig[widgetKey as keyof SidebarConfig] ? 'translate-x-5' : 'translate-x-1'}`} />
                                                                 </button>
                                                             </div>
                                                         );

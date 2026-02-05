@@ -106,10 +106,84 @@ const ParticleOverlay: React.FC<{ particles: Particle[] }> = ({ particles }) => 
     </>
 );
 
+const CreateItemModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onCreate: (item: ShopItem) => void;
+    isCyberpunk: boolean;
+}> = ({ isOpen, onClose, onCreate, isCyberpunk }) => {
+    const [name, setName] = useState('');
+    const [cost, setCost] = useState(100);
+    const [desc, setDesc] = useState('');
+    const [icon, setIcon] = useState('🎁');
+    const [expiryDate, setExpiryDate] = useState('');
+
+    if (!isOpen) return null;
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!name || cost < 0) return;
+        
+        onCreate({
+            id: `custom_${Date.now()}`,
+            name,
+            cost,
+            desc,
+            icon,
+            type: 'consumable',
+            category: 'Custom',
+            isCustom: true,
+            expiryDate: expiryDate || undefined
+        });
+        onClose();
+        setName('');
+        setCost(100);
+        setDesc('');
+        setIcon('🎁');
+        setExpiryDate('');
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+            <div className={`w-full max-w-md rounded-3xl border shadow-2xl p-6 relative overflow-hidden flex flex-col ${isCyberpunk ? 'bg-black border-[#00f0ff]/50' : 'bg-[#1c1c1e] border-slate-700'}`}>
+                <h3 className={`text-xl font-bold mb-4 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>Create Custom Item</h3>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Name</label>
+                        <input type="text" value={name} onChange={e => setName(e.target.value)} className={`w-full p-2 rounded-lg border focus:outline-none focus:ring-2 ${isCyberpunk ? 'bg-black border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-slate-800 border-slate-600 text-white focus:ring-blue-500'}`} required placeholder="e.g. Pizza Night" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost (Gems)</label>
+                        <input type="number" value={cost} onChange={e => setCost(parseInt(e.target.value))} className={`w-full p-2 rounded-lg border focus:outline-none focus:ring-2 ${isCyberpunk ? 'bg-black border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-slate-800 border-slate-600 text-white focus:ring-blue-500'}`} required min="0" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Icon (Emoji)</label>
+                            <input type="text" value={icon} onChange={e => setIcon(e.target.value)} className={`w-full p-2 rounded-lg border focus:outline-none focus:ring-2 ${isCyberpunk ? 'bg-black border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-slate-800 border-slate-600 text-white focus:ring-blue-500'}`} maxLength={2} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Expiry (Optional)</label>
+                            <input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} className={`w-full p-2 rounded-lg border focus:outline-none focus:ring-2 ${isCyberpunk ? 'bg-black border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff] [color-scheme:dark]' : 'bg-slate-800 border-slate-600 text-white focus:ring-blue-500 [color-scheme:dark]'}`} />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Description</label>
+                        <input type="text" value={desc} onChange={e => setDesc(e.target.value)} className={`w-full p-2 rounded-lg border focus:outline-none focus:ring-2 ${isCyberpunk ? 'bg-black border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-slate-800 border-slate-600 text-white focus:ring-blue-500'}`} placeholder="Optional details..." />
+                    </div>
+                    <div className="flex gap-3 pt-4">
+                        <button type="button" onClick={onClose} className={`flex-1 py-2.5 rounded-xl font-bold transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-400 hover:bg-white/10'}`}>Cancel</button>
+                        <button type="submit" className={`flex-1 py-2.5 rounded-xl font-bold shadow-lg transition-transform active:scale-95 ${isCyberpunk ? 'bg-[#00f0ff] text-black hover:bg-[#00f0ff]/80' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>Create</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
 const InventoryGrid: React.FC<{
     inventory: Record<string, any>;
     items: ShopItem[];
-    handleConsume: (id: string) => void;
+    handleConsume: (id: string, e?: React.MouseEvent) => void;
     handleSell: (id: string, e: React.MouseEvent) => void;
     isCyberpunk: boolean;
 }> = ({ inventory, items, handleConsume, handleSell, isCyberpunk }) => (
@@ -150,7 +224,7 @@ const InventoryGrid: React.FC<{
                             </div>
                             {item.type !== 'unlock' && (
                                 <div className="flex gap-2">
-                                    <button onClick={() => handleConsume(item.id)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}>Use</button>
+                                    <button onClick={(e) => handleConsume(item.id, e)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}>Use</button>
                                     <button onClick={(e) => handleSell(item.id, e)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${isCyberpunk ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30' : 'bg-red-100 text-red-600 hover:bg-red-200'}`} title={`Sell for ${Math.floor(item.cost * 0.6)} Gems`}>Sell</button>
                                 </div>
                             )}
@@ -175,12 +249,20 @@ const ShopGrid: React.FC<{
     handleBuy: (item: ShopItem, e: React.MouseEvent) => void;
     handleDeleteCustom: (id: string) => void;
     isCyberpunk: boolean;
-}> = ({ inventory, items, currentGems, handleBuy, handleDeleteCustom, isCyberpunk }) => (
+    onAddCustom?: () => void;
+}> = ({ inventory, items, currentGems, handleBuy, handleDeleteCustom, isCyberpunk, onAddCustom }) => (
     <div className={`rounded-3xl p-8 border shadow-2xl relative overflow-hidden ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-gradient-to-br from-slate-900 to-slate-800 border-white/10'}`}>
         <div className={`absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none ${isCyberpunk ? 'bg-[#00f0ff]/10' : 'bg-purple-500/10'}`}></div>
-        <h3 className={`text-2xl font-bold mb-8 flex items-center gap-3 relative z-10 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>
-            <span className="text-3xl">🏦</span> Market <span className={`text-sm font-normal ml-2 opacity-60 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-slate-300'}`}>(Spend your winnings)</span>
-        </h3>
+        <div className="flex justify-between items-center mb-8 relative z-10">
+            <h3 className={`text-2xl font-bold flex items-center gap-3 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>
+                <span className="text-3xl">🏦</span> Market <span className={`text-sm font-normal ml-2 opacity-60 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-slate-300'}`}>(Spend your winnings)</span>
+            </h3>
+            {onAddCustom && (
+                <button onClick={onAddCustom} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/30 hover:bg-[#00f0ff]/20' : 'bg-white/10 text-white border-white/20 hover:bg-white/20'}`}>
+                    + Custom Item
+                </button>
+            )}
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
             {items.map(item => {
                 const isExpired = item.expiryDate ? new Date(item.expiryDate) < new Date() : false;
@@ -383,6 +465,7 @@ const TrophyRoom: React.FC<{
                     <div className={`mt-2 text-[9px] font-bold px-1.5 py-0.5 rounded border ${badge.isUnlocked ? (isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/20' : 'bg-slate-800 ' + RARITY_COLORS[badge.rewardConfig.rarity]) : (isCyberpunk ? 'bg-black text-[#00f0ff]/40 border-[#00f0ff]/10' : 'bg-slate-800 text-slate-500 border-slate-700')}`}>{badge.rewardConfig.gems} 💎</div>
                 </div>
             </div>
+            ))}
         </div>
     </div>
 );
@@ -458,72 +541,8 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
 
   // --- Filters ---
   const [badgeFilter, setBadgeFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
-
-  // Reset spin eligibility if streak breaks
-  useEffect(() => {
-      if (streak < lastSpinStreak) {
-          if (streak === 0 && allLogs.length === 0) return;
-          setLastSpinStreak(0);
-          localStorage.setItem('focusflow_last_spin_streak', '0');
-      }
-  }, [streak, lastSpinStreak, allLogs.length]);
-
-  const lastInventoryStr = useRef(typeof window !== 'undefined' ? localStorage.getItem('focusflow_inventory') || '{}' : '{}');
-
-  useEffect(() => {
-      if (typeof window !== 'undefined') {
-          lastInventoryStr.current = JSON.stringify(inventory);
-      }
-  }, [inventory]);
-
-  useEffect(() => {
-      const interval = setInterval(() => {
-          if (typeof window === 'undefined') return;
-          
-          const rawInv = localStorage.getItem('focusflow_inventory') || '{}';
-          const storedBonusVal = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0');
-          const storedBonus = isNaN(storedBonusVal) ? 0 : storedBonusVal;
-          const storedSpentVal = parseInt(localStorage.getItem('focusflow_spent_gems') || '0');
-          const storedSpent = isNaN(storedSpentVal) ? 0 : storedSpentVal;
-          
-          if (rawInv !== lastInventoryStr.current) {
-              try {
-                  setInventory(JSON.parse(rawInv));
-                  lastInventoryStr.current = rawInv;
-              } catch (e) { /* ignore */ }
-          }
-          if (storedBonus !== bonusGems) {
-              setBonusGems(storedBonus);
-          }
-          if (storedSpent !== spentGems) {
-              setSpentGems(storedSpent);
-          }
-      }, 2000);
-      return () => clearInterval(interval);
-  }, [bonusGems, spentGems]);
-
-  useEffect(() => {
-      const unlockedIds = new Set((transactions || []).filter(t => t.type === 'UNLOCK').map(t => t.relatedId));
-      let newTx: Transaction[] = [];
-      
-      achievements.forEach(badge => {
-          if (badge.isUnlocked && !unlockedIds.has(badge.id)) {
-              newTx.push({
-                  id: `unlock-${badge.id}-${Date.now()}`,
-                  date: new Date().toISOString(),
-                  type: 'UNLOCK',
-                  amount: badge.rewardConfig.gems,
-                  description: `Unlocked: ${badge.title}`,
-                  relatedId: badge.id
-              });
-          }
-      });
-
-      if (newTx.length > 0) {
-          newTx.forEach(t => addTransaction(t));
-      }
-  }, [achievements, (transactions || []).length]);
-
+  
+  // 2. Define achievementsWithRewards IMMEDIATELY after (Moved up)
   const achievementsWithRewards = useMemo(() => {
       const getProgress = (achievement: typeof achievements[0]) => {
           if (achievement.isUnlocked) return 100;
@@ -554,6 +573,31 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
           progress: getProgress(a) || 0
       }));
   }, [achievements, totalHours, streak, allLogs]);
+
+  // 3. Now the useEffect can safely use achievementsWithRewards
+  useEffect(() => {
+      const unlockedIds = new Set((transactions || []).filter(t => t.type === 'UNLOCK').map(t => t.relatedId));
+      let newTx: Transaction[] = [];
+      
+      // FIX: Use achievementsWithRewards instead of achievements
+      achievementsWithRewards.forEach(badge => {
+          if (badge.isUnlocked && !unlockedIds.has(badge.id)) {
+              newTx.push({
+                  id: `unlock-${badge.id}-${Date.now()}`,
+                  date: new Date().toISOString(),
+                  type: 'UNLOCK',
+                  // Now rewardConfig exists!
+                  amount: badge.rewardConfig.gems,
+                  description: `Unlocked: ${badge.title}`,
+                  relatedId: badge.id
+              });
+          }
+      });
+
+      if (newTx.length > 0) {
+          newTx.forEach(t => addTransaction(t));
+      }
+  }, [achievementsWithRewards, (transactions || []).length]); // FIX: Dependency updated
 
   const filteredAchievements = useMemo(() => {
       return achievementsWithRewards.filter(badge => {
@@ -665,7 +709,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
       }
   };
 
-  const handleConsume = (itemId: string) => {
+  const handleConsume = (itemId: string, e?: React.MouseEvent) => {
       const item = allShopItems.find(i => i.id === itemId);
       if (!confirm(`Are you sure you want to use ${item ? item.name : 'this item'}?`)) return;
 
@@ -676,6 +720,42 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
       
       if (newInventory[key] > 0) {
           newInventory[key] = newInventory[key] - 1;
+
+          // Vault Logic
+          if (itemId === 'vault_mystery' || itemId === 'vault_mega') {
+              const isMega = itemId === 'vault_mega';
+              const roll = Math.random();
+              let rewardMsg = '';
+              
+              if (roll < 0.7) {
+                  // Gems Reward
+                  const base = isMega ? 300 : 80;
+                  const amount = Math.floor(base * (0.8 + Math.random() * 0.4)); // Random variance
+                  
+                  setBonusGems(prev => {
+                      const newVal = prev + amount;
+                      localStorage.setItem('focusflow_bonus_gems', newVal.toString());
+                      return newVal;
+                  });
+                  
+                  addTransaction({ id: `vault-${Date.now()}`, date: new Date().toISOString(), type: 'WIN', amount: amount, description: `Loot: ${item?.name}` });
+                  rewardMsg = `You found ${amount} Gems!`;
+                  
+                  if (e) spawnParticles(e.clientX, e.clientY, '#fbbf24', 20, `+${amount}`);
+              } else {
+                  // Item Reward (Streak Freeze)
+                  const count = isMega ? 3 : 1;
+                  newInventory.streakFreeze = (newInventory.streakFreeze || 0) + count;
+                  rewardMsg = `You found ${count} Streak Freeze${count > 1 ? 's' : ''}!`;
+                  if (e) spawnParticles(e.clientX, e.clientY, '#3b82f6', 20, '🛡️');
+              }
+              
+              const savedVol = localStorage.getItem('focusflow_timer_volume');
+              const vol = savedVol ? parseFloat(savedVol) : 0.5;
+              playWin(vol);
+              alert(rewardMsg);
+          }
+
           setInventory(newInventory);
           localStorage.setItem('focusflow_inventory', JSON.stringify(newInventory));
       }
@@ -811,6 +891,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
 
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 relative ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-[#0f172a] text-white'}`}>
+      <ParticleOverlay particles={particles} />
       <div className={`absolute inset-0 pointer-events-none ${isCyberpunk ? 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#00f0ff]/10 via-[#050505] to-[#050505]' : 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-[#0f172a] to-[#0f172a]'}`}></div>
       
       <div className="p-6 h-full overflow-y-auto custom-scrollbar relative z-10">
@@ -917,120 +998,44 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
                     handleBuy={handleBuy}
                     handleDeleteCustom={handleDeleteCustomItem}
                     isCyberpunk={isCyberpunk}
+                    onAddCustom={() => setIsCreateItemModalOpen(true)}
                 />
                 </>
                 )}
-
-                <div>
-                    <div className="flex items-center justify-between mb-6">
-                        <h3 className={`text-xl font-bold flex items-center gap-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>
-                            <span className="text-2xl">🏆</span> Trophy Room
-                        </h3>
-                        <div className="flex gap-2">
-                            <div className={`flex p-1 rounded-lg ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-slate-800'}`}>
-                                {(['all', 'unlocked', 'locked'] as const).map(f => (
-                                    <button key={f} onClick={() => setBadgeFilter(f)} className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all capitalize ${badgeFilter === f ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-sm' : 'bg-blue-600 text-white shadow-sm') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-slate-400 hover:text-white')}`}>
-                                        {f}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className={`px-3 py-1 rounded-lg border flex items-center ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-slate-800 border-slate-700'}`}>
-                                <span className={`text-xs font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-slate-300'}`}>{unlockedCount} / {achievements.length}</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                        {filteredAchievements.map((badge) => (
-                            <div key={badge.id} className={`relative aspect-square rounded-2xl border flex flex-col items-center justify-center text-center p-2 transition-all duration-300 group overflow-hidden ${badge.isUnlocked ? (isCyberpunk ? 'bg-black border-[#00f0ff]/50 shadow-[0_0_15px_rgba(0,240,255,0.2)] hover:border-[#00f0ff]' : `bg-gradient-to-b from-slate-800 to-slate-900 shadow-[0_0_15px_rgba(0,0,0,0.3)] hover:-translate-y-1 ${RARITY_COLORS[badge.rewardConfig.rarity].replace('text-', 'border-').split(' ')[1] || 'border-slate-700'}`) : (isCyberpunk ? 'bg-black border-[#00f0ff]/10 opacity-40 grayscale' : 'bg-slate-900/50 border-slate-800 opacity-40 grayscale')}`}>
-                                <div className="flex flex-col items-center transition-opacity duration-300 group-hover:opacity-0">
-                                    <div className={`text-4xl mb-2 transition-transform duration-300 ${badge.isUnlocked ? (isCyberpunk ? 'drop-shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]') : 'opacity-50'}`}>{badge.icon}</div>
-                                    <h4 className={`font-bold text-xs mb-1 line-clamp-1 ${badge.isUnlocked ? (isCyberpunk ? 'text-[#00f0ff]' : RARITY_COLORS[badge.rewardConfig.rarity].split(' ')[0]) : (isCyberpunk ? 'text-[#00f0ff]/40' : 'text-slate-500')}`}>{badge.title}</h4>
-                                    {badge.isUnlocked && <div className={`absolute top-2 right-2 w-2 h-2 rounded-full ${isCyberpunk ? 'bg-[#00f0ff] shadow-[0_0_5px_rgba(0,240,255,0.8)]' : 'bg-yellow-500 shadow-[0_0_5px_rgba(234,179,8,0.8)]'}`}></div>}
-                                    <div className={`mt-1 text-[9px] font-bold px-1.5 py-0.5 rounded border ${badge.isUnlocked ? (isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/20' : 'bg-slate-800 ' + RARITY_COLORS[badge.rewardConfig.rarity]) : (isCyberpunk ? 'bg-black text-[#00f0ff]/30 border-[#00f0ff]/10' : 'bg-slate-800 text-slate-600 border-slate-700')}`}>{badge.rewardConfig.gems} 💎</div>
-                                </div>
-                                <div className={`absolute inset-0 flex flex-col items-center justify-center p-3 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 ${isCyberpunk ? 'bg-black/95' : 'bg-slate-900/95'}`}>
-                                    <p className={`text-xs font-bold mb-1 line-clamp-1 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{badge.title}</p>
-                                    <p className={`text-[10px] leading-relaxed line-clamp-3 ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-slate-300'}`}>{badge.description}</p>
-                                    {!badge.isUnlocked && badge.progress > 0 && (
-                                        <div className="w-full mt-2 px-1">
-                                            <div className={`flex justify-between text-[8px] mb-0.5 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-slate-400'}`}><span>Progress</span><span>{Math.floor(badge.progress)}%</span></div>
-                                            <div className={`h-1 w-full rounded-full overflow-hidden ${isCyberpunk ? 'bg-[#00f0ff]/20' : 'bg-slate-700'}`}><div className={`h-full ${isCyberpunk ? 'bg-[#00f0ff]' : 'bg-blue-500'}`} style={{ width: `${badge.progress}%` }}></div></div>
-                                        </div>
-                                    )}
-                                    <div className={`mt-2 text-[9px] font-bold px-1.5 py-0.5 rounded border ${badge.isUnlocked ? (isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/20' : 'bg-slate-800 ' + RARITY_COLORS[badge.rewardConfig.rarity]) : (isCyberpunk ? 'bg-black text-[#00f0ff]/40 border-[#00f0ff]/10' : 'bg-slate-800 text-slate-500 border-slate-700')}`}>{badge.rewardConfig.gems} 💎</div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
             </div>
         </div>
       </div>
 
-      {isSlotMachineOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-              <div className={`w-full max-w-md rounded-3xl border-4 shadow-[0_0_50px_rgba(234,179,8,0.3)] p-8 relative overflow-hidden flex flex-col items-center ${isCyberpunk ? 'bg-black border-[#00f0ff] shadow-[0_0_50px_rgba(0,240,255,0.3)]' : 'bg-[#1c1c1e] border-yellow-500'}`}>
-                  <div className={`absolute top-0 left-0 w-full h-32 bg-gradient-to-b to-transparent pointer-events-none ${isCyberpunk ? 'from-[#00f0ff]/20' : 'from-yellow-500/20'}`}></div>
-                  <h3 className={`text-3xl font-black mb-8 drop-shadow-sm ${isCyberpunk ? 'text-[#00f0ff]' : 'text-yellow-400'}`}>JACKPOT SLOTS</h3>
-                  <div className={`flex gap-4 mb-8 p-6 rounded-2xl border shadow-inner ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-black/50 border-white/10'}`}>
-                      {slotItems.map((item, i) => (
-                          <div key={i} className={`w-20 h-24 bg-white text-6xl flex items-center justify-center rounded-xl shadow-[inset_0_2px_10px_rgba(0,0,0,0.2)] border-b-4 border-slate-300 overflow-hidden relative transition-transform duration-200 ${reelStatuses[i] ? 'scale-100' : 'scale-95'} ${isCyberpunk ? 'bg-[#00f0ff] text-black border-[#0099ff]' : ''}`}>
-                              <div className={`transition-all duration-100 ${!reelStatuses[i] ? 'blur-[2px] -translate-y-1' : ''}`}>{item}</div>
-                          </div>
-                      ))}
-                  </div>
-                  {slotMessage ? (
-                      <div className="text-center mb-8 animate-bounce">
-                          <p className={`text-2xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{slotMessage}</p>
-                          <p className={`text-sm mt-1 ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-yellow-400'}`}>Prize added to inventory!</p>
-                      </div>
-                  ) : (
-                      <p className={`mb-8 text-sm ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-slate-400'}`}>Good Luck!</p>
-                  )}
-                  <div className="flex gap-4 w-full">
-                      {!slotMessage && (
-                          <button onClick={handleSlotSpin} disabled={slotRolling} className={`flex-1 py-4 font-black text-xl rounded-2xl shadow-xl border-b-4 active:border-b-0 active:translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${isCyberpunk ? 'bg-[#00f0ff] text-black border-[#0099ff] hover:bg-[#00f0ff]/90' : 'bg-gradient-to-b from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 text-white border-red-900'}`}>
-                              {slotRolling ? 'ROLLING...' : 'PULL LEVER'}
-                          </button>
-                      )}
-                      {slotMessage && (
-                          <button onClick={() => setIsSlotMachineOpen(false)} className={`flex-1 py-4 font-bold rounded-2xl transition-colors ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}>Collect & Close</button>
-                      )}
-                  </div>
-                  <button onClick={() => setIsSlotMachineOpen(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
-              </div>
-          </div>
-      )}
+      <SlotMachineModal 
+          isOpen={isSlotMachineOpen} 
+          onClose={() => setIsSlotMachineOpen(false)} 
+          isCyberpunk={isCyberpunk} 
+          slotItems={slotItems} 
+          reelStatuses={reelStatuses} 
+          slotMessage={slotMessage} 
+          slotRolling={slotRolling} 
+          onSpin={handleSlotSpin} 
+      />
 
-      {isEconomyInfoOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-              <div className={`w-full max-w-md rounded-3xl border shadow-2xl p-8 relative overflow-hidden ${isCyberpunk ? 'bg-black border-[#00f0ff]/50' : 'bg-[#1c1c1e] border-slate-700'}`}>
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className={`text-2xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>Economy Guide</h3>
-                      <button onClick={() => setIsEconomyInfoOpen(false)} className={`p-1 rounded-lg transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'text-slate-400 hover:text-white'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
-                  </div>
-                  <div className="space-y-6">
-                      <div className={`p-4 rounded-2xl border ${isCyberpunk ? 'bg-[#00f0ff]/10 border-[#00f0ff]/30' : 'bg-slate-800 border-slate-700'}`}>
-                          <h4 className={`font-bold mb-2 flex items-center gap-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-blue-400'}`}><span>⏱️</span> Time is Money</h4>
-                          <p className={`text-sm ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-slate-300'}`}>Earn <span className="font-bold">10 Gems</span> for every <span className="font-bold">1 Hour</span> of focused study time logged. (1 Gem = 1 PLN)</p>
-                      </div>
-                      <div className={`p-4 rounded-2xl border ${isCyberpunk ? 'bg-[#ff00ff]/10 border-[#ff00ff]/30' : 'bg-slate-800 border-slate-700'}`}>
-                          <h4 className={`font-bold mb-2 flex items-center gap-2 ${isCyberpunk ? 'text-[#ff00ff]' : 'text-red-400'}`}><span>🔥</span> Streak Jackpot</h4>
-                          <p className={`text-sm ${isCyberpunk ? 'text-[#ff00ff]/80' : 'text-slate-300'}`}>Every <span className="font-bold">7 Days</span> of streak unlocks a Jackpot Spin. Win between <span className="font-bold">50 - 1000 Gems</span>!</p>
-                      </div>
-                      <div className={`p-4 rounded-2xl border ${isCyberpunk ? 'bg-[#00ff00]/10 border-[#00ff00]/30' : 'bg-slate-800 border-slate-700'}`}>
-                          <h4 className={`font-bold mb-2 flex items-center gap-2 ${isCyberpunk ? 'text-[#00ff00]' : 'text-green-400'}`}><span>🏆</span> Bonuses</h4>
-                          <ul className={`text-sm space-y-1 ${isCyberpunk ? 'text-[#00ff00]/80' : 'text-slate-300'}`}>
-                              <li>• Daily Quests: <span className="font-bold">~80 Gems/day</span></li>
-                              <li>• Achievements: <span className="font-bold">50 - 5000 Gems</span> (Tiered)</li>
-                          </ul>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
+      <EconomyGuideModal 
+          isOpen={isEconomyInfoOpen} 
+          onClose={() => setIsEconomyInfoOpen(false)} 
+          isCyberpunk={isCyberpunk} 
+      />
 
-      {isHistoryOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-              <div className={`w-full max-w-lg
+      <HistoryModal 
+          isOpen={isHistoryOpen} 
+          onClose={() => setIsHistoryOpen(false)} 
+          isCyberpunk={isCyberpunk} 
+          history={historyDisplay} 
+      />
+
+      <CreateItemModal 
+          isOpen={isCreateItemModalOpen}
+          onClose={() => setIsCreateItemModalOpen(false)}
+          onCreate={handleCreateItem}
+          isCyberpunk={isCyberpunk}
+      />
+    </div>
+  );
+};

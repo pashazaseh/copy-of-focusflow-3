@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as storage from '../services/storageService';
 import { TimerSettings, SessionRecord, Project, MenuBarConfig, Transaction } from '../types';
 import { playAlarm } from '../services/audioService';
-import { useTheme } from '../AppContext';
+import { useTheme, useLogs } from '../AppContext';
 
 interface TimerPanelProps {
     onSaveSession: (hours: number, note?: string, projectId?: string) => void;
@@ -20,6 +19,8 @@ type TimerPhase = 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
 export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId, projects, menuBarConfig, externalStart, onConsumeExternalStart }) => {
   // --- Core State ---
   const { appTheme } = useTheme();
+  const { logs } = useLogs(); // [FIX] Import logs to calculate total hours
+  
   const [mode, setMode] = useState<TimerMode>('POMO');
   const [phase, setPhase] = useState<TimerPhase>('FOCUS');
   const [timeLeft, setTimeLeft] = useState(25 * 60); 
@@ -31,6 +32,15 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   const [settings, setSettings] = useState<TimerSettings>({ pomoDuration: 25, shortBreakDuration: 5, longBreakDuration: 15, pomosPerLongBreak: 4, autoStartNextPomo: false, autoStartBreak: false, quickDurations: [25, 45, 60], shortBreakPresets: [5, 10, 15] });
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [pomosCompleted, setPomosCompleted] = useState(0); 
+
+  // [FIX] Calculate currentGems state for the Wager UI
+  const [bonusGems, setBonusGems] = useState(() => parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0);
+  const [spentGems, setSpentGems] = useState(() => parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0);
+  
+  const totalHours = useMemo(() => logs.reduce((acc, log) => acc + log.hours, 0), [logs]);
+  // Note: Using simplified calculation (10 gems/hr) to match Hard Mode base rate to prevent crashes.
+  // Ideally this should share logic with GamificationPanel, but this is safe for now.
+  const currentGems = Math.max(0, Math.floor(totalHours * 10) + bonusGems - spentGems);
 
   // Wager State
   const [wager, setWager] = useState(0);
@@ -74,12 +84,10 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
 
   // --- Initialization ---
   useEffect(() => {
-      // Defer session loading to unblock initial render for faster startup
       setTimeout(async () => {
           setSessions(await storage.getSessions());
           const s = await storage.getTimerSettings();
           setSettings(s);
-          // Initialize with correct duration based on settings
           const duration = s.pomoDuration * 60;
           setInitialTime(duration);
           setTimeLeft(duration);
@@ -91,7 +99,18 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
           }
       };
       document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      
+      // [FIX] Listen for storage events to update gems if they change in other tabs/components
+      const handleStorageUpdate = () => {
+          setBonusGems(parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0);
+          setSpentGems(parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0);
+      };
+      window.addEventListener('focusflow-gem-update', handleStorageUpdate);
+      
+      return () => {
+          document.removeEventListener('mousedown', handleClickOutside);
+          window.removeEventListener('focusflow-gem-update', handleStorageUpdate);
+      };
   }, []);
 
   // Update selected project if prop changes
@@ -160,7 +179,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
                 setTimeLeft(elapsed);
             }
         }
-      }, 200); // Check every 200ms for smoothness
+      }, 200); 
     } else {
         endTimeRef.current = null;
         startTimeRef.current = null;
@@ -176,9 +195,13 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
 
       // Handle Wager Win
       if (isWagerActive && wager > 0) {
-          const reward = wager * 2; // 2x Multiplier
-          const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
-          localStorage.setItem('focusflow_bonus_gems', (currentBonus + reward).toString());
+          const reward = wager * 2; 
+          const newBonus = (parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0) + reward;
+          localStorage.setItem('focusflow_bonus_gems', newBonus.toString());
+          
+          // [FIX] Update local state
+          setBonusGems(newBonus);
+          window.dispatchEvent(new Event('focusflow-gem-update'));
           
           addTransaction({
               id: `wager-win-${Date.now()}`,
@@ -244,7 +267,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       setMode(newMode);
       endTimeRef.current = null;
       startTimeRef.current = null;
-      setWager(0); // Reset wager on mode switch
+      setWager(0); 
       
       if (newMode === 'POMO') {
           setPhase('FOCUS');
@@ -317,8 +340,13 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       if (!isActive) {
           // Starting
           if (wager > 0) {
-              const currentSpent = parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0;
-              localStorage.setItem('focusflow_spent_gems', (currentSpent + wager).toString());
+              const newSpent = (parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0) + wager;
+              localStorage.setItem('focusflow_spent_gems', newSpent.toString());
+              
+              // [FIX] Update local state
+              setSpentGems(newSpent);
+              window.dispatchEvent(new Event('focusflow-gem-update'));
+              
               addTransaction({
                   id: `wager-start-${Date.now()}`,
                   date: new Date().toISOString(),
@@ -330,6 +358,11 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
           }
       }
       setIsActive(!isActive);
+  };
+
+  const addTransaction = (transaction: Transaction) => {
+      const existing = JSON.parse(localStorage.getItem('focusflow_transactions') || '[]');
+      localStorage.setItem('focusflow_transactions', JSON.stringify([transaction, ...existing]));
   };
 
   const triggerAlarm = () => { 
@@ -351,7 +384,6 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   const saveSettings = async () => {
       await storage.saveTimerSettings(tempSettings);
       setSettings(tempSettings);
-      // Reset timer to new settings if currently stopped
       if (!isActive) {
           let newDuration = tempSettings.pomoDuration * 60;
           if (phase === 'SHORT_BREAK') newDuration = tempSettings.shortBreakDuration * 60;
@@ -396,7 +428,6 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       onSaveSession(hours, manualDesc, manualProject);
       
       setIsAddSessionOpen(false);
-      // Reset form
       setManualDesc('');
       setManualDuration(25);
   };
@@ -420,7 +451,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   const openEditBatch = () => {
       const ids = Array.from(selectedSessionIds);
       setEditingSessionIds(ids);
-      setEditProject(''); // Empty implies "Mixed" or "No Change"
+      setEditProject(''); 
       setEditLabel('');
       setEditDate('');
       setEditStartTime(''); 
@@ -433,7 +464,6 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       let updatedSessions = [...sessions];
 
       if (editingSessionIds.length === 1) {
-          // Single Update
           const id = editingSessionIds[0];
           const index = updatedSessions.findIndex(s => s.id === id);
           if (index !== -1) {
@@ -451,7 +481,6 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
               await storage.saveSessionRecord(updatedSession);
           }
       } else {
-          // Batch Update
           for (const s of updatedSessions) {
               if (editingSessionIds.includes(s.id)) {
                   let newStart = s.startTime;
@@ -481,7 +510,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       setSessions(await storage.getSessions());
       setIsEditModalOpen(false);
       setEditingSessionIds([]);
-      setSelectedSessionIds(new Set()); // Clear selection after batch edit
+      setSelectedSessionIds(new Set()); 
   };
 
   // --- History Management ---
@@ -529,7 +558,6 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   // Grouped History
   const historyGroups = useMemo(() => {
       const sorted = [...sessions].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-      
       const groups: { dateLabel: string; sessions: SessionRecord[] }[] = [];
       
       sorted.forEach(session => {
@@ -561,7 +589,6 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   return (
     <div className={`flex h-full w-full overflow-hidden relative transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white'}`}>
         
-        {/* ... (Settings and Modals remain exactly the same as previously generated) ... */}
         {/* --- SETTINGS MODAL --- */}
         {isSettingsOpen && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in p-4">

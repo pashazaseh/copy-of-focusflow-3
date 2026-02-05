@@ -156,6 +156,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { countdowns } = useCountdowns();
   
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Ensure config has defaults to prevent crashes or missing widgets
+  const safeConfig = useMemo(() => ({
+      showWeeklyGoalWidget: true,
+      showDailyGoalWidget: false,
+      showMonthlyGoalWidget: false,
+      showTimerWidget: false,
+      showCountdownWidget: false,
+      showQuestsWidget: true,
+      questsWidgetSize: 'standard',
+      widgetOrder: [
+          'showTimerWidget',
+          'showQuestsWidget',
+          'showCountdownWidget',
+          'showDailyGoalWidget',
+          'showWeeklyGoalWidget',
+          'showMonthlyGoalWidget'
+      ],
+      ...sidebarConfig
+  }), [sidebarConfig]);
   
   // Safe access to active project
   const activeProject = projects.find(p => p.id === currentProjectId) || projects[0] || {
@@ -231,11 +251,78 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const renderWidget = (key: string) => {
       switch (key) {
           case 'showQuestsWidget':
+              const size = safeConfig.questsWidgetSize || 'standard';
+              const completedCount = quests.filter(q => q.current >= q.target).length;
+              const totalCount = quests.length;
+              const overallProgress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+              const containerClass = `w-full mb-4 rounded-2xl border shadow-sm text-left transition-all group ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff] hover:shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'}`;
+
+              if (size === 'compact') {
+                  return (
+                      <button 
+                        key="quests"
+                        onClick={(e) => { e.stopPropagation(); onChangeView(ViewMode.GAMIFICATION); }}
+                        className={`${containerClass} p-3 flex items-center justify-between`}
+                      >
+                          <div className="flex items-center gap-2">
+                              <span className="text-lg">🎯</span>
+                              <div>
+                                  <p className={`text-xs font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-gray-200'}`}>Quests</p>
+                                  <p className={`text-[10px] ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>{completedCount}/{totalCount} Done</p>
+                              </div>
+                          </div>
+                          <div className="relative w-8 h-8 flex items-center justify-center">
+                               <svg className="w-full h-full transform -rotate-90">
+                                   <circle cx="16" cy="16" r="12" stroke="currentColor" strokeWidth="3" fill="transparent" className={appTheme === 'cyberpunk' ? 'text-[#00f0ff]/20' : 'text-gray-200 dark:text-gray-700'} />
+                                   <circle cx="16" cy="16" r="12" stroke="currentColor" strokeWidth="3" fill="transparent" strokeDasharray={75.39} strokeDashoffset={75.39 * (1 - overallProgress / 100)} className={appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-blue-500'} />
+                               </svg>
+                          </div>
+                      </button>
+                  );
+              }
+
+              if (size === 'standard') {
+                   return (
+                    <button 
+                        key="quests"
+                        onClick={(e) => { e.stopPropagation(); onChangeView(ViewMode.GAMIFICATION); }}
+                        className={`${containerClass} p-4`}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <span className="text-lg">🎯</span>
+                                <p className={`text-xs font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-gray-200'}`}>Daily Quests</p>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'}`}>
+                                {completedCount}/{totalCount}
+                            </span>
+                        </div>
+                        <div className="space-y-2">
+                            {quests.map(quest => {
+                                const isCompleted = quest.current >= quest.target;
+                                return (
+                                    <div key={quest.id} className="flex items-center justify-between">
+                                        <span className={`text-[10px] font-medium truncate max-w-[140px] ${isCompleted ? (appTheme === 'cyberpunk' ? 'text-[#00f0ff] line-through opacity-70' : 'text-gray-400 line-through') : (appTheme === 'cyberpunk' ? 'text-[#00f0ff]/80' : 'text-gray-600 dark:text-gray-300')}`}>
+                                            {quest.title}
+                                        </span>
+                                        {isCompleted ? (
+                                            <span className={appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-green-500'}>✓</span>
+                                        ) : (
+                                            <span className={`text-[9px] font-mono ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-400'}`}>{quest.current}/{quest.target}</span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </button>
+                   );
+              }
+
               return (
                 <button 
                     key="quests"
-                    onClick={() => onChangeView(ViewMode.GAMIFICATION)}
-                    className={`w-full mb-4 p-4 rounded-2xl border shadow-sm text-left transition-all group ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff] hover:shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'}`}
+                    onClick={(e) => { e.stopPropagation(); onChangeView(ViewMode.GAMIFICATION); }}
+                    className={`${containerClass} p-4`}
                 >
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
@@ -243,7 +330,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <p className={`text-xs font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-gray-200'}`}>Daily Quests</p>
                         </div>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'}`}>
-                            {quests.filter(q => q.current >= q.target).length}/{quests.length}
+                            {completedCount}/{totalCount}
                         </span>
                     </div>
                     
@@ -286,7 +373,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               if (!closest) return null;
               const days = Math.ceil(closest.diff / (1000 * 60 * 60 * 24));
               return (
-                  <button key="countdown" onClick={() => onChangeView(ViewMode.COUNTDOWN)} className={`w-full mb-4 p-4 rounded-xl border shadow-sm text-left transition-all group ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'}`}>
+                  <button key="countdown" onClick={(e) => { e.stopPropagation(); onChangeView(ViewMode.COUNTDOWN); }} className={`w-full mb-4 p-4 rounded-xl border shadow-sm text-left transition-all group ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'}`}>
                       <div className="flex justify-between items-center mb-1">
                           <span className={`text-xs font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Upcoming</span>
                           <span className={`text-xs font-bold ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-blue-600 dark:text-blue-400'}`}>{days} Days</span>
@@ -298,7 +385,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               return (
                   <div key="timer" className={`w-full mb-4 p-4 rounded-xl border shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
                       <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Quick Focus</p>
-                      <div className="flex gap-2">{[25, 45, 60].map(min => (<button key={min} onClick={() => { setPendingQuickTimer({ duration: min, timestamp: Date.now() }); onChangeView(ViewMode.TIMER); }} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20 border border-[#00f0ff]/30' : 'bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40'}`}>{min}m</button>))}</div>
+                      <div className="flex gap-2">{[25, 45, 60].map(min => (<button key={min} onClick={(e) => { e.stopPropagation(); setPendingQuickTimer({ duration: min, timestamp: Date.now() }); onChangeView(ViewMode.TIMER); }} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20 border border-[#00f0ff]/30' : 'bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40'}`}>{min}m</button>))}</div>
                   </div>
               );
           default: return null;
@@ -468,11 +555,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Widget Area */}
       <div className={`mt-4 px-1 pt-4 border-t ${appTheme === 'cyberpunk' ? 'border-[#00f0ff]/20' : 'border-gray-200 dark:border-gray-700'}`}>
-          {(sidebarConfig.widgetOrder || [
-              'showTimerWidget', 'showQuestsWidget', 'showCountdownWidget', 
-              'showDailyGoalWidget', 'showWeeklyGoalWidget', 'showMonthlyGoalWidget'
-          ]).map(key => {
-              if (!sidebarConfig[key as keyof SidebarConfig]) return null;
+          {safeConfig.widgetOrder.map(key => {
+              if (!safeConfig[key as keyof SidebarConfig]) return null;
               return renderWidget(key);
           })}
       </div>

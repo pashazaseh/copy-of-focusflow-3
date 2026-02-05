@@ -470,6 +470,44 @@ function FocusFlowContent() {
   const projectLogs = useMemo(() => logs.filter(l => l.projectId === currentProjectId), [logs, currentProjectId]);
   const activeLog = useMemo(() => projectLogs.find(l => l.date === selectedDate), [projectLogs, selectedDate]);
 
+  // Helper for Streak Calculation
+  const calculateStreaks = (targetLogs: StudyLog[], freezes: string[]) => {
+      const activeLogDates = targetLogs.filter(l => l.hours > 0).map(l => l.date);
+      const combinedDates = Array.from(new Set<string>([...activeLogDates, ...freezes])).sort();
+      
+      if (combinedDates.length === 0) return { current: 0, longest: 0 };
+      
+      const timestamps = combinedDates.map((d: string) => {
+          const [y, m, day] = d.split('-').map(Number);
+          return Date.UTC(y, m - 1, day);
+      });
+
+      let longest = 1;
+      let currentRun = 1;
+      for (let i = 1; i < timestamps.length; i++) {
+          const diffDays = (timestamps[i] - timestamps[i-1]) / (1000 * 60 * 60 * 24);
+          if (Math.round(diffDays) === 1) currentRun++;
+          else currentRun = 1;
+          if (currentRun > longest) longest = currentRun;
+      }
+      
+      const now = new Date();
+      const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = today - 86400000;
+      const lastLogDate = timestamps[timestamps.length - 1];
+      
+      let current = 0;
+      if (lastLogDate === today || lastLogDate === yesterday) {
+          current = 1;
+          for (let i = timestamps.length - 2; i >= 0; i--) {
+              const diffDays = (timestamps[i+1] - timestamps[i]) / (1000 * 60 * 60 * 24);
+              if (Math.round(diffDays) === 1) current++;
+              else break;
+          }
+      }
+      return { current, longest };
+  };
+
   // Unified History Item Type
   type HistoryItem = 
     | { kind: 'log', date: string, data: StudyLog }
@@ -536,13 +574,16 @@ function FocusFlowContent() {
       return unifiedHistory.slice(start, start + ITEMS_PER_PAGE);
   }, [unifiedHistory, historyPage]);
 
-  const totalHours = useMemo(() => logs.reduce((acc, curr) => acc + curr.hours, 0), [logs]); 
+  // Global Stats (For Gamification)
+  const globalTotalHours = useMemo(() => logs.reduce((acc, curr) => acc + curr.hours, 0), [logs]);
+  const globalStreaks = useMemo(() => calculateStreaks(logs, freezeDates), [logs, freezeDates]);
   
+  // Project Stats (For Dashboard/Sidebar)
   const currentDailyHours = useMemo(() => {
       const d = new Date();
       const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      return logs.filter(l => l.date === todayStr).reduce((acc, curr) => acc + curr.hours, 0);
-  }, [logs]);
+      return projectLogs.filter(l => l.date === todayStr).reduce((acc, curr) => acc + curr.hours, 0);
+  }, [projectLogs]);
 
   const currentWeeklyHours = useMemo(() => {
       const now = new Date();
@@ -551,72 +592,35 @@ function FocusFlowContent() {
       const monday = new Date(now.getTime());
       monday.setDate(diff);
       monday.setHours(0,0,0,0);
-      return logs.filter(l => parseDate(l.date) >= monday).reduce((acc, curr) => acc + curr.hours, 0);
-  }, [logs]);
+      return projectLogs.filter(l => parseDate(l.date) >= monday).reduce((acc, curr) => acc + curr.hours, 0);
+  }, [projectLogs]);
 
   const currentMonthlyHours = useMemo(() => {
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      return logs.filter(l => parseDate(l.date) >= startOfMonth).reduce((acc, curr) => acc + curr.hours, 0);
-  }, [logs]);
+      return projectLogs.filter(l => parseDate(l.date) >= startOfMonth).reduce((acc, curr) => acc + curr.hours, 0);
+  }, [projectLogs]);
 
   const currentYearlyHours = useMemo(() => {
       const now = new Date();
       const startOfYear = new Date(now.getFullYear(), 0, 1);
-      return logs.filter(l => parseDate(l.date) >= startOfYear).reduce((acc, curr) => acc + curr.hours, 0);
-  }, [logs]);
+      return projectLogs.filter(l => parseDate(l.date) >= startOfYear).reduce((acc, curr) => acc + curr.hours, 0);
+  }, [projectLogs]);
 
-  const streaks = useMemo(() => {
-      const activeLogDates = logs.filter(l => l.hours > 0).map(l => l.date);
-      // Combine log dates and freeze dates
-      const combinedDates = Array.from(new Set<string>([...activeLogDates, ...freezeDates])).sort();
-      
-      if (combinedDates.length === 0) return { current: 0, longest: 0 };
-      const activeDates = combinedDates;
-      
-      // Use UTC for date calculations to avoid DST issues
-      const timestamps = activeDates.map((d: string) => {
-          const [y, m, day] = d.split('-').map(Number);
-          return Date.UTC(y, m - 1, day);
-      });
+  const projectStreaks = useMemo(() => calculateStreaks(projectLogs, freezeDates), [projectLogs, freezeDates]);
 
-      let longest = 1;
-      let currentRun = 1;
-      for (let i = 1; i < timestamps.length; i++) {
-          const diffDays = (timestamps[i] - timestamps[i-1]) / (1000 * 60 * 60 * 24);
-          if (Math.round(diffDays) === 1) currentRun++;
-          else currentRun = 1;
-          if (currentRun > longest) longest = currentRun;
-      }
-      
-      const now = new Date();
-      const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-      const yesterday = today - 86400000;
-      const lastLogDate = timestamps[timestamps.length - 1];
-      
-      let current = 0;
-      if (lastLogDate === today || lastLogDate === yesterday) {
-          current = 1;
-          for (let i = timestamps.length - 2; i >= 0; i--) {
-              const diffDays = (timestamps[i+1] - timestamps[i]) / (1000 * 60 * 60 * 24);
-              if (Math.round(diffDays) === 1) current++;
-              else break;
-          }
-      }
-      return { current, longest };
-  }, [logs, freezeDates]);
-
-  const currentGems = useMemo(() => calculateTotalGems(logs, totalHours, streaks.current, economyState.bonus, economyState.spent), [logs, totalHours, streaks.current, economyState]);
+  // Gamification uses GLOBAL stats
+  const currentGems = useMemo(() => calculateTotalGems(logs, globalTotalHours, globalStreaks.current, economyState.bonus, economyState.spent), [logs, globalTotalHours, globalStreaks.current, economyState]);
 
   const latestBadge = useMemo<Achievement | null>(() => {
-      const all = getUnlockedAchievements(logs, totalHours, streaks.current);
+      const all = getUnlockedAchievements(logs, globalTotalHours, globalStreaks.current);
       const unlocked = all.filter(a => a.isUnlocked);
       return unlocked.length > 0 ? unlocked[unlocked.length - 1] : null;
-  }, [logs, totalHours, streaks.current]);
+  }, [logs, globalTotalHours, globalStreaks.current]);
 
   // Badge Notification Effect
   useEffect(() => {
-      const all = getUnlockedAchievements(logs, totalHours, streaks.current);
+      const all = getUnlockedAchievements(logs, globalTotalHours, globalStreaks.current);
       const unlocked = all.filter(a => a.isUnlocked);
       const count = unlocked.length;
 
@@ -642,7 +646,7 @@ function FocusFlowContent() {
           }
       }
       prevBadgeCount.current = count;
-  }, [logs, totalHours, streaks.current]);
+  }, [logs, globalTotalHours, globalStreaks.current]);
 
   // Streak Freeze Logic: Check on mount/update if we missed yesterday and need to consume a freeze
   useEffect(() => {
@@ -709,8 +713,8 @@ function FocusFlowContent() {
               const remaining = Math.max(0, dailyGoal - todayHours);
               text = `${remaining.toFixed(1)}h Left`; 
               break;
-          case 'streak': text = `🔥 ${streaks.current} Day Streak`; break;
-          case 'xp': text = `✨ ${Math.floor(totalHours * 100)} XP`; break;
+          case 'streak': text = `🔥 ${globalStreaks.current} Day Streak`; break;
+          case 'xp': text = `✨ ${Math.floor(globalTotalHours * 100)} XP`; break;
           case 'motivation': text = "💪 Focus & Win"; break;
           case 'countdown_closest':
               const now = new Date();
@@ -753,7 +757,7 @@ function FocusFlowContent() {
       }
       
       if (text) window.electronAPI?.updateTrayTitle(text);
-  }, [menuBarConfig, logs, goals, streaks, totalHours, countdowns]);
+  }, [menuBarConfig, logs, goals, globalStreaks, globalTotalHours, countdowns]);
 
   const contentBgClass = appTheme === 'cyberpunk' 
     ? 'bg-[#050505] text-[#00f0ff] font-mono' 
@@ -781,7 +785,7 @@ function FocusFlowContent() {
             sidebarConfig={sidebarConfig}
             appTheme={appTheme}
             latestBadge={latestBadge}
-            logs={logs}
+            logs={projectLogs} // Pass project logs to sidebar for project-specific quests
         />
         
         <div className={`flex-1 relative overflow-hidden flex flex-col transition-colors duration-300 ${contentBgClass}`}>
@@ -810,7 +814,7 @@ function FocusFlowContent() {
                     activeProjectName={activeProjectName} 
                     currentYear={currentYear} 
                     activeProject={activeProject} 
-                    streaks={streaks} 
+                    streaks={projectStreaks} 
                 />
 
                 <div ref={formRef} className="w-full bg-white dark:bg-[#1c1c1e] rounded-2xl p-6 border border-gray-200 dark:border-gray-700/50 shadow-lg mb-4 relative overflow-hidden group transition-colors">
@@ -961,8 +965,8 @@ function FocusFlowContent() {
             {currentView === ViewMode.GAMIFICATION && (
               <GamificationPanel 
                   allLogs={logs}
-                  totalHours={totalHours}
-                  streak={streaks.current}
+                  totalHours={globalTotalHours}
+                  streak={globalStreaks.current}
                   isDataLoaded={isDataLoaded}
               />
             )}
