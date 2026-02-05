@@ -457,7 +457,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                                     <XAxis type="number" dataKey="hour" name="Hour" unit=":00" domain={[0, 23]} tickCount={12} tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
                                     <YAxis type="number" dataKey="day" name="Day" domain={[0, 6]} ticks={[0,1,2,3,4,5,6]} tickFormatter={(val) => weekDayLabels[val]} tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
                                     <ZAxis type="number" dataKey="value" range={[50, 400]} name="Sessions" />
-                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{borderRadius: '8px', border: 'none', backgroundColor: 'rgba(0,0,0,0.8)', color: '#fff'}} />
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: 'rgba(255, 255, 255, 0.95)'}} />
                                     <Scatter name="Sessions" data={scatterData} fill="#8884d8" shape="circle">
                                         {scatterData.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={entry.value > 2 ? '#3b82f6' : '#93c5fd'} />

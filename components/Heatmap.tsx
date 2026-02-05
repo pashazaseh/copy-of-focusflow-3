@@ -289,6 +289,92 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
       return monthNodes;
   }, [year, config, isHorizontal, showWeekends, numDaysPerRow, graphWidth]);
 
+  // Memoize the chart content to prevent re-rendering the entire SVG when tooltip state changes
+  const chartContent = useMemo(() => (
+      <svg 
+          viewBox={`0 0 ${graphWidth} ${graphHeight}`} 
+          className="w-full h-auto"
+          style={isHorizontal ? { minWidth: graphWidth, height: graphHeight } : { maxHeight: 'none' }} 
+      >
+          {labels.map((l, i) => (
+              <text
+                  key={`label-${i}`}
+                  x={l.x}
+                  y={l.y}
+                  className={`text-[10px] ${l.isDay ? 'fill-gray-400' : 'fill-gray-500 font-bold'}`}
+                  textAnchor={l.anchor as any}
+                  dominantBaseline="middle"
+              >
+                  {l.label}
+              </text>
+          ))}
+
+          {cells.map((cell) => {
+              const cellProps = {
+                  key: cell.dateStr,
+                  className: "cursor-pointer transition-opacity duration-200 hover:opacity-80",
+                  onClick: () => onDayClick(cell.dateStr),
+                  onMouseEnter: (e: React.MouseEvent) => {
+                      if (containerRef.current) {
+                          const containerRect = containerRef.current.getBoundingClientRect();
+                          const cellRect = e.currentTarget.getBoundingClientRect();
+                          
+                          setTooltip({
+                              x: cellRect.left - containerRect.left + cellRect.width / 2,
+                              y: cellRect.top - containerRect.top - 10,
+                              content: (
+                                  <div className="text-center">
+                                      <div className="font-semibold text-gray-200">{cell.dateStr}</div>
+                                      <div className="text-gray-300">{cell.value > 0 ? `${cell.value} hours` : 'No study logged'}</div>
+                                      {cell.notes && (
+                                          <div className="text-[10px] text-gray-400 mt-1 max-w-[150px] italic border-t border-gray-600 pt-1">
+                                              "{cell.notes}"
+                                          </div>
+                                      )}
+                                      <div className="text-[9px] text-gray-500 mt-1">Click to edit</div>
+                                  </div>
+                              )
+                          });
+                      }
+                  },
+                  onMouseLeave: () => setTooltip(null)
+              };
+
+              if (layout === 'frequency') {
+                  return (
+                      <g key={cell.dateStr}>
+                          <circle
+                              cx={cell.x + cell.width / 2}
+                              cy={cell.y + cell.height / 2}
+                              r={config.height / 4} 
+                              className="fill-gray-200 dark:fill-gray-700/50 pointer-events-none"
+                          />
+                          <circle
+                              cx={cell.x + cell.width / 2}
+                              cy={cell.y + cell.height / 2}
+                              r={cell.radius}
+                              fill={cell.color}
+                              {...cellProps}
+                          />
+                      </g>
+                  );
+              } else {
+                  return (
+                      <rect
+                          x={cell.x}
+                          y={cell.y}
+                          width={cell.width}
+                          height={cell.height}
+                          rx={config.radius}
+                          fill={cell.color}
+                          {...cellProps}
+                      />
+                  );
+              }
+          })}
+      </svg>
+  ), [graphWidth, graphHeight, isHorizontal, labels, cells, config, layout, onDayClick]);
+
   return (
     <div className="w-full flex flex-col bg-gray-50 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-1 shadow-sm relative group">
         
@@ -399,88 +485,7 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
             </div>
 
             <div className={`w-full flex ${isHorizontal ? 'overflow-x-auto pb-2' : 'justify-center'} min-h-[200px] custom-scrollbar`}>
-                <svg 
-                    viewBox={`0 0 ${graphWidth} ${graphHeight}`} 
-                    className="w-full h-auto"
-                    style={isHorizontal ? { minWidth: graphWidth, height: graphHeight } : { maxHeight: 'none' }} 
-                >
-                    {labels.map((l, i) => (
-                        <text
-                            key={`label-${i}`}
-                            x={l.x}
-                            y={l.y}
-                            className={`text-[10px] ${l.isDay ? 'fill-gray-400' : 'fill-gray-500 font-bold'}`}
-                            textAnchor={l.anchor as any}
-                            dominantBaseline="middle"
-                        >
-                            {l.label}
-                        </text>
-                    ))}
-
-                    {cells.map((cell) => {
-                        const cellProps = {
-                            key: cell.dateStr,
-                            className: "cursor-pointer transition-all duration-200 hover:opacity-80",
-                            onClick: () => onDayClick(cell.dateStr),
-                            onMouseEnter: (e: React.MouseEvent) => {
-                                if (containerRef.current) {
-                                    const containerRect = containerRef.current.getBoundingClientRect();
-                                    const cellRect = e.currentTarget.getBoundingClientRect();
-                                    
-                                    setTooltip({
-                                        x: cellRect.left - containerRect.left + cellRect.width / 2,
-                                        y: cellRect.top - containerRect.top - 10,
-                                        content: (
-                                            <div className="text-center">
-                                                <div className="font-semibold text-gray-200">{cell.dateStr}</div>
-                                                <div className="text-gray-300">{cell.value > 0 ? `${cell.value} hours` : 'No study logged'}</div>
-                                                {cell.notes && (
-                                                    <div className="text-[10px] text-gray-400 mt-1 max-w-[150px] italic border-t border-gray-600 pt-1">
-                                                        "{cell.notes}"
-                                                    </div>
-                                                )}
-                                                <div className="text-[9px] text-gray-500 mt-1">Click to edit</div>
-                                            </div>
-                                        )
-                                    });
-                                }
-                            },
-                            onMouseLeave: () => setTooltip(null)
-                        };
-
-                        if (layout === 'frequency') {
-                            return (
-                                <g key={cell.dateStr}>
-                                    <circle
-                                        cx={cell.x + cell.width / 2}
-                                        cy={cell.y + cell.height / 2}
-                                        r={config.height / 4} 
-                                        className="fill-gray-200 dark:fill-gray-700/50 pointer-events-none"
-                                    />
-                                    <circle
-                                        cx={cell.x + cell.width / 2}
-                                        cy={cell.y + cell.height / 2}
-                                        r={cell.radius}
-                                        fill={cell.color}
-                                        {...cellProps}
-                                    />
-                                </g>
-                            );
-                        } else {
-                            return (
-                                <rect
-                                    x={cell.x}
-                                    y={cell.y}
-                                    width={cell.width}
-                                    height={cell.height}
-                                    rx={config.radius}
-                                    fill={cell.color}
-                                    {...cellProps}
-                                />
-                            );
-                        }
-                    })}
-                </svg>
+                {chartContent}
             </div>
 
             {tooltip && (

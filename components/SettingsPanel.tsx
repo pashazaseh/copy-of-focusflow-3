@@ -73,6 +73,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         if (typeof window !== 'undefined') return localStorage.getItem('google_client_id') || '';
         return '';
     });
+    // Gemini Integration State
+    const [geminiApiKey, setGeminiApiKey] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('gemini_api_key') || '';
+        return '';
+    });
     const [isImportingBirthdays, setIsImportingBirthdays] = useState(false);
     const [tokenClient, setTokenClient] = useState<any>(null);
 
@@ -356,6 +361,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         localStorage.setItem('google_client_id', googleClientId);
         initTokenClient(googleClientId);
         alert("Client ID Saved.");
+    };
+
+    const handleSaveGeminiKey = () => {
+        localStorage.setItem('gemini_api_key', geminiApiKey);
+        alert("Gemini API Key Saved.");
     };
 
     const handleImportBirthdaysClick = () => {
@@ -989,20 +999,35 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
                                     <div className="w-full h-px bg-gray-100 dark:bg-gray-700"></div>
 
-                                    {/* Gemini Status */}
-                                    <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
-                                        <div className="flex items-center space-x-3">
-                                            <div className="p-1.5 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-                                                <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                            </div>
-                                            <div>
-                                                <p className="font-semibold text-gray-900 dark:text-white text-sm">Gemini AI Service</p>
-                                                <p className="text-xs text-gray-500 dark:text-gray-400">AI Coach & Habit Analysis</p>
-                                            </div>
+                                    {/* Gemini API Key */}
+                                    <div>
+                                        <div className="flex justify-between items-center mb-2">
+                                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Gemini API Key</label>
+                                            <span className="text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded-full font-medium">AI Coach</span>
                                         </div>
-                                        <div className="flex items-center space-x-2">
-                                            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-                                            <span className="text-xs font-bold text-green-600 dark:text-green-400 uppercase tracking-wide">Active</span>
+                                        <div className="flex gap-2">
+                                            <input 
+                                                type="password" 
+                                                value={geminiApiKey}
+                                                onChange={(e) => setGeminiApiKey(e.target.value)}
+                                                placeholder="Enter Gemini API Key"
+                                                className="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-900 dark:text-white transition-all font-mono"
+                                            />
+                                            <button 
+                                                onClick={handleSaveGeminiKey}
+                                                className="px-5 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-white dark:text-gray-900 dark:border-transparent dark:hover:bg-gray-200 text-gray-900 text-sm font-bold rounded-xl transition-colors"
+                                            >
+                                                Save
+                                            </button>
+                                        </div>
+                                        <div className="flex justify-between items-center mt-2">
+                                            <p className="text-xs text-gray-400">Required for AI insights and analysis.</p>
+                                            <div className="flex items-center space-x-2">
+                                                <div className={`h-2 w-2 rounded-full ${geminiApiKey ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                                                <span className={`text-xs font-bold uppercase tracking-wide ${geminiApiKey ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                    {geminiApiKey ? 'Active' : 'Inactive'}
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

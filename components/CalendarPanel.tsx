@@ -351,6 +351,17 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
         });
     }, [logs, calendars, currentDate, customEvents, googleEvents, searchQuery, selectedProjectFilter]);
 
+    // Pre-group events by date for O(1) lookup during render
+    const eventsByDate = useMemo(() => {
+        const map = new Map<string, CalendarEventDisplay[]>();
+        events.forEach(evt => {
+            const dateStr = evt.date.toDateString();
+            if (!map.has(dateStr)) map.set(dateStr, []);
+            map.get(dateStr)!.push(evt);
+        });
+        return map;
+    }, [events]);
+
     // --- Handlers ---
     const handleDayClick = (dateStr: string) => {
         resetForm();
@@ -447,7 +458,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
     const renderEventsForDay = (day: number) => {
         const d = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
         const dayStr = d.toDateString();
-        const dayEvents = events.filter(e => e.date.toDateString() === dayStr);
+        const dayEvents = eventsByDate.get(dayStr) || [];
 
         return dayEvents.slice(0, 4).map((evt, idx) => (
              <button 
@@ -553,7 +564,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                          return (
                              <div 
                                 key={index} 
-                                className={`group bg-white dark:bg-[#1c1c1e] min-h-[120px] p-2 hover:bg-blue-50/30 dark:hover:bg-[#252527] transition-all duration-200 cursor-pointer border border-transparent hover:border-blue-200 dark:hover:border-blue-900/30 ${isToday ? 'bg-blue-50/20 dark:bg-blue-900/5' : ''}`}
+                                className={`group bg-white dark:bg-[#1c1c1e] min-h-[120px] p-2 hover:bg-blue-50/30 dark:hover:bg-[#252527] transition-colors duration-200 cursor-pointer border border-transparent hover:border-blue-200 dark:hover:border-blue-900/30 ${isToday ? 'bg-blue-50/20 dark:bg-blue-900/5' : ''}`}
                                 onClick={() => handleDayClick(dateStr)}
                              >
                                  <div className="flex justify-between items-start mb-2">

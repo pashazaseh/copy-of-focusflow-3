@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Project, StudyLog, UserGoals, ViewMode, SettingsTab, StoredNavConfig, SidebarConfig, MenuBarConfig, HeatmapTheme } from './types';
+import { Project, StudyLog, UserGoals, ViewMode, SettingsTab, SidebarConfig, MenuBarConfig, HeatmapTheme } from './types';
 import { NAV_ITEMS_DEF } from './components/Sidebar';
 import * as storage from './services/storageService';
 
@@ -45,6 +45,11 @@ export const useLogs = () => {
     if (!context) throw new Error('useLogs must be used within AppProvider');
     return context;
 };
+
+export interface StoredNavConfig {
+    view: ViewMode;
+    isVisible: boolean;
+}
 
 // --- UI Context ---
 interface UIContextType {
@@ -147,9 +152,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // --- Project State ---
     const [projects, setProjects] = useState<Project[]>(() => storage.getProjects());
     const [currentProjectId, setCurrentProjectId] = useState<string>(() => {
-        const p = storage.getProjects();
-        const active = p.find(proj => !proj.isArchived);
-        return active ? active.id : p[0]?.id || 'default';
+        // Use the projects we just loaded if possible, or read efficiently
+        const allProjects = storage.getProjects();
+        const active = allProjects.find(proj => !proj.isArchived);
+        return active ? active.id : allProjects[0]?.id || 'default';
     });
 
     const createProject = useCallback((name: string, theme: HeatmapTheme) => {
