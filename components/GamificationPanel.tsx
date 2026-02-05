@@ -12,6 +12,35 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
   const achievements = useMemo(() => getUnlockedAchievements(allLogs, totalHours, streak), [allLogs, totalHours, streak]);
   const unlockedCount = achievements.filter(a => a.isUnlocked).length;
 
+  // --- Slot Machine State ---
+  const [lastSpinStreak, setLastSpinStreak] = useState(() => {
+      if (typeof window === 'undefined') return 0;
+      return parseInt(localStorage.getItem('focusflow_last_spin_streak') || '0');
+  });
+  const [isSlotMachineOpen, setIsSlotMachineOpen] = useState(false);
+  const [slotRolling, setSlotRolling] = useState(false);
+  const [slotItems, setSlotItems] = useState(['🍒', '7️⃣', '💎']);
+  const [reelStatuses, setReelStatuses] = useState([true, true, true]); // true = stopped
+  const [slotMessage, setSlotMessage] = useState('');
+
+  // Audio Refs
+  const spinAudioRef = useRef<HTMLAudioElement | null>(null);
+  const winAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+      try {
+          spinAudioRef.current = new Audio('./assets/spin.mp3');
+          winAudioRef.current = new Audio('./assets/win.mp3');
+          
+          const savedVol = localStorage.getItem('focusflow_timer_volume');
+          const vol = savedVol ? parseFloat(savedVol) : 0.5;
+          if (spinAudioRef.current) spinAudioRef.current.volume = vol;
+          if (winAudioRef.current) winAudioRef.current.volume = vol;
+      } catch (e) {
+          console.warn("Audio initialization failed:", e);
+      }
+  }, []);
+
   // --- Inventory & Economy State ---
   const [spentGems, setSpentGems] = useState(() => {
       if (typeof window === 'undefined') return 0;
@@ -34,6 +63,14 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
 
   // --- Filters ---
   const [badgeFilter, setBadgeFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
+
+  // Reset spin eligibility if streak breaks
+  useEffect(() => {
+      if (streak < lastSpinStreak) {
+          setLastSpinStreak(0);
+          localStorage.setItem('focusflow_last_spin_streak', '0');
+      }
+  }, [streak, lastSpinStreak]);
 
   // Optimization: Track last known inventory string to avoid unnecessary parsing
   const lastInventoryStr = useRef(typeof window !== 'undefined' ? localStorage.getItem('focusflow_inventory') || '{}' : '{}');
@@ -235,6 +272,86 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
       }
   };
 
+  const canSpin = streak > 0 && streak % 7 === 0 && lastSpinStreak < streak;
+  const daysToNextSpin = 7 - (streak % 7);
+
+  const handleSlotSpin = () => {
+      if (slotRolling) return;
+      setSlotRolling(true);
+      setSlotMessage('');
+      setReelStatuses([false, false, false]);
+      
+      if (spinAudioRef.current) {
+          spinAudioRef.current.currentTime = 0;
+          spinAudioRef.current.loop = true;
+          spinAudioRef.current.play().catch(() => {});
+      }
+      
+      let ticks = 0;
+      const symbols = ['🍒', '🍋', '🍇', '💎', '7️⃣', '🔔'];
+      
+      const interval = setInterval(() => {
+          ticks++;
+          setSlotItems(prev => {
+              const next = [...prev];
+              // Spin Reel 1 until tick 20
+              if (ticks < 20) next[0] = symbols[Math.floor(Math.random() * symbols.length)];
+              else if (ticks === 20) { next[0] = '💎'; setReelStatuses(s => [true, false, false]); }
+              
+              // Spin Reel 2 until tick 35
+              if (ticks < 35) next[1] = symbols[Math.floor(Math.random() * symbols.length)];
+              else if (ticks === 35) { next[1] = '💎'; setReelStatuses(s => [true, true, false]); }
+              
+              // Spin Reel 3 until tick 50
+              if (ticks < 50) next[2] = symbols[Math.floor(Math.random() * symbols.length)];
+              else if (ticks === 50) { next[2] = '💎'; setReelStatuses(s => [true, true, true]); }
+              
+              return next;
+          });
+          if (ticks >= 50) {
+              clearInterval(interval);
+              finalizeSpin();
+          }
+      }, 60);
+  };
+
+  const finalizeSpin = () => {
+      if (spinAudioRef.current) {
+          spinAudioRef.current.pause();
+          spinAudioRef.current.currentTime = 0;
+      }
+      if (winAudioRef.current) {
+          winAudioRef.current.currentTime = 0;
+          winAudioRef.current.play().catch(() => {});
+      }
+
+      // Random gems between 50 and 1000
+      const amount = Math.floor(Math.random() * 951) + 50;
+
+      // Count up animation
+      let current = 0;
+      const step = Math.max(1, Math.floor(amount / 20));
+      const counterInterval = setInterval(() => {
+          current += step;
+          if (current >= amount) {
+              current = amount;
+              clearInterval(counterInterval);
+              setBonusGems(prev => {
+                  const newVal = prev + amount;
+                  localStorage.setItem('focusflow_bonus_gems', newVal.toString());
+                  return newVal;
+              });
+              setSlotMessage(`You won: ${amount} Gems!`);
+              setSlotRolling(false);
+          } else {
+              setSlotMessage(`WIN: ${current} Gems`);
+          }
+      }, 30);
+      
+      setLastSpinStreak(streak);
+      localStorage.setItem('focusflow_last_spin_streak', streak.toString());
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0f172a] text-white transition-colors duration-300 relative">
       {/* Background effects */}
@@ -272,6 +389,35 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
             </div>
 
             <div className="flex flex-col gap-10">
+                
+                {/* Slot Machine Banner */}
+                <div className="relative overflow-hidden rounded-3xl p-1 bg-gradient-to-r from-yellow-500 via-red-500 to-pink-500 shadow-2xl">
+                    <div className="bg-[#0f172a] rounded-[20px] p-6 flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+                        <div className="flex items-center gap-4">
+                            <div className="text-5xl">🎰</div>
+                            <div>
+                                <h3 className="text-2xl font-black text-white">Weekly Jackpot</h3>
+                                <p className="text-slate-400 text-sm">Spin every 7 days of streak for Gems!</p>
+                            </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-4">
+                            {canSpin ? (
+                                <button 
+                                    onClick={() => setIsSlotMachineOpen(true)}
+                                    className="px-8 py-3 bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-300 hover:to-orange-400 text-black font-black text-lg rounded-xl shadow-lg shadow-orange-500/20 transform hover:scale-105 transition-all animate-pulse"
+                                >
+                                    SPIN NOW
+                                </button>
+                            ) : (
+                                <div className="px-6 py-3 bg-slate-800 rounded-xl border border-slate-700 text-center">
+                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Next Spin In</p>
+                                    <p className="text-xl font-bold text-white">{daysToNextSpin} Days</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
                 
                 {/* Daily Missions */}
                 <div className="w-full">
@@ -481,6 +627,60 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
             </div>
         </div>
       </div>
+
+      {/* Slot Machine Modal */}
+      {isSlotMachineOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+              <div className="bg-[#1c1c1e] w-full max-w-md rounded-3xl border-4 border-yellow-500 shadow-[0_0_50px_rgba(234,179,8,0.3)] p-8 relative overflow-hidden flex flex-col items-center">
+                  <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-yellow-500/20 to-transparent pointer-events-none"></div>
+                  
+                  <h3 className="text-3xl font-black text-yellow-400 mb-8 drop-shadow-sm">JACKPOT SLOTS</h3>
+                  
+                  <div className="flex gap-4 mb-8 p-6 bg-black/50 rounded-2xl border border-white/10 shadow-inner">
+                      {slotItems.map((item, i) => (
+                          <div key={i} className={`w-20 h-24 bg-white text-6xl flex items-center justify-center rounded-xl shadow-[inset_0_2px_10px_rgba(0,0,0,0.2)] border-b-4 border-slate-300 overflow-hidden relative transition-transform duration-200 ${reelStatuses[i] ? 'scale-100' : 'scale-95'}`}>
+                              <div className={`transition-all duration-100 ${!reelStatuses[i] ? 'blur-[2px] -translate-y-1' : ''}`}>
+                                  {item}
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+
+                  {slotMessage ? (
+                      <div className="text-center mb-8 animate-bounce">
+                          <p className="text-2xl font-bold text-white">{slotMessage}</p>
+                          <p className="text-sm text-yellow-400 mt-1">Prize added to inventory!</p>
+                      </div>
+                  ) : (
+                      <p className="text-slate-400 mb-8 text-sm">Good Luck!</p>
+                  )}
+
+                  <div className="flex gap-4 w-full">
+                      {!slotMessage && (
+                          <button 
+                              onClick={handleSlotSpin}
+                              disabled={slotRolling}
+                              className="flex-1 py-4 bg-gradient-to-b from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 text-white font-black text-xl rounded-2xl shadow-xl border-b-4 border-red-900 active:border-b-0 active:translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                              {slotRolling ? 'ROLLING...' : 'PULL LEVER'}
+                          </button>
+                      )}
+                      {slotMessage && (
+                          <button 
+                              onClick={() => setIsSlotMachineOpen(false)}
+                              className="flex-1 py-4 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-2xl transition-colors"
+                          >
+                              Collect & Close
+                          </button>
+                      )}
+                  </div>
+                  
+                  <button onClick={() => setIsSlotMachineOpen(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+              </div>
+          </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CountdownItem, CountdownType, CountdownGroup, Project } from '../types';
 import * as storage from '../services/storageService';
+import { useCountdowns, useProjects } from '../AppContext';
 
 const ICONS: Record<CountdownType, React.ReactNode> = {
     countdown: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
@@ -21,9 +22,9 @@ const COLORS: Record<string, string> = {
 type ViewStatus = 'active' | 'archived';
 
 export const CountdownPanel: React.FC = () => {
-    const [countdowns, setCountdowns] = useState<CountdownItem[]>([]);
+    const { countdowns, saveCountdown, deleteCountdown } = useCountdowns();
+    const { projects } = useProjects();
     const [groups, setGroups] = useState<CountdownGroup[]>([]);
-    const [projects, setProjects] = useState<Project[]>([]);
     
     // UI State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -61,9 +62,7 @@ export const CountdownPanel: React.FC = () => {
     const importMenuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        storage.getCountdowns().then(setCountdowns);
         storage.getCountdownGroups().then(setGroups);
-        storage.getProjects().then(setProjects);
         
         const storedClientId = localStorage.getItem('google_client_id');
         if (storedClientId) setGoogleClientId(storedClientId);
@@ -136,15 +135,13 @@ export const CountdownPanel: React.FC = () => {
             projectId: selectedProjectId
         };
         
-        const newItems = await storage.saveCountdown(item);
-        setCountdowns(newItems);
+        await saveCountdown(item);
         closeModal();
     };
 
     const handleDelete = async (id: string) => {
         if (confirm('Permanently delete this countdown?')) {
-            const newItems = await storage.deleteCountdown(id);
-            setCountdowns(newItems);
+            await deleteCountdown(id);
         }
     };
 
@@ -152,8 +149,7 @@ export const CountdownPanel: React.FC = () => {
         const item = countdowns.find(c => c.id === id);
         if (item) {
             const updatedItem = { ...item, isArchived: archive };
-            const newItems = await storage.saveCountdown(updatedItem);
-            setCountdowns(newItems);
+            await saveCountdown(updatedItem);
         }
     };
 
@@ -174,7 +170,6 @@ export const CountdownPanel: React.FC = () => {
                 const result = await storage.importCountdownsFromCSV(content);
                 if (result.success) {
                     alert(result.message);
-                    setCountdowns(await storage.getCountdowns());
                 } else {
                     alert(`Import Failed: ${result.message}`);
                 }
@@ -241,10 +236,9 @@ export const CountdownPanel: React.FC = () => {
                             groupId: 'general'
                         };
                         count++;
-                        await storage.saveCountdown(item as any);
+                        await saveCountdown(item as any);
                     }
                 }
-                setCountdowns(await storage.getCountdowns());
                 alert(`Imported ${count} events.`);
             }
         } catch (e) {
@@ -273,9 +267,8 @@ export const CountdownPanel: React.FC = () => {
         if (confirm('Delete this group? Items will be moved to General.')) {
             const affectedItems = countdowns.filter(c => c.groupId === id);
             for (const item of affectedItems) {
-                await storage.saveCountdown({ ...item, groupId: 'general' });
+                await saveCountdown({ ...item, groupId: 'general' });
             }
-            setCountdowns(await storage.getCountdowns());
             
             const updated = await storage.deleteCountdownGroup(id);
             setGroups(updated);

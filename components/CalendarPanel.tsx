@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StudyLog, CustomEvent, GoogleEvent, Project, CountdownItem } from '../types';
 import * as storage from '../services/storageService';
+import { useCountdowns } from '../AppContext';
 
 declare const google: any;
 
@@ -37,6 +38,7 @@ const EVENT_COLORS = [
 
 export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
+    const { countdowns } = useCountdowns();
     const currentDateRef = useRef(currentDate);
 
     useEffect(() => {
@@ -59,7 +61,6 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
     const [tokenClient, setTokenClient] = useState<any>(null);
 
     const [customEvents, setCustomEvents] = useState<CustomEvent[]>([]);
-    const [countdowns, setCountdowns] = useState<CountdownItem[]>([]);
     
     // Calendar Visibility States
     const [calendars, setCalendars] = useState({
@@ -91,7 +92,6 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
 
     useEffect(() => {
         storage.getCustomEvents().then(setCustomEvents);
-        storage.getCountdowns().then(setCountdowns);
         
         if (typeof google === 'undefined') {
             const script = document.createElement('script');

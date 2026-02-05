@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Project, StudyLog, UserGoals, ViewMode, SettingsTab, SidebarConfig, MenuBarConfig, HeatmapTheme, AppTheme } from './types';
+import { Project, StudyLog, UserGoals, ViewMode, SettingsTab, SidebarConfig, MenuBarConfig, HeatmapTheme, AppTheme, CountdownItem } from './types';
 import { NAV_ITEMS_DEF } from './components/Sidebar';
 import * as storage from './services/storageService';
 
@@ -82,6 +82,20 @@ const TimerContext = createContext<TimerContextType | null>(null);
 export const useTimerContext = () => {
     const context = useContext(TimerContext);
     if (!context) throw new Error('useTimerContext must be used within AppProvider');
+    return context;
+};
+
+// --- Countdown Context ---
+interface CountdownContextType {
+    countdowns: CountdownItem[];
+    saveCountdown: (item: CountdownItem) => Promise<void>;
+    deleteCountdown: (id: string) => Promise<void>;
+    importCountdowns: (items: CountdownItem[]) => Promise<void>;
+}
+const CountdownContext = createContext<CountdownContextType | null>(null);
+export const useCountdowns = () => {
+    const context = useContext(CountdownContext);
+    if (!context) throw new Error('useCountdowns must be used within AppProvider');
     return context;
 };
 
@@ -244,6 +258,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // --- Timer State ---
     const [pendingQuickTimer, setPendingQuickTimer] = useState<{ duration: number; timestamp: number } | null>(null);
 
+    // --- Countdown State ---
+    const [countdowns, setCountdowns] = useState<CountdownItem[]>([]);
+
+    const saveCountdown = useCallback(async (item: CountdownItem) => {
+        const updated = await storage.saveCountdown(item);
+        setCountdowns(updated);
+    }, []);
+
+    const deleteCountdown = useCallback(async (id: string) => {
+        const updated = await storage.deleteCountdown(id);
+        setCountdowns(updated);
+    }, []);
+
+    const importCountdowns = useCallback(async (items: CountdownItem[]) => {
+        for (const item of items) await storage.saveCountdown(item);
+        setCountdowns(await storage.getCountdowns());
+    }, []);
+
     // --- Global Init Effect ---
     useEffect(() => {
         const init = async () => {
@@ -257,12 +289,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
 
             // Load all data async
-            const [p, l, g, sb, mb] = await Promise.all([
+            const [p, l, g, sb, mb, c] = await Promise.all([
                 storage.getProjects(),
                 storage.getLogs(),
                 storage.getGoals(),
                 storage.getSidebarConfig(),
-                storage.getMenuBarConfig()
+                storage.getMenuBarConfig(),
+                storage.getCountdowns()
             ]);
 
             setProjects(p);
@@ -270,6 +303,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setGoals(g);
             setSidebarConfigState(sb);
             setMenuBarConfigState(mb);
+            setCountdowns(c);
 
             // Set initial project if needed
             if (p.length > 0 && currentProjectId === 'default-project') {
@@ -356,6 +390,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const logValue = useMemo(() => ({ logs, goals, saveLog, deleteLog, updateGoals }), [logs, goals, saveLog, deleteLog, updateGoals]);
     const uiValue = useMemo(() => ({ currentView, setCurrentView, settingsTab, setSettingsTab, navConfig, setNavConfig, sidebarConfig, setSidebarConfig, menuBarConfig, setMenuBarConfig }), [currentView, settingsTab, navConfig, sidebarConfig, menuBarConfig, setNavConfig, setSidebarConfig, setMenuBarConfig]);
     const timerValue = useMemo(() => ({ pendingQuickTimer, setPendingQuickTimer }), [pendingQuickTimer]);
+    const countdownValue = useMemo(() => ({ countdowns, saveCountdown, deleteCountdown, importCountdowns }), [countdowns, saveCountdown, deleteCountdown, importCountdowns]);
 
     return (
         <ThemeContext.Provider value={themeValue}>
@@ -363,7 +398,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 <LogContext.Provider value={logValue}>
                     <UIContext.Provider value={uiValue}>
                         <TimerContext.Provider value={timerValue}>
-                            {children}
+                            <CountdownContext.Provider value={countdownValue}>
+                                {children}
+                            </CountdownContext.Provider>
                         </TimerContext.Provider>
                     </UIContext.Provider>
                 </LogContext.Provider>

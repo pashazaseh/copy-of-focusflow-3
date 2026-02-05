@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, useRef, lazy, Suspense, useCallbac
 import { MacWindow } from './components/MacWindow';
 import { Sidebar } from './components/Sidebar';
 import { QuickTimerOverlay } from './components/QuickTimerOverlay';
-import { ViewMode, HeatmapTheme, UserGoals } from './types';
-import { AppProvider, useTheme, useProjects, useLogs, useUI, useTimerContext } from './AppContext';
+import { ViewMode, HeatmapTheme, UserGoals, CountdownItem } from './types';
+import { AppProvider, useTheme, useProjects, useLogs, useUI, useTimerContext, useCountdowns } from './AppContext';
 import { TimerPanel } from './components/TimerPanel';
 
 // Lazy load heavy components
@@ -73,6 +73,7 @@ function FocusFlowContent() {
   const { logs, goals, saveLog, deleteLog, updateGoals } = useLogs();
   const { currentView, setCurrentView, settingsTab, setSettingsTab, navConfig, setNavConfig, sidebarConfig, setSidebarConfig, menuBarConfig, setMenuBarConfig } = useUI();
   const { pendingQuickTimer, setPendingQuickTimer } = useTimerContext();
+  const { countdowns } = useCountdowns();
 
   // --- Quick Timer Overlay Mode Check ---
   const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
@@ -371,19 +372,57 @@ function FocusFlowContent() {
       const todayHours = logs.filter(l => l.date === todayStr).reduce((acc, curr) => acc + curr.hours, 0);
 
       switch (menuBarConfig.mode) {
-          case 'today': text = `${todayHours.toFixed(1)}h`; break;
-          case 'remaining': text = `${Math.max(0, (goals.weekly / 7) - todayHours).toFixed(1)}h Left`; break;
-          case 'streak': text = `🔥 ${streaks.current}`; break;
-          case 'xp': text = `XP ${(totalHours * 100).toFixed(0)}`; break;
-          case 'motivation': text = "Focus ⚡️"; break;
+          case 'today': text = `Today: ${todayHours.toFixed(1)}h`; break;
+          case 'remaining': 
+              const dailyGoal = goals.daily || 4;
+              const remaining = Math.max(0, dailyGoal - todayHours);
+              text = `${remaining.toFixed(1)}h Left`; 
+              break;
+          case 'streak': text = `🔥 ${streaks.current} Day Streak`; break;
+          case 'xp': text = `✨ ${Math.floor(totalHours * 100)} XP`; break;
+          case 'motivation': text = "💪 Focus & Win"; break;
           case 'countdown_closest':
+              const now = new Date();
+              now.setHours(0,0,0,0);
+              const sorted = countdowns
+                  .filter(c => !c.isArchived)
+                  .map(c => {
+                      const nextDate = getNextDate(c);
+                      const diff = nextDate.getTime() - now.getTime();
+                      return { ...c, diff, nextDate };
+                  })
+                  .filter(c => c.diff >= 0)
+                  .sort((a, b) => a.diff - b.diff);
+              
+              if (sorted.length > 0) {
+                  const closest = sorted[0];
+                  const days = Math.ceil(closest.diff / (1000 * 60 * 60 * 24));
+                  text = `${closest.title}: ${days}d`;
+              } else {
+                  text = 'No Events';
+              }
+              break;
           case 'countdown_custom':
-              text = "Countdown"; 
+              if (menuBarConfig.customCountdownId) {
+                  const item = countdowns.find(c => c.id === menuBarConfig.customCountdownId);
+                  if (item) {
+                      const now = new Date();
+                      now.setHours(0,0,0,0);
+                      const nextDate = getNextDate(item);
+                      const diff = nextDate.getTime() - now.getTime();
+                      const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+                      text = `${item.title}: ${days}d`;
+                  } else {
+                      text = 'Event not found';
+                  }
+              } else {
+                  text = 'Select Event';
+              }
               break;
       }
       
       if (text) window.electronAPI?.updateTrayTitle(text);
-  }, [menuBarConfig, logs, goals, streaks, totalHours]);
+  }, [menuBarConfig, logs, goals, streaks, totalHours, countdowns]);
 
   const contentBgClass = appTheme === 'cyberpunk' 
     ? 'bg-[#0f172a] text-white' 
@@ -705,6 +744,32 @@ function FocusFlowContent() {
     </div>
   );
 }
+
+// Helper for recurrence calculation
+const getNextDate = (item: CountdownItem): Date => {
+    const now = new Date();
+    now.setHours(0,0,0,0);
+    let target = new Date(item.date);
+    target.setHours(0,0,0,0);
+    
+    if (item.recurrence && item.recurrence !== 'none' && target.getTime() < now.getTime()) {
+        if (item.recurrence === 'yearly') {
+            target.setFullYear(now.getFullYear());
+            if (target.getTime() < now.getTime()) target.setFullYear(now.getFullYear() + 1);
+        } else if (item.recurrence === 'monthly') {
+            target.setMonth(now.getMonth());
+            if (target.getTime() < now.getTime()) target.setMonth(now.getMonth() + 1);
+        } else if (item.recurrence === 'weekly') {
+            const oneWeek = 7 * 24 * 60 * 60 * 1000;
+            const diff = now.getTime() - target.getTime();
+            const weeksToAdd = Math.ceil(diff / oneWeek);
+            target = new Date(target.getTime() + weeksToAdd * oneWeek);
+        } else if (item.recurrence === 'daily') {
+            target = new Date(now);
+        }
+    }
+    return target;
+};
 
 function App() {
   return (

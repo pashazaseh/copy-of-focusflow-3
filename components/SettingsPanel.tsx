@@ -2,6 +2,8 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import * as storage from '../services/storageService';
 import { StoredNavConfig, NAV_ITEMS_DEF } from './Sidebar';
 import { TimerSettings, CountdownItem, MenuBarConfig, MenuBarMode, Project, HeatmapTheme, SidebarConfig, SettingsTab, AppTheme } from '../types';
+import { useCountdowns } from '../AppContext';
+import alarmSound from '../assets/alarm.mp3';
 
 interface SettingsPanelProps {
     navConfig: StoredNavConfig[];
@@ -40,6 +42,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     appTheme,
     setAppTheme
 }) => {
+    const { countdowns, importCountdowns } = useCountdowns();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
     const [copyStatus, setCopyStatus] = useState<string>('');
@@ -68,9 +71,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
         typeof Notification !== 'undefined' ? Notification.permission : 'default'
     );
-
-    // Menu Bar Data
-    const [countdowns, setCountdowns] = useState<CountdownItem[]>([]);
 
     // Calendar Integration State
     const [googleClientId, setGoogleClientId] = useState(() => {
@@ -117,7 +117,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
     // Init Data
     useEffect(() => {
-        storage.getCountdowns().then(setCountdowns);
         storage.getTimerSettings().then(setTimerSettings);
         
         if (typeof (window as any).google === 'undefined') {
@@ -423,9 +422,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
     const testSound = () => {
         // Changed to local asset for offline support
-        const audio = new Audio('./assets/alarm.mp3');
+        const audio = new Audio(alarmSound);
         audio.volume = timerVolume;
-        audio.play().catch(e => alert("Could not play sound. Check if 'alarm.mp3' exists in assets."));
+        audio.play().catch(e => alert("Could not play sound."));
     };
 
     // --- Project Management Handlers ---
@@ -683,14 +682,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             let importedCount = 0;
             
             if (eventsData.items) {
-                const currentCountdowns = await storage.getCountdowns();
                 const newItems: CountdownItem[] = [];
                 
                 eventsData.items.forEach((evt: any) => {
                     if (!evt.start || !evt.start.date) return;
                     const cleanTitle = evt.summary.replace(/'s Birthday|’s Birthday/gi, "").trim();
                     
-                    const exists = currentCountdowns.some(c => c.title === cleanTitle && c.type === 'birthday') || newItems.some(n => n.title === cleanTitle);
+                    const exists = countdowns.some(c => c.title === cleanTitle && c.type === 'birthday') || newItems.some(n => n.title === cleanTitle);
                     
                     if (!exists) {
                         newItems.push({
@@ -706,7 +704,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     }
                 });
                 
-                for (const item of newItems) { await storage.saveCountdown(item); }
+                await importCountdowns(newItems);
             }
             alert(`Successfully imported ${importedCount} birthdays.`);
         } catch (e: any) {
