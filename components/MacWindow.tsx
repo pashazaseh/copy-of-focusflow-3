@@ -19,16 +19,16 @@ export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMod
 
   // Determine background based on theme
   const bgClass = appTheme === 'cyberpunk' 
-    ? 'bg-[#0f172a] text-white' 
+    ? 'bg-[#050505] text-[#00f0ff] font-mono' 
     : 'bg-white dark:bg-gray-900';
 
   const borderClass = appTheme === 'cyberpunk'
-    ? 'border-purple-500/30 shadow-[0_0_30px_rgba(168,85,247,0.15)]'
-    : 'border-gray-200 dark:border-gray-700 dark:shadow-black/50';
+    ? 'border-[#00f0ff]/40 shadow-[0_0_30px_rgba(0,240,255,0.15)] rounded-lg'
+    : 'border-gray-200 dark:border-gray-700 dark:shadow-black/50 rounded-xl';
 
   const headerClass = appTheme === 'cyberpunk'
-    ? 'bg-[#1e293b] border-purple-500/20'
-    : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
+    ? 'bg-[#0a0a0a] border-b border-[#00f0ff]/20'
+    : 'bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700';
 
   // Enforce solid backgrounds: bg-white or bg-gray-900 (removed opacity values like /80)
   const containerClass = isElectron

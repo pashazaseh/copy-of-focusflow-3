@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StudyLog, CustomEvent, GoogleEvent, Project, CountdownItem } from '../types';
 import * as storage from '../services/storageService';
 import { useCountdowns } from '../AppContext';
+import { useTheme } from '../AppContext';
 
 declare const google: any;
 
@@ -38,6 +39,8 @@ const EVENT_COLORS = [
 
 export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
+    const { appTheme } = useTheme();
+    const isCyberpunk = appTheme === 'cyberpunk';
     const { countdowns } = useCountdowns();
     const currentDateRef = useRef(currentDate);
 
@@ -252,7 +255,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                         title: `${log.hours}h Study`,
                         date: new Date(y, m - 1, d),
                         type: 'study',
-                        color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200 border-indigo-200 dark:border-indigo-500/30',
+                        color: isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30 shadow-[0_0_5px_rgba(0,240,255,0.2)]' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200 border-indigo-200 dark:border-indigo-500/30',
                         description: log.notes,
                         calendar: 'Study Logs'
                     });
@@ -267,6 +270,22 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
 
             customEvents.forEach(evt => {
                 let color = evt.color;
+                
+                // Cyberpunk override for custom events
+                if (isCyberpunk && color) {
+                     const foundColor = EVENT_COLORS.find(c => c.value === color);
+                     if (foundColor) {
+                          const neonColors: Record<string, string> = {
+                             Blue: 'bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30',
+                             Red: 'bg-[#ff0000]/10 text-[#ff0000] border border-[#ff0000]/30',
+                             Green: 'bg-[#00ff00]/10 text-[#00ff00] border border-[#00ff00]/30',
+                             Purple: 'bg-[#ff00ff]/10 text-[#ff00ff] border border-[#ff00ff]/30',
+                             Orange: 'bg-[#ff9900]/10 text-[#ff9900] border border-[#ff9900]/30',
+                         };
+                         if (neonColors[foundColor.name]) color = neonColors[foundColor.name];
+                     }
+                }
+
                 if (!color) {
                     if (evt.type === 'meeting') color = EVENT_COLORS[3].value;
                     else if (evt.type === 'deadline') color = EVENT_COLORS[1].value;
@@ -342,6 +361,19 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
             // Map color name to tailwind classes
             const colorObj = EVENT_COLORS.find(c => c.name.toLowerCase() === item.color) || EVENT_COLORS[0];
             const color = colorObj.value;
+            
+            let displayColor = color;
+            if (isCyberpunk) {
+                 const neonColors: Record<string, string> = {
+                     blue: 'bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30',
+                     red: 'bg-[#ff0000]/10 text-[#ff0000] border border-[#ff0000]/30',
+                     green: 'bg-[#00ff00]/10 text-[#00ff00] border border-[#00ff00]/30',
+                     purple: 'bg-[#ff00ff]/10 text-[#ff00ff] border border-[#ff00ff]/30',
+                     orange: 'bg-[#ff9900]/10 text-[#ff9900] border border-[#ff9900]/30',
+                     pink: 'bg-[#ff0099]/10 text-[#ff0099] border border-[#ff0099]/30',
+                 };
+                 displayColor = neonColors[item.color] || neonColors['blue'];
+            }
 
             if (!item.recurrence || item.recurrence === 'none') {
                  allEvents.push({
@@ -350,7 +382,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                     date: new Date(item.date),
                     type: 'countdown',
                     customType: item.type,
-                    color: color,
+                    color: displayColor,
                     calendar: 'Countdown'
                 });
             } else {
@@ -377,7 +409,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                             date: new Date(d),
                             type: 'countdown',
                             customType: item.type,
-                            color: color,
+                            color: displayColor,
                             calendar: 'Countdown'
                         });
                     }
@@ -400,7 +432,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                         date: dateObj,
                         time: timeStr,
                         type: 'google',
-                        color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200 border-emerald-200 dark:border-emerald-500/30',
+                        color: isCyberpunk ? 'bg-[#00ff00]/10 text-[#00ff00] border border-[#00ff00]/30 shadow-[0_0_5px_rgba(0,255,0,0.2)]' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200 border-emerald-200 dark:border-emerald-500/30',
                         description: evt.description,
                         location: evt.location,
                         link: evt.htmlLink,
@@ -428,7 +460,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
              }
              return a.date.getTime() - b.date.getTime();
         });
-    }, [logs, calendars, currentDate, customEvents, googleEvents, countdowns, searchQuery, selectedProjectFilter]);
+    }, [logs, calendars, currentDate, customEvents, googleEvents, countdowns, searchQuery, selectedProjectFilter, isCyberpunk]);
 
     // Pre-group events by date for O(1) lookup during render
     const eventsByDate = useMemo(() => {
@@ -553,23 +585,23 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
     };
 
     return (
-        <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50/50 dark:bg-gray-900 transition-colors duration-300">
+        <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50/50 dark:bg-gray-900'}`}>
              
              {/* Header */}
-             <div className="flex flex-col md:flex-row justify-between items-center p-6 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm shrink-0 z-10 relative">
+             <div className={`flex flex-col md:flex-row justify-between items-center p-6 border-b shadow-sm shrink-0 z-10 relative ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
                 <div className="flex items-center space-x-4 mb-4 md:mb-0">
-                    <div className="flex items-center bg-gray-100 dark:bg-gray-700 p-1 rounded-xl">
-                        <button onClick={prevMonth} className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg text-gray-500 dark:text-gray-300 transition-colors">
+                    <div className={`flex items-center p-1 rounded-xl ${isCyberpunk ? 'bg-black border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-gray-700'}`}>
+                        <button onClick={prevMonth} className={`p-2 rounded-lg transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'hover:bg-white dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300'}`}>
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                         </button>
-                        <button onClick={nextMonth} className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg text-gray-500 dark:text-gray-300 transition-colors">
+                        <button onClick={nextMonth} className={`p-2 rounded-lg transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'hover:bg-white dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300'}`}>
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                         </button>
                     </div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <h2 className={`text-2xl font-bold ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_5px_rgba(0,240,255,0.5)]' : 'text-gray-900 dark:text-white'}`}>
                         {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                     </h2>
-                    <button onClick={goToToday} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 px-4 py-2 rounded-lg transition-colors border border-transparent hover:border-blue-200 dark:hover:border-blue-800">
+                    <button onClick={goToToday} className={`text-xs font-semibold px-4 py-2 rounded-lg transition-colors border border-transparent ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10 hover:border-[#00f0ff]/30' : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-200 dark:hover:border-blue-800'}`}>
                         Today
                     </button>
                 </div>
@@ -580,7 +612,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                     <select 
                         value={selectedProjectFilter} 
                         onChange={(e) => setSelectedProjectFilter(e.target.value)}
-                        className="bg-gray-100 dark:bg-gray-700/50 border-none rounded-xl text-gray-900 dark:text-white text-sm py-2 px-3 focus:ring-2 focus:ring-blue-500 outline-none w-40"
+                        className={`border-none rounded-xl text-sm py-2 px-3 focus:ring-2 outline-none w-40 ${isCyberpunk ? 'bg-[#0a0a0a] text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-gray-100 dark:bg-gray-700/50 text-gray-900 dark:text-white focus:ring-blue-500'}`}
                     >
                         <option value="all">All Projects</option>
                         {projects.map(p => (
@@ -595,7 +627,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                             placeholder="Search events..." 
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700/50 border-none rounded-xl text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 transition-all text-sm"
+                            className={`w-full pl-10 pr-4 py-2 border-none rounded-xl transition-all text-sm focus:ring-2 ${isCyberpunk ? 'bg-[#0a0a0a] text-[#00f0ff] placeholder-[#00f0ff]/30 focus:ring-[#00f0ff]' : 'bg-gray-100 dark:bg-gray-700/50 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-blue-500'}`}
                         />
                     </div>
                 </div>
@@ -603,14 +635,14 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                 <div className="flex items-center space-x-3">
                      <button 
                         onClick={() => setIsConfigOpen(true)}
-                        className={`p-2.5 rounded-xl transition-all border ${isConnected ? 'bg-green-50 border-green-200 text-green-600 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400' : 'bg-gray-50 border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 hover:bg-gray-100'}`}
+                        className={`p-2.5 rounded-xl transition-all border ${isConnected ? (isCyberpunk ? 'bg-[#00ff00]/10 border-[#00ff00]/30 text-[#00ff00]' : 'bg-green-50 border-green-200 text-green-600 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400') : (isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20 text-[#00f0ff]/60 hover:text-[#00f0ff]' : 'bg-gray-50 border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 hover:bg-gray-100')}`}
                         title="Google Calendar Settings"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                      </button>
                      <button 
                         onClick={handleGoogleConnect}
-                        className="px-5 py-2.5 bg-gray-900 dark:bg-white hover:bg-black dark:hover:bg-gray-200 text-white dark:text-gray-900 text-sm font-semibold rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 flex items-center"
+                        className={`px-5 py-2.5 text-sm font-semibold rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 flex items-center ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30' : 'bg-gray-900 dark:bg-white hover:bg-black dark:hover:bg-gray-200 text-white dark:text-gray-900'}`}
                      >
                          <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor"><path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/></svg>
                          Sync Google
@@ -620,10 +652,10 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
 
              {/* Grid */}
              <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-                 <div className="grid grid-cols-7 gap-px bg-gray-200 dark:bg-gray-700/50 rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-700/50 shadow-sm">
+                 <div className={`grid grid-cols-7 gap-px rounded-2xl overflow-hidden border shadow-sm ${isCyberpunk ? 'bg-[#00f0ff]/20 border-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-700/50 border-gray-200 dark:border-gray-700/50'}`}>
                      {/* Week Days */}
                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                         <div key={day} className="bg-gray-50/80 dark:bg-[#252527] p-3 text-center text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest backdrop-blur-sm">
+                         <div key={day} className={`p-3 text-center text-[11px] font-bold uppercase tracking-widest backdrop-blur-sm ${isCyberpunk ? 'bg-[#0a0a0a] text-[#00f0ff]/60' : 'bg-gray-50/80 dark:bg-[#252527] text-gray-400 dark:text-gray-500'}`}>
                              {day}
                          </div>
                      ))}
@@ -635,7 +667,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                          const isToday = isCurrentMonth && dayNumber === new Date().getDate() && currentDate.getMonth() === new Date().getMonth() && currentDate.getFullYear() === new Date().getFullYear();
                          
                          if (!isCurrentMonth) {
-                             return <div key={index} className="bg-gray-50/30 dark:bg-[#1a1a1c]/50 min-h-[120px]"></div>;
+                             return <div key={index} className={`min-h-[120px] ${isCyberpunk ? 'bg-black/80' : 'bg-gray-50/30 dark:bg-[#1a1a1c]/50'}`}></div>;
                          }
 
                          const dateStr = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayNumber).toISOString().split('T')[0];
@@ -646,12 +678,12 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                          return (
                              <div 
                                 key={index} 
-                                className={`group bg-white dark:bg-[#1c1c1e] min-h-[120px] p-2 hover:bg-blue-50/30 dark:hover:bg-[#252527] transition-colors duration-200 cursor-pointer border border-transparent hover:border-blue-200 dark:hover:border-blue-900/30 ${isToday ? 'bg-blue-50/20 dark:bg-blue-900/5' : ''}`}
+                                className={`group min-h-[120px] p-2 transition-colors duration-200 cursor-pointer border border-transparent ${isCyberpunk ? 'bg-[#0a0a0a] hover:border-[#00f0ff]/50' : 'bg-white dark:bg-[#1c1c1e] hover:bg-blue-50/30 dark:hover:bg-[#252527] hover:border-blue-200 dark:hover:border-blue-900/30'} ${isToday ? (isCyberpunk ? 'bg-[#00f0ff]/5' : 'bg-blue-50/20 dark:bg-blue-900/5') : ''}`}
                                 onClick={() => handleDayClick(dateStr)}
                              >
                                  <div className="flex justify-between items-start mb-2">
                                      <div className="relative">
-                                         <span className={`text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full transition-colors ${isToday ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' : 'text-gray-700 dark:text-gray-300 group-hover:bg-gray-100 dark:group-hover:bg-gray-700'}`}>
+                                         <span className={`text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full transition-colors ${isToday ? (isCyberpunk ? 'bg-[#00f0ff] text-black shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'bg-blue-600 text-white shadow-md shadow-blue-500/30') : (isCyberpunk ? 'text-[#00f0ff]/60 group-hover:text-[#00f0ff]' : 'text-gray-700 dark:text-gray-300 group-hover:bg-gray-100 dark:group-hover:bg-gray-700')}`}>
                                              {dayNumber}
                                          </span>
                                          {countdownEvent && (
@@ -684,37 +716,37 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
              {/* Details Modal */}
              {isDetailsOpen && viewEvent && (
                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in p-4">
-                     <div className="bg-white dark:bg-[#1c1c1e] w-full max-w-sm rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden animate-scale-in flex flex-col">
+                     <div className={`w-full max-w-sm rounded-3xl shadow-2xl border overflow-hidden animate-scale-in flex flex-col ${isCyberpunk ? 'bg-black border-[#00f0ff]/50' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-gray-700'}`}>
                          {/* Details Header with dynamic color */}
-                         <div className={`p-6 pb-8 ${viewEvent.color} relative border-b border-gray-100 dark:border-gray-700/50`}>
+                         <div className={`p-6 pb-8 ${viewEvent.color} relative border-b ${isCyberpunk ? 'border-[#00f0ff]/20' : 'border-gray-100 dark:border-gray-700/50'}`}>
                              <div className="absolute top-4 right-4">
                                  <button onClick={() => setIsDetailsOpen(false)} className="p-2 bg-white/20 hover:bg-white/40 rounded-full text-current transition-colors">
                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
                                  </button>
                              </div>
                              <div className="mt-2">
-                                <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-2 bg-white/30 backdrop-blur-sm text-current border border-white/20`}>
+                                <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-2 bg-white/30 backdrop-blur-sm text-current border border-white/20 ${isCyberpunk ? 'text-black' : ''}`}>
                                    {viewEvent.type === 'study' ? 'Study Log' : viewEvent.type === 'countdown' ? (viewEvent.customType || 'Countdown') : (viewEvent.customType || viewEvent.type)}
                                 </span>
                                 <h3 className="text-2xl font-bold leading-tight opacity-95">{viewEvent.title}</h3>
                              </div>
                          </div>
                          
-                         <div className="p-6 -mt-4 bg-white dark:bg-[#1c1c1e] rounded-t-3xl flex-1">
+                         <div className={`p-6 -mt-4 rounded-t-3xl flex-1 ${isCyberpunk ? 'bg-[#0a0a0a]' : 'bg-white dark:bg-[#1c1c1e]'}`}>
                              <div className="space-y-5">
-                                 <div className="flex items-center text-gray-700 dark:text-gray-300">
-                                     <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center mr-3 shrink-0 text-gray-500">
+                                 <div className={`flex items-center ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-gray-300'}`}>
+                                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center mr-3 shrink-0 ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>
                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                      </div>
                                      <div>
                                          <p className="text-sm font-semibold">{viewEvent.date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-                                         {viewEvent.time && <p className="text-xs text-gray-500 dark:text-gray-400">{viewEvent.time}</p>}
+                                         {viewEvent.time && <p className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>{viewEvent.time}</p>}
                                      </div>
                                  </div>
 
                                  {viewEvent.location && (
-                                     <div className="flex items-center text-gray-700 dark:text-gray-300">
-                                         <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center mr-3 shrink-0 text-gray-500">
+                                     <div className={`flex items-center ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-gray-300'}`}>
+                                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center mr-3 shrink-0 ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>
                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                          </div>
                                          <p className="text-sm">{viewEvent.location}</p>
@@ -722,16 +754,16 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                                  )}
 
                                  {viewEvent.description && (
-                                     <div className="flex items-start text-gray-700 dark:text-gray-300">
-                                         <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center mr-3 shrink-0 text-gray-500 mt-0.5">
+                                     <div className={`flex items-start ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-gray-300'}`}>
+                                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center mr-3 shrink-0 mt-0.5 ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>
                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>
                                          </div>
-                                         <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">{viewEvent.description}</p>
+                                         <p className={`text-sm leading-relaxed ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-gray-600 dark:text-gray-400'}`}>{viewEvent.description}</p>
                                      </div>
                                  )}
 
                                  {viewEvent.link && (
-                                     <a href={viewEvent.link} target="_blank" rel="noreferrer" className="flex items-center text-blue-600 hover:underline text-sm">
+                                     <a href={viewEvent.link} target="_blank" rel="noreferrer" className={`flex items-center hover:underline text-sm ${isCyberpunk ? 'text-[#00f0ff]' : 'text-blue-600'}`}>
                                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                          Open in Google Calendar
                                      </a>
@@ -740,18 +772,18 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                          </div>
 
                          {/* Footer Actions */}
-                         <div className="p-4 bg-gray-50 dark:bg-[#252527] border-t border-gray-100 dark:border-gray-800 flex justify-end gap-3">
+                         <div className={`p-4 border-t flex justify-end gap-3 ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-[#252527] border-gray-100 dark:border-gray-800'}`}>
                              {viewEvent.isCustom ? (
                                  <>
                                      <button 
                                         onClick={handleDeleteEvent}
-                                        className="px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl text-sm font-medium transition-colors"
+                                        className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${isCyberpunk ? 'text-red-500 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
                                      >
                                          Delete
                                      </button>
                                      <button 
                                         onClick={switchToEditMode}
-                                        className="px-6 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl text-sm font-bold hover:shadow-lg transition-all"
+                                        className={`px-6 py-2 rounded-xl text-sm font-bold hover:shadow-lg transition-all ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30' : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'}`}
                                      >
                                          Edit Event
                                      </button>
@@ -759,7 +791,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                              ) : (
                                 <button 
                                     onClick={() => setIsDetailsOpen(false)}
-                                    className="px-6 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                                    className={`px-6 py-2 rounded-xl text-sm font-medium transition-colors ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'}`}
                                 >
                                     Close
                                 </button>
@@ -772,15 +804,15 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
              {/* Google Config Modal */}
              {isConfigOpen && (
                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
-                     <div className="bg-white dark:bg-[#1c1c1e] w-full max-w-md rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden animate-scale-in">
-                         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#252527] flex justify-between items-center">
-                             <h3 className="font-bold text-gray-900 dark:text-white">Google Calendar Setup</h3>
+                     <div className={`w-full max-w-md rounded-2xl shadow-2xl border overflow-hidden animate-scale-in ${isCyberpunk ? 'bg-black border-[#00f0ff]/50' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-gray-700'}`}>
+                         <div className={`px-6 py-4 border-b flex justify-between items-center ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-[#252527] border-gray-200 dark:border-gray-700'}`}>
+                             <h3 className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Google Calendar Setup</h3>
                              <button onClick={() => setIsConfigOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                              </button>
                          </div>
                          <div className="p-6">
-                             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                             <p className={`text-sm mb-4 ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-gray-600 dark:text-gray-400'}`}>
                                  To view your Google Calendar events, you need to provide a Google Cloud Client ID.
                                  <br/><br/>
                                  1. Go to Google Cloud Console.<br/>
@@ -793,12 +825,12 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                                 type="text" 
                                 value={googleClientId}
                                 onChange={(e) => setGoogleClientId(e.target.value)}
-                                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                className={`w-full px-4 py-2 rounded-lg border focus:ring-2 outline-none ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-blue-500'}`}
                                 placeholder="apps.googleusercontent.com"
                              />
                          </div>
-                         <div className="px-6 py-4 bg-gray-50 dark:bg-[#252527] border-t border-gray-200 dark:border-gray-700 flex justify-end">
-                             <button onClick={handleSaveClientId} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg">Save & Connect</button>
+                         <div className={`px-6 py-4 border-t flex justify-end ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-[#252527] border-gray-200 dark:border-gray-700'}`}>
+                             <button onClick={handleSaveClientId} className={`px-4 py-2 font-medium rounded-lg ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>Save & Connect</button>
                          </div>
                      </div>
                  </div>
@@ -807,10 +839,10 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
              {/* Add/Edit Event Modal */}
              {isModalOpen && (
                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
-                     <div className="bg-white dark:bg-[#1c1c1e] w-full max-w-lg rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden animate-scale-in">
+                     <div className={`w-full max-w-lg rounded-2xl shadow-2xl border overflow-hidden animate-scale-in ${isCyberpunk ? 'bg-black border-[#00f0ff]/50' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-gray-700'}`}>
                          {/* ... Edit Form ... */}
-                         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#252527] flex justify-between items-center">
-                             <h3 className="font-bold text-gray-900 dark:text-white">{editingId ? 'Edit Event' : 'New Event'}</h3>
+                         <div className={`px-6 py-4 border-b flex justify-between items-center ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-[#252527] border-gray-200 dark:border-gray-700'}`}>
+                             <h3 className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{editingId ? 'Edit Event' : 'New Event'}</h3>
                              <button onClick={closeModal} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                              </button>
@@ -818,16 +850,16 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                          <form onSubmit={handleSaveEvent} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
                              <div>
                                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Title</label>
-                                 <input type="text" value={newEventTitle} onChange={(e) => setNewEventTitle(e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500" placeholder="Event Title" required />
+                                 <input type="text" value={newEventTitle} onChange={(e) => setNewEventTitle(e.target.value)} className={`w-full px-4 py-2.5 rounded-lg border focus:outline-none ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500'}`} placeholder="Event Title" required />
                              </div>
                              <div className="grid grid-cols-2 gap-4">
                                  <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Date</label>
-                                    <input type="date" value={selectedDateForEvent} onChange={(e) => setSelectedDateForEvent(e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 [color-scheme:light] dark:[color-scheme:dark]" required />
+                                    <input type="date" value={selectedDateForEvent} onChange={(e) => setSelectedDateForEvent(e.target.value)} className={`w-full px-4 py-2.5 rounded-lg border focus:outline-none ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff] [color-scheme:dark]' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500 [color-scheme:light] dark:[color-scheme:dark]'}`} required />
                                  </div>
                                  <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Time (Optional)</label>
-                                    <input type="time" value={newEventTime} onChange={(e) => setNewEventTime(e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 [color-scheme:light] dark:[color-scheme:dark]" />
+                                    <input type="time" value={newEventTime} onChange={(e) => setNewEventTime(e.target.value)} className={`w-full px-4 py-2.5 rounded-lg border focus:outline-none ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff] [color-scheme:dark]' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500 [color-scheme:light] dark:[color-scheme:dark]'}`} />
                                  </div>
                              </div>
                              <div>
@@ -847,7 +879,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                              <div className="grid grid-cols-2 gap-4">
                                  <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Recurrence</label>
-                                    <select value={newEventRecurrence} onChange={(e) => setNewEventRecurrence(e.target.value as any)} className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500">
+                                    <select value={newEventRecurrence} onChange={(e) => setNewEventRecurrence(e.target.value as any)} className={`w-full px-4 py-2.5 rounded-lg border focus:outline-none ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500'}`}>
                                         <option value="none">None</option>
                                         <option value="daily">Daily</option>
                                         <option value="weekly">Weekly</option>
@@ -856,21 +888,21 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                                  </div>
                                  <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Reminder (mins)</label>
-                                    <input type="number" value={newEventReminder} onChange={(e) => setNewEventReminder(parseInt(e.target.value))} className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500" placeholder="0" />
+                                    <input type="number" value={newEventReminder} onChange={(e) => setNewEventReminder(parseInt(e.target.value))} className={`w-full px-4 py-2.5 rounded-lg border focus:outline-none ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500'}`} placeholder="0" />
                                  </div>
                              </div>
                              <div>
                                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Description</label>
-                                 <textarea rows={3} value={newEventDesc} onChange={(e) => setNewEventDesc(e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500" placeholder="Notes..."></textarea>
+                                 <textarea rows={3} value={newEventDesc} onChange={(e) => setNewEventDesc(e.target.value)} className={`w-full px-4 py-2.5 rounded-lg border focus:outline-none ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500'}`} placeholder="Notes..."></textarea>
                              </div>
                          </form>
-                         <div className="px-6 py-4 bg-gray-50 dark:bg-[#252527] border-t border-gray-200 dark:border-gray-700 flex justify-between">
+                         <div className={`px-6 py-4 border-t flex justify-between ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-[#252527] border-gray-200 dark:border-gray-700'}`}>
                              {editingId ? (
                                  <button onClick={handleDeleteEvent} className="text-red-500 hover:text-red-600 font-medium text-sm">Delete Event</button>
                              ) : <div></div>}
                              <div className="flex space-x-3">
-                                 <button onClick={closeModal} className="px-4 py-2 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white text-sm font-medium">Cancel</button>
-                                 <button onClick={handleSaveEvent} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-sm shadow-md">Save Event</button>
+                                 <button onClick={closeModal} className={`px-4 py-2 text-sm font-medium ${isCyberpunk ? 'text-[#00f0ff]/60 hover:text-[#00f0ff]' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}>Cancel</button>
+                                 <button onClick={handleSaveEvent} className={`px-4 py-2 font-bold rounded-lg text-sm shadow-md ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>Save Event</button>
                              </div>
                          </div>
                      </div>

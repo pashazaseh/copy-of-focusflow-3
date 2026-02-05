@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ViewMode, Project, HeatmapTheme, SidebarConfig } from '../types';
+import { ViewMode, Project, HeatmapTheme, SidebarConfig, AppTheme, Achievement } from '../types';
 
 interface SidebarProps {
   currentView: ViewMode;
@@ -15,6 +15,8 @@ interface SidebarProps {
   navConfig: StoredNavConfig[];
   onManageProjects: () => void;
   sidebarConfig: SidebarConfig;
+  appTheme: AppTheme;
+  latestBadge?: Achievement | null;
 }
 
 // Configuration structure for navigation items
@@ -78,23 +80,33 @@ interface NavItemProps {
     onClick: () => void;
     icon: React.ReactNode;
     label: string;
+    appTheme?: AppTheme;
 }
 
 const NavItem: React.FC<NavItemProps> = ({ 
   active, 
   onClick, 
   icon, 
-  label 
+  label,
+  appTheme
 }) => (
   <button
     onClick={onClick}
     className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 group ${
-      active 
-        ? 'bg-blue-500 text-white shadow-md' 
-        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+      appTheme === 'cyberpunk'
+        ? (active 
+            ? 'bg-[#00f0ff]/10 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.2)] border border-[#00f0ff]/30' 
+            : 'text-[#00f0ff]/60 hover:bg-[#00f0ff]/5 hover:text-[#00f0ff]')
+        : (active 
+            ? 'bg-blue-500 text-white shadow-md' 
+            : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800')
     }`}
   >
-    <div className={`${active ? 'text-white' : 'text-gray-500 dark:text-gray-500 group-hover:text-gray-700 dark:group-hover:text-gray-300'}`}>
+    <div className={`${
+        appTheme === 'cyberpunk'
+        ? (active ? 'text-[#00f0ff] drop-shadow-[0_0_5px_rgba(0,240,255,0.5)]' : 'text-[#00f0ff]/60 group-hover:text-[#00f0ff]')
+        : (active ? 'text-white' : 'text-gray-500 dark:text-gray-500 group-hover:text-gray-700 dark:group-hover:text-gray-300')
+    }`}>
       {icon}
     </div>
     <span className="font-medium text-sm">{label}</span>
@@ -123,7 +135,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onDeleteProject,
     navConfig,
     onManageProjects,
-    sidebarConfig
+    sidebarConfig,
+    appTheme,
+    latestBadge
 }) => {
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -166,8 +180,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
   };
 
+  const sidebarClass = appTheme === 'cyberpunk'
+    ? 'bg-[#020202] border-r border-[#00f0ff]/20 text-[#00f0ff] font-mono'
+    : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700';
+
   return (
-    <div className="w-64 shrink-0 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col p-4 transition-colors duration-300 relative">
+    <div className={`w-64 shrink-0 border-r flex flex-col p-4 transition-colors duration-300 relative ${sidebarClass}`}>
       
       {/* Project Selector */}
       <div className="mb-6 mt-2 relative" ref={menuRef}>
@@ -290,6 +308,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onClick={() => onChangeView(item.view)}
                     icon={def.icon}
                     label={def.label}
+                    appTheme={appTheme}
                 />
             );
         })}
@@ -298,28 +317,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
             onClick={() => onChangeView(ViewMode.SETTINGS)}
             className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 group mt-1 ${
-                currentView === ViewMode.SETTINGS
-                ? 'bg-blue-500 text-white shadow-md'
-                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                appTheme === 'cyberpunk'
+                ? (currentView === ViewMode.SETTINGS ? 'bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30' : 'text-[#00f0ff]/60 hover:bg-[#00f0ff]/5')
+                : (currentView === ViewMode.SETTINGS ? 'bg-blue-500 text-white shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800')
             }`}
         >
-            <div className={`${currentView === ViewMode.SETTINGS ? 'text-white' : 'text-gray-500 dark:text-gray-500 group-hover:text-gray-700 dark:group-hover:text-gray-300'}`}>
+            <div className={`${
+                appTheme === 'cyberpunk' ? (currentView === ViewMode.SETTINGS ? 'text-[#00f0ff]' : 'text-[#00f0ff]/60') : (currentView === ViewMode.SETTINGS ? 'text-white' : 'text-gray-500 dark:text-gray-500 group-hover:text-gray-700 dark:group-hover:text-gray-300')
+            }`}>
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
             </div>
             <span className="font-medium text-sm">Settings</span>
         </button>
       </nav>
 
-      {sidebarConfig.showWeeklyGoalWidget && (
-          <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="bg-blue-50 dark:bg-gray-800 rounded-xl p-4 border border-blue-100 dark:border-gray-700 shadow-sm">
-              <div className="flex justify-between items-end mb-2">
-                  <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold">Weekly Goal</p>
-                  <p className="text-xs text-blue-500 dark:text-blue-400 text-right">{currentWeeklyHours.toFixed(1)} / {weeklyGoal} hrs</p>
+      {latestBadge && (
+          <div className={`mt-4 mx-1 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+              <div className="text-2xl">{latestBadge.icon}</div>
+              <div className="overflow-hidden">
+                  <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Latest Badge</p>
+                  <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{latestBadge.title}</p>
               </div>
-              <div className="w-full bg-blue-200 dark:bg-gray-700 rounded-full h-2 mb-1 overflow-hidden">
+          </div>
+      )}
+
+      {sidebarConfig.showWeeklyGoalWidget && (
+          <div className={`pt-4 mt-4 border-t ${appTheme === 'cyberpunk' ? 'border-[#00f0ff]/20' : 'border-gray-200 dark:border-gray-700'}`}>
+            <div className={`rounded-xl p-4 border shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-blue-50 dark:bg-gray-800 border-blue-100 dark:border-gray-700'}`}>
+              <div className="flex justify-between items-end mb-2">
+                  <p className={`text-xs font-semibold ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-blue-600 dark:text-blue-400'}`}>Weekly Goal</p>
+                  <p className={`text-xs text-right ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/80' : 'text-blue-500 dark:text-blue-400'}`}>{currentWeeklyHours.toFixed(1)} / {weeklyGoal} hrs</p>
+              </div>
+              <div className={`w-full rounded-full h-2 mb-1 overflow-hidden ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/20' : 'bg-blue-200 dark:bg-gray-700'}`}>
                 <div 
-                    className="bg-blue-500 dark:bg-blue-400 h-2 rounded-full transition-all duration-500 ease-out" 
+                    className={`h-2 rounded-full transition-all duration-500 ease-out ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff] shadow-[0_0_5px_rgba(0,240,255,0.5)]' : 'bg-blue-500 dark:bg-blue-400'}`} 
                     style={{ width: `${progressPercent}%` }}
                 ></div>
               </div>

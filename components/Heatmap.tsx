@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 import { StudyLog, DayStats, HeatmapTheme } from '../types';
+import { useTheme } from '../AppContext';
 
 interface HeatmapProps {
   data: StudyLog[];
@@ -15,6 +16,8 @@ type Density = 'compact' | 'standard' | 'spacious';
 type LayoutType = 'vertical' | 'horizontal' | 'frequency';
 
 export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDarkMode, theme, onThemeChange }) => {
+  const { appTheme } = useTheme();
+  const isCyberpunk = appTheme === 'cyberpunk';
   const [tooltip, setTooltip] = useState<{ x: number; y: number; content: React.ReactNode } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -145,7 +148,15 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
   // Color Scales
   const colorScale = useMemo(() => {
       let range: string[] = [];
-      if (isDarkMode) {
+      if (isCyberpunk) {
+          switch (theme) {
+            case 'blue': range = ['#001133', '#00f0ff']; break;
+            case 'orange': range = ['#331100', '#ff9900']; break;
+            case 'purple': range = ['#220033', '#ff00ff']; break;
+            case 'green': 
+            default: range = ['#003300', '#00ff00']; break;
+          }
+      } else if (isDarkMode) {
           switch (theme) {
             case 'blue': range = ['#172554', '#3b82f6']; break;
             case 'orange': range = ['#431407', '#f97316']; break;
@@ -167,7 +178,7 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
         .domain([0.1, 8])
         .range(range)
         .clamp(true);
-  }, [theme, isDarkMode]);
+  }, [theme, isDarkMode, isCyberpunk]);
 
   // Helpers for Layout
   const isHorizontal = layout === 'horizontal' || layout === 'frequency';
@@ -215,7 +226,7 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
             y: TOP_LABEL_HEIGHT + gridDayIndex * (config.height + config.gap),
             width: config.height,
             height: config.height,
-            color: day.value === 0 ? (isDarkMode ? '#2d3748' : '#ebedf0') : colorScale(day.value),
+            color: day.value === 0 ? (isCyberpunk ? '#1a1a1a' : isDarkMode ? '#2d3748' : '#ebedf0') : colorScale(day.value),
             radius: radius
         };
     } else {
@@ -228,11 +239,11 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
             y: TOP_LABEL_HEIGHT + weekIndex * (config.height + config.gap),
             width: cellW,
             height: config.height,
-            color: day.value === 0 ? (isDarkMode ? '#2d3748' : '#ebedf0') : colorScale(day.value),
+            color: day.value === 0 ? (isCyberpunk ? '#1a1a1a' : isDarkMode ? '#2d3748' : '#ebedf0') : colorScale(day.value),
             radius: radius
         };
     }
-  }), [days, isHorizontal, config, numDaysPerRow, isDarkMode, colorScale, graphWidth]);
+  }), [days, isHorizontal, config, numDaysPerRow, isDarkMode, colorScale, graphWidth, isCyberpunk]);
 
   // Labels
   const labels = useMemo(() => {
@@ -301,7 +312,7 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
                   key={`label-${i}`}
                   x={l.x}
                   y={l.y}
-                  className={`text-[10px] ${l.isDay ? 'fill-gray-400' : 'fill-gray-500 font-bold'}`}
+                  className={`text-[10px] ${l.isDay ? (isCyberpunk ? 'fill-[#00f0ff]/60' : 'fill-gray-400') : (isCyberpunk ? 'fill-[#00f0ff] font-bold' : 'fill-gray-500 font-bold')}`}
                   textAnchor={l.anchor as any}
                   dominantBaseline="middle"
               >
@@ -324,14 +335,14 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
                               y: cellRect.top - containerRect.top - 10,
                               content: (
                                   <div className="text-center">
-                                      <div className="font-semibold text-gray-200">{cell.dateStr}</div>
-                                      <div className="text-gray-300">{cell.value > 0 ? `${cell.value} hours` : 'No study logged'}</div>
+                                      <div className={`font-semibold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-200'}`}>{cell.dateStr}</div>
+                                      <div className={isCyberpunk ? 'text-[#00f0ff]/80' : 'text-gray-300'}>{cell.value > 0 ? `${cell.value} hours` : 'No study logged'}</div>
                                       {cell.notes && (
-                                          <div className="text-[10px] text-gray-400 mt-1 max-w-[150px] italic border-t border-gray-600 pt-1">
+                                          <div className={`text-[10px] mt-1 max-w-[150px] italic border-t pt-1 ${isCyberpunk ? 'text-[#00f0ff]/60 border-[#00f0ff]/30' : 'text-gray-400 border-gray-600'}`}>
                                               "{cell.notes}"
                                           </div>
                                       )}
-                                      <div className="text-[9px] text-gray-500 mt-1">Click to edit</div>
+                                      <div className={`text-[9px] mt-1 ${isCyberpunk ? 'text-[#00f0ff]/40' : 'text-gray-500'}`}>Click to edit</div>
                                   </div>
                               )
                           });
@@ -347,7 +358,7 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
                               cx={cell.x + cell.width / 2}
                               cy={cell.y + cell.height / 2}
                               r={config.height / 4} 
-                              className="fill-gray-200 dark:fill-gray-700/50 pointer-events-none"
+                              className={`${isCyberpunk ? 'fill-[#1a1a1a]' : 'fill-gray-200 dark:fill-gray-700/50'} pointer-events-none`}
                           />
                           <circle
                               cx={cell.x + cell.width / 2}
@@ -373,23 +384,23 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
               }
           })}
       </svg>
-  ), [graphWidth, graphHeight, isHorizontal, labels, cells, config, layout, onDayClick]);
+  ), [graphWidth, graphHeight, isHorizontal, labels, cells, config, layout, onDayClick, isCyberpunk]);
 
   return (
-    <div className="w-full flex flex-col bg-gray-50 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-1 shadow-sm relative group">
+    <div className={`w-full flex flex-col rounded-2xl border p-1 shadow-sm relative group ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
         
         {/* Settings Panel Overlay */}
         {showSettings && (
             <div 
                 ref={settingsRef}
-                className="absolute top-14 right-4 z-20 p-5 bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-gray-700/50 rounded-2xl shadow-2xl animate-fade-in-up w-72 backdrop-blur-xl"
+                className={`absolute top-14 right-4 z-20 p-5 rounded-2xl shadow-2xl animate-fade-in-up w-72 backdrop-blur-xl ${isCyberpunk ? 'bg-black/90 border border-[#00f0ff]/50' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-gray-700/50'}`}
             >
                 <div className="space-y-6">
                     <div>
                         <div className="flex justify-between items-center mb-3">
-                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Theme</label>
+                            <label className={`text-[10px] font-bold uppercase tracking-widest ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-500'}`}>Theme</label>
                         </div>
-                        <div className="flex justify-between bg-gray-100 dark:bg-[#2c2c2e] p-2 rounded-xl">
+                        <div className={`flex justify-between p-2 rounded-xl ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-[#2c2c2e]'}`}>
                             {(['green', 'blue', 'orange', 'purple'] as HeatmapTheme[]).map(t => (
                                 <button 
                                     key={t}
@@ -410,17 +421,17 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
 
                     <div>
                         <div className="flex justify-between items-center mb-3">
-                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Layout</label>
+                            <label className={`text-[10px] font-bold uppercase tracking-widest ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-500'}`}>Layout</label>
                         </div>
-                        <div className="flex bg-gray-100 dark:bg-[#2c2c2e] p-1 rounded-lg">
+                        <div className={`flex p-1 rounded-lg ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-[#2c2c2e]'}`}>
                             {(['vertical', 'horizontal', 'frequency'] as LayoutType[]).map(o => (
                                 <button
                                     key={o}
                                     onClick={() => setLayout(o)}
                                     className={`flex-1 py-1.5 text-[10px] font-medium rounded-md transition-all ${
                                         layout === o 
-                                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm' 
-                                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                                        ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-sm' : 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm')
+                                        : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700')
                                     }`}
                                 >
                                     {o.charAt(0).toUpperCase() + o.slice(1)}
@@ -431,17 +442,17 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
 
                     <div>
                         <div className="flex justify-between items-center mb-3">
-                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Box Size</label>
+                            <label className={`text-[10px] font-bold uppercase tracking-widest ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-500'}`}>Box Size</label>
                         </div>
-                        <div className="flex bg-gray-100 dark:bg-[#2c2c2e] p-1 rounded-lg">
+                        <div className={`flex p-1 rounded-lg ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-[#2c2c2e]'}`}>
                              {(['compact', 'standard', 'spacious'] as Density[]).map((d) => (
                                  <button
                                     key={d}
                                     onClick={() => setDensity(d)}
                                     className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
                                         density === d 
-                                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm' 
-                                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                                        ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-sm' : 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm')
+                                        : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700')
                                     }`}
                                  >
                                      {d.charAt(0).toUpperCase() + d.slice(1)}
@@ -452,10 +463,10 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
 
                     <div>
                          <div className="flex justify-between items-center mb-3">
-                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">View Options</label>
+                            <label className={`text-[10px] font-bold uppercase tracking-widest ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-500'}`}>View Options</label>
                         </div>
-                        <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-[#2c2c2e] cursor-pointer transition-colors group/opt">
-                            <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">Show Weekends</span>
+                        <label className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors group/opt ${isCyberpunk ? 'hover:bg-[#00f0ff]/10' : 'hover:bg-gray-50 dark:hover:bg-[#2c2c2e]'}`}>
+                            <span className={`text-sm font-medium ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-gray-300'}`}>Show Weekends</span>
                             <div className="relative">
                                 <input 
                                     type="checkbox" 
@@ -463,7 +474,7 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
                                     onChange={(e) => setShowWeekends(e.target.checked)}
                                     className="sr-only peer"
                                 />
-                                <div className="w-10 h-5 bg-gray-200 dark:bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                                <div className={`w-10 h-5 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/30 peer-checked:bg-[#00f0ff]' : 'bg-gray-200 dark:bg-gray-700 peer-checked:bg-blue-500'}`}></div>
                             </div>
                         </label>
                     </div>
@@ -471,13 +482,13 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
             </div>
         )}
 
-        <div ref={containerRef} className="flex flex-col bg-white dark:bg-[#1c1c1e] rounded-xl border border-gray-200 dark:border-gray-700/50 p-6 relative transition-colors w-full">
+        <div ref={containerRef} className={`flex flex-col rounded-xl border p-6 relative transition-colors w-full ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-gray-700/50'}`}>
             <div className="flex justify-between items-start mb-4">
-                <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Activity Map</h3>
+                <h3 className={`text-xs font-bold uppercase tracking-wider ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400'}`}>Activity Map</h3>
                 <div className="flex items-center space-x-4">
                     <button 
                         onClick={() => setShowSettings(!showSettings)}
-                        className={`text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 ${showSettings ? 'text-gray-900 bg-gray-100 dark:text-white dark:bg-white/10' : ''}`}
+                        className={`transition-colors p-1.5 rounded-lg ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10'} ${showSettings ? (isCyberpunk ? 'bg-[#00f0ff]/20' : 'text-gray-900 bg-gray-100 dark:text-white dark:bg-white/10') : ''}`}
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
                     </button>
@@ -490,11 +501,11 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
 
             {tooltip && (
                 <div
-                    className="absolute z-50 px-3 py-2 text-xs text-white bg-gray-900 rounded-lg shadow-xl pointer-events-none transform -translate-x-1/2 -translate-y-full border border-gray-700 backdrop-blur-sm bg-opacity-95"
+                    className={`absolute z-50 px-3 py-2 text-xs rounded-lg shadow-xl pointer-events-none transform -translate-x-1/2 -translate-y-full backdrop-blur-sm bg-opacity-95 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/50 text-[#00f0ff]' : 'text-white bg-gray-900 border border-gray-700'}`}
                     style={{ left: tooltip.x, top: tooltip.y }}
                 >
                     {tooltip.content}
-                    <div className="absolute w-2 h-2 bg-gray-900 transform rotate-45 left-1/2 -translate-x-1/2 -bottom-1 border-r border-b border-gray-700"></div>
+                    <div className={`absolute w-2 h-2 transform rotate-45 left-1/2 -translate-x-1/2 -bottom-1 border-r border-b ${isCyberpunk ? 'bg-black border-[#00f0ff]/50' : 'bg-gray-900 border-gray-700'}`}></div>
                 </div>
             )}
         </div>

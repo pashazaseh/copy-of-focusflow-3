@@ -3,8 +3,7 @@ import * as storage from '../services/storageService';
 import { StoredNavConfig, NAV_ITEMS_DEF } from './Sidebar';
 import { TimerSettings, CountdownItem, MenuBarConfig, MenuBarMode, Project, HeatmapTheme, SidebarConfig, SettingsTab, AppTheme } from '../types';
 import { useCountdowns } from '../AppContext';
-// @ts-ignore
-import alarmSound from '../assets/alarm.mp3';
+import { playAlarm } from '../services/audioService';
 
 interface SettingsPanelProps {
     navConfig: StoredNavConfig[];
@@ -48,6 +47,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
     const [copyStatus, setCopyStatus] = useState<string>('');
     const [isSafetyLocked, setIsSafetyLocked] = useState(true);
+    const isCyberpunk = appTheme === 'cyberpunk';
 
     // Project Manager State
     const [managerTab, setManagerTab] = useState<'active'|'archived'>('active');
@@ -422,10 +422,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     };
 
     const testSound = () => {
-        // Changed to local asset for offline support
-        const audio = new Audio(alarmSound);
-        audio.volume = timerVolume;
-        audio.play().catch(e => alert("Could not play sound."));
+        playAlarm(timerVolume);
     };
 
     // --- Project Management Handlers ---
@@ -785,20 +782,20 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in-up">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div>
-                            <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h2>
+                            <h2 className={`text-3xl font-bold ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_5px_rgba(0,240,255,0.5)]' : 'text-gray-900 dark:text-white'}`}>Settings</h2>
                             <p className="text-gray-500 dark:text-gray-400 mt-1">Manage preferences, projects, and data.</p>
                         </div>
                         
                         {/* Tab Navigation */}
-                        <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl shadow-inner overflow-x-auto no-scrollbar">
+                        <div className={`flex p-1 rounded-xl shadow-inner overflow-x-auto no-scrollbar ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-800'}`}>
                             {(['general', 'timer', 'projects', 'integrations', 'data'] as SettingsTab[]).map(tab => (
                                 <button
                                     key={tab}
                                     onClick={() => onTabChange(tab)}
                                     className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wide whitespace-nowrap ${
                                         activeTab === tab 
-                                        ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm' 
-                                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                        ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm')
+                                        : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200')
                                     }`}
                                 >
                                     {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -813,11 +810,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         {/* === GENERAL TAB === */}
                         {activeTab === 'general' && (
                             <>
-                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Appearance</h3>
-                                    <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} rounded-2xl p-6 border shadow-sm`}>
+                                    <h3 className={`text-xl font-bold mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Appearance</h3>
+                                    <div className={`flex justify-between items-center p-3 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-700/50'}`}>
                                         <div>
-                                            <p className="font-semibold text-gray-900 dark:text-white">Dark Mode</p>
+                                            <p className={`font-semibold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Dark Mode</p>
                                             <p className="text-xs text-gray-500 dark:text-gray-400">Toggle application appearance</p>
                                         </div>
                                         <button 
@@ -829,9 +826,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                     </div>
 
                                     {/* Theme Selector */}
-                                    <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                    <div className={`mt-4 p-3 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-700/50'}`}>
                                         <div className="mb-3">
-                                            <p className="font-semibold text-gray-900 dark:text-white">Visual Theme</p>
+                                            <p className={`font-semibold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Visual Theme</p>
                                             <p className="text-xs text-gray-500 dark:text-gray-400">Select your preferred interface style</p>
                                         </div>
                                         <div className="flex gap-2">
@@ -853,16 +850,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                     </div>
                                 </div>
 
-                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} rounded-2xl p-6 border shadow-sm`}>
                                     <div className="flex items-center justify-between mb-6">
-                                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">Navigation & Sidebar</h3>
+                                        <h3 className={`text-xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Navigation & Sidebar</h3>
                                         <button onClick={handleResetConfig} className="text-xs text-gray-500 hover:text-blue-500 underline">Reset Default</button>
                                     </div>
                                     <div className="space-y-4">
                                         {/* Sidebar Widgets */}
-                                        <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                        <div className={`flex justify-between items-center p-3 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-700/50'}`}>
                                             <div>
-                                                <p className="font-semibold text-gray-900 dark:text-white">Weekly Goal Widget</p>
+                                                <p className={`font-semibold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Weekly Goal Widget</p>
                                                 <p className="text-xs text-gray-500 dark:text-gray-400">Show weekly progress at sidebar bottom</p>
                                             </div>
                                             <button 
@@ -876,7 +873,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                         <div className="w-full h-px bg-gray-100 dark:bg-gray-700"></div>
 
                                         {/* Nav Items */}
-                                        <div className="space-y-2 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                        <div className={`space-y-2 p-4 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-700/50'}`}>
                                             {navConfig.map((item, index) => {
                                                 const def = NAV_ITEMS_DEF.find(d => d.view === item.view);
                                                 if (!def) return null;
@@ -888,15 +885,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                         onDragStart={(e) => handleDragStart(e, index)}
                                                         onDragOver={(e) => handleDragOver(e, index)}
                                                         onDragEnd={handleDragEnd}
-                                                        className={`flex items-center p-3 rounded-xl bg-white dark:bg-[#252527] border border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 cursor-move transition-all ${draggingIndex === index ? 'opacity-50' : 'opacity-100 shadow-sm'}`}
+                                                        className={`flex items-center p-3 rounded-xl cursor-move transition-all ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-[#252527] border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500'} border ${draggingIndex === index ? 'opacity-50' : 'opacity-100 shadow-sm'}`}
                                                     >
                                                         <div className="mr-3 text-gray-400 cursor-move shrink-0">
                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
                                                         </div>
-                                                        <div className={`p-1.5 rounded-lg mr-3 shrink-0 ${item.isVisible ? 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 opacity-50'}`}>
+                                                        <div className={`p-1.5 rounded-lg mr-3 shrink-0 ${item.isVisible ? (isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300') : 'bg-gray-100 dark:bg-gray-800 text-gray-400 opacity-50'}`}>
                                                             {def.icon}
                                                         </div>
-                                                        <span className={`flex-1 font-bold text-sm ${item.isVisible ? 'text-gray-900 dark:text-white' : 'text-gray-400 line-through'}`}>
+                                                        <span className={`flex-1 font-bold text-sm ${item.isVisible ? (isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white') : 'text-gray-400 line-through'}`}>
                                                             {def.label}
                                                         </span>
                                                         <div className="relative flex items-center justify-end w-10">
@@ -914,15 +911,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                     </div>
                                 </div>
 
-                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Menu Bar Display</h3>
+                                <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} rounded-2xl p-6 border shadow-sm`}>
+                                    <h3 className={`text-xl font-bold mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Menu Bar Display</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div>
                                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Display Mode</label>
                                             <select 
                                                 value={menuBarConfig.mode} 
                                                 onChange={(e) => onUpdateMenuBarConfig({ ...menuBarConfig, mode: e.target.value as MenuBarMode })}
-                                                className="w-full px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                className={`w-full px-4 py-2.5 rounded-lg focus:outline-none focus:ring-2 ${isCyberpunk ? 'bg-black border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-indigo-500'}`}
                                             >
                                                 <option value="none">None (Icon Only)</option>
                                                 <option value="today">Today's Hours</option>
@@ -941,7 +938,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                 <select 
                                                     value={menuBarConfig.customCountdownId || ''} 
                                                     onChange={(e) => onUpdateMenuBarConfig({ ...menuBarConfig, customCountdownId: e.target.value })}
-                                                    className="w-full px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    className={`w-full px-4 py-2.5 rounded-lg focus:outline-none focus:ring-2 ${isCyberpunk ? 'bg-black border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-indigo-500'}`}
                                                 >
                                                     <option value="">Select an event...</option>
                                                     {countdowns.map(c => (
@@ -957,19 +954,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
                         {/* === PROJECTS TAB === */}
                         {activeTab === 'projects' && (
-                            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm min-h-[500px] flex flex-col">
+                            <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} rounded-2xl p-6 border shadow-sm min-h-[500px] flex flex-col`}>
                                 <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">Project Manager</h3>
-                                    <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl">
+                                    <h3 className={`text-xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Project Manager</h3>
+                                    <div className={`flex p-1 rounded-xl ${isCyberpunk ? 'bg-black border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-gray-700'}`}>
                                         <button 
                                             onClick={() => setManagerTab('active')} 
-                                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${managerTab === 'active' ? 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}
+                                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${managerTab === 'active' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400') : 'text-gray-500 dark:text-gray-400'}`}
                                         >
                                             Active
                                         </button>
                                         <button 
                                             onClick={() => setManagerTab('archived')} 
-                                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${managerTab === 'archived' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}
+                                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${managerTab === 'archived' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white') : 'text-gray-500 dark:text-gray-400'}`}
                                         >
                                             Archived
                                         </button>
@@ -982,15 +979,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                         {!isCreatingProject ? (
                                             <button 
                                                 onClick={() => setIsCreatingProject(true)}
-                                                className="w-full py-3 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl text-gray-400 dark:text-gray-500 font-bold text-sm hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-500 dark:hover:text-blue-400 transition-all flex items-center justify-center gap-2"
+                                                className={`w-full py-3 border-2 border-dashed rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${isCyberpunk ? 'border-[#00f0ff]/30 text-[#00f0ff]/60 hover:border-[#00f0ff] hover:text-[#00f0ff]' : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-500 dark:hover:text-blue-400'}`}
                                             >
                                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                                 Add New Project
                                             </button>
                                         ) : (
-                                            <div className="bg-white dark:bg-[#1c1c1e] rounded-xl p-4 border border-blue-200 dark:border-blue-900/50 shadow-lg animate-fade-in-down">
+                                            <div className={`rounded-xl p-4 border shadow-lg animate-fade-in-down ${isCyberpunk ? 'bg-black border-[#00f0ff]/50' : 'bg-white dark:bg-[#1c1c1e] border-blue-200 dark:border-blue-900/50'}`}>
                                                 <div className="flex justify-between items-center mb-4">
-                                                    <h4 className="text-sm font-bold text-gray-900 dark:text-white">New Project</h4>
+                                                    <h4 className={`text-sm font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>New Project</h4>
                                                     <button onClick={() => setIsCreatingProject(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                                     </button>
@@ -1002,7 +999,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                             type="text" 
                                                             value={newProjectName} 
                                                             onChange={(e) => setNewProjectName(e.target.value)} 
-                                                            className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 dark:text-white"
+                                                            className={`w-full px-4 py-2.5 rounded-xl text-sm focus:ring-2 outline-none ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-blue-500'}`}
                                                             placeholder="Project Name"
                                                             autoFocus
                                                         />
@@ -1029,7 +1026,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                     <button 
                                                         onClick={handleCreateNewProject}
                                                         disabled={!newProjectName.trim()}
-                                                        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-500/20 transition-all"
+                                                        className={`w-full py-2.5 rounded-xl font-bold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20'}`}
                                                     >
                                                         Create Project
                                                     </button>
@@ -1044,7 +1041,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                         <div className="text-center py-20 text-gray-400 text-sm">No projects found.</div>
                                     )}
                                     {displayedManagerProjects.map((p, index) => (
-                                        <div key={p.id} className="bg-gray-50 dark:bg-gray-900/30 rounded-xl p-4 border border-gray-200 dark:border-gray-700/50 group transition-all hover:border-blue-300 dark:hover:border-blue-500/50">
+                                        <div key={p.id} className={`rounded-xl p-4 border group transition-all ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20 hover:border-[#00f0ff]' : 'bg-gray-50 dark:bg-gray-900/30 border-gray-200 dark:border-gray-700/50 hover:border-blue-300 dark:hover:border-blue-500/50'}`}>
                                             {editingProjectId === p.id ? (
                                                 <div className="space-y-4">
                                                     <div>
@@ -1053,7 +1050,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                             type="text" 
                                                             value={editName} 
                                                             onChange={(e) => setEditName(e.target.value)} 
-                                                            className="w-full px-4 py-2.5 bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 dark:text-white transition-all shadow-sm"
+                                                            className={`w-full px-4 py-2.5 rounded-xl text-sm focus:ring-2 outline-none transition-all shadow-sm ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-blue-500'}`}
                                                             placeholder="e.g. Work, Study"
                                                             autoFocus
                                                         />
@@ -1088,15 +1085,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                                     value={editGoal || ''} 
                                                                     onChange={(e) => setEditGoal(parseInt(e.target.value))} 
                                                                     placeholder="Global Default"
-                                                                    className="w-full px-4 py-2.5 bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 dark:text-white transition-all shadow-sm"
+                                                                    className={`w-full px-4 py-2.5 rounded-xl text-sm focus:ring-2 outline-none transition-all shadow-sm ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-blue-500'}`}
                                                                 />
                                                             </div>
                                                         </div>
                                                     </div>
 
                                                     <div className="flex gap-3 pt-2 border-t border-gray-200 dark:border-gray-700/50">
-                                                        <button onClick={() => setEditingProjectId(null)} className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 text-xs font-bold py-2.5 rounded-xl transition-colors">Cancel</button>
-                                                        <button onClick={saveProjectEdit} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl transition-colors shadow-lg shadow-blue-500/20">Save Changes</button>
+                                                        <button onClick={() => setEditingProjectId(null)} className={`flex-1 text-xs font-bold py-2.5 rounded-xl transition-colors ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>Cancel</button>
+                                                        <button onClick={saveProjectEdit} className={`flex-1 text-xs font-bold py-2.5 rounded-xl transition-colors shadow-lg ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20'}`}>Save Changes</button>
                                                     </div>
                                                 </div>
                                             ) : (
@@ -1112,7 +1109,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                         </div>
                                                         <div className={`w-3 h-3 rounded-full shrink-0 ${p.theme === 'green' ? 'bg-green-500' : p.theme === 'blue' ? 'bg-blue-500' : p.theme === 'orange' ? 'bg-orange-500' : 'bg-purple-500'}`}></div>
                                                         <div className="truncate">
-                                                            <p className="font-bold text-base text-gray-900 dark:text-white truncate">{p.name}</p>
+                                                            <p className={`font-bold text-base truncate ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{p.name}</p>
                                                             <p className="text-xs text-gray-500 dark:text-gray-400">
                                                                 {p.weeklyGoal ? `Goal: ${p.weeklyGoal}h/wk` : 'Global Goal'}
                                                             </p>
@@ -1143,8 +1140,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
                         {/* === TIMER TAB === */}
                         {activeTab === 'timer' && (
-                            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-                                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Timer Configuration</h3>
+                            <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} rounded-2xl p-6 border shadow-sm`}>
+                                <h3 className={`text-xl font-bold mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Timer Configuration</h3>
                                 
                                 <div className="space-y-6">
                                     {/* ... Timer settings ... */}
@@ -1152,26 +1149,26 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                         <div className="flex-1">
                                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Focus</label>
                                             <div className="relative">
-                                                <input type="number" value={timerSettings.pomoDuration} onChange={(e) => handleTimerSettingChange('pomoDuration', parseInt(e.target.value))} className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white font-bold" />
+                                                <input type="number" value={timerSettings.pomoDuration} onChange={(e) => handleTimerSettingChange('pomoDuration', parseInt(e.target.value))} className={`w-full px-3 py-2 rounded-lg text-sm font-bold ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff]' : 'bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white'}`} />
                                             </div>
                                         </div>
                                         <div className="flex-1">
                                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Short Break</label>
                                             <div className="relative">
-                                                <input type="number" value={timerSettings.shortBreakDuration} onChange={(e) => handleTimerSettingChange('shortBreakDuration', parseInt(e.target.value))} className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white font-bold" />
+                                                <input type="number" value={timerSettings.shortBreakDuration} onChange={(e) => handleTimerSettingChange('shortBreakDuration', parseInt(e.target.value))} className={`w-full px-3 py-2 rounded-lg text-sm font-bold ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff]' : 'bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white'}`} />
                                             </div>
                                         </div>
                                         <div className="flex-1">
                                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Long Break</label>
                                             <div className="relative">
-                                                <input type="number" value={timerSettings.longBreakDuration} onChange={(e) => handleTimerSettingChange('longBreakDuration', parseInt(e.target.value))} className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white font-bold" />
+                                                <input type="number" value={timerSettings.longBreakDuration} onChange={(e) => handleTimerSettingChange('longBreakDuration', parseInt(e.target.value))} className={`w-full px-3 py-2 rounded-lg text-sm font-bold ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff]' : 'bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white'}`} />
                                             </div>
                                         </div>
                                     </div>
 
                                     <div>
                                         <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Volume</label>
-                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center space-x-3 h-[42px]">
+                                        <div className={`p-4 rounded-xl border flex items-center space-x-3 h-[42px] ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700'}`}>
                                             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
                                             <input 
                                                 type="range" 
@@ -1187,14 +1184,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                     </div>
 
                                     {/* Audio Check */}
-                                    <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                    <div className={`flex justify-between items-center p-3 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-700/50'}`}>
                                         <div>
-                                            <p className="font-semibold text-gray-900 dark:text-white">Audio Playback</p>
+                                            <p className={`font-semibold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Audio Playback</p>
                                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Verify sound is working</p>
                                         </div>
                                         <button 
                                             onClick={testSound}
-                                            className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-gray-700 dark:text-gray-200"
+                                            className={`px-3 py-1.5 text-xs font-medium rounded-lg shadow-sm transition-colors ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30 hover:bg-[#00f0ff]/20' : 'bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200'}`}
                                         >
                                             Test Sound
                                         </button>
@@ -1213,7 +1210,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                                 type="number" 
                                                                 value={duration}
                                                                 onChange={(e) => handlePresetChange('quickDurations', index, parseInt(e.target.value))}
-                                                                className="w-full bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                className={`w-full rounded-lg px-2 py-1.5 text-center text-sm font-bold focus:outline-none focus:ring-1 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-blue-500'}`}
                                                             />
                                                             <span className="absolute right-1 top-1.5 text-[10px] text-gray-400 pointer-events-none">m</span>
                                                         </div>
@@ -1231,7 +1228,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                                 type="number" 
                                                                 value={duration}
                                                                 onChange={(e) => handlePresetChange('shortBreakPresets', index, parseInt(e.target.value))}
-                                                                className="w-full bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-green-500"
+                                                                className={`w-full rounded-lg px-2 py-1.5 text-center text-sm font-bold focus:outline-none focus:ring-1 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-green-500'}`}
                                                             />
                                                             <span className="absolute right-1 top-1.5 text-[10px] text-gray-400 pointer-events-none">m</span>
                                                         </div>

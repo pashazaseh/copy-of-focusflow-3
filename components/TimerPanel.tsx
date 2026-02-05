@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as storage from '../services/storageService';
 import { TimerSettings, SessionRecord, Project, MenuBarConfig } from '../types';
+import { playAlarm } from '../services/audioService';
+import { useTheme } from '../AppContext';
 
 interface TimerPanelProps {
     onSaveSession: (hours: number, note?: string, projectId?: string) => void;
@@ -17,6 +19,7 @@ type TimerPhase = 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
 
 export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId, projects, menuBarConfig, externalStart, onConsumeExternalStart }) => {
   // --- Core State ---
+  const { appTheme } = useTheme();
   const [mode, setMode] = useState<TimerMode>('POMO');
   const [phase, setPhase] = useState<TimerPhase>('FOCUS');
   const [timeLeft, setTimeLeft] = useState(25 * 60); 
@@ -64,8 +67,6 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   const endTimeRef = useRef<number | null>(null); 
   const startTimeRef = useRef<number | null>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
-  
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // --- Initialization ---
   useEffect(() => {
@@ -79,12 +80,6 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
           setInitialTime(duration);
           setTimeLeft(duration);
       }, 10);
-
-      
-      // Changed to local asset for offline support. Ensure 'alarm.mp3' is in your public/assets folder.
-      audioRef.current = new Audio('./assets/alarm.mp3');
-      const savedVol = localStorage.getItem('focusflow_timer_volume');
-      audioRef.current.volume = savedVol ? parseFloat(savedVol) : 0.5;
 
       const handleClickOutside = (event: MouseEvent) => {
           if (historyMenuRef.current && !historyMenuRef.current.contains(event.target as Node)) {
@@ -173,7 +168,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       setIsActive(false);
       if (timerRef.current) clearInterval(timerRef.current);
       endTimeRef.current = null;
-      playAlarm();
+      triggerAlarm();
 
       const now = new Date();
       const endTime = now.toISOString();
@@ -290,7 +285,11 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
 
   const toggleTimer = () => setIsActive(!isActive);
 
-  const playAlarm = () => { if (audioRef.current) { audioRef.current.currentTime = 0; audioRef.current.play().catch(()=>{}); }};
+  const triggerAlarm = () => { 
+      const savedVol = localStorage.getItem('focusflow_timer_volume');
+      const vol = savedVol ? parseFloat(savedVol) : 0.5;
+      playAlarm(vol);
+  };
   
   const formatTime = (seconds: number) => { 
       const m = Math.floor(seconds / 60); 
@@ -510,8 +509,10 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   const dashOffset = circumference * (1 - progress);
   const themeColor = mode === 'STOPWATCH' ? 'text-orange-500' : phase === 'FOCUS' ? 'text-blue-500' : 'text-green-500';
 
+  const isCyberpunk = appTheme === 'cyberpunk';
+
   return (
-    <div className="flex h-full w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-white overflow-hidden relative transition-colors duration-300">
+    <div className={`flex h-full w-full overflow-hidden relative transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white'}`}>
         
         {/* ... (Settings and Modals remain exactly the same as previously generated) ... */}
         {/* --- SETTINGS MODAL --- */}
@@ -700,30 +701,30 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
         <div className="flex-1 flex flex-col items-center justify-center p-6 pb-20 relative transition-colors duration-300">
              <div className="flex flex-col items-center justify-center w-full max-w-md">
                  {/* Mode Switcher */}
-                 <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl mb-6">
+                 <div className={`flex p-1 rounded-xl mb-6 ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-gray-800'}`}>
                      <button 
                          onClick={() => switchMode('POMO')} 
-                         className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'POMO' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                         className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'POMO' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200')}`}
                      >
                          Pomodoro
                      </button>
                      <button 
                          onClick={() => switchMode('STOPWATCH')} 
-                         className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'STOPWATCH' ? 'bg-white dark:bg-gray-700 text-orange-500 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                         className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'STOPWATCH' ? (isCyberpunk ? 'bg-[#f0f]/20 text-[#f0f] shadow-[0_0_10px_rgba(255,0,255,0.3)]' : 'bg-white dark:bg-gray-700 text-orange-500 dark:text-white shadow-sm') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200')}`}
                      >
                          Stopwatch
                      </button>
                  </div>
 
                  {/* Mode/Phase Pill */}
-                 <div className={`text-[10px] font-bold uppercase tracking-[0.2em] mb-6 py-2 px-5 rounded-full border bg-white/50 dark:bg-black/20 ${mode === 'POMO' ? (phase === 'FOCUS' ? 'text-blue-500 border-blue-200 dark:border-blue-900/50' : 'text-green-500 border-green-200 dark:border-green-900/50') : 'text-orange-500 border-orange-200 dark:border-orange-900/50'}`}>
+                 <div className={`text-[10px] font-bold uppercase tracking-[0.2em] mb-6 py-2 px-5 rounded-full border ${isCyberpunk ? 'bg-black border-[#00f0ff]/50 text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.2)]' : `bg-white/50 dark:bg-black/20 ${mode === 'POMO' ? (phase === 'FOCUS' ? 'text-blue-500 border-blue-200 dark:border-blue-900/50' : 'text-green-500 border-green-200 dark:border-green-900/50') : 'text-orange-500 border-orange-200 dark:border-orange-900/50'}`}`}>
                      {mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus Time' : 'Break Time') : 'Stopwatch Mode'}
                  </div>
 
                  {/* Project & Task Input */}
                  <div className="mb-8 w-64 z-20 flex flex-col gap-3">
                      <div className="relative">
-                         <select value={selectedProjectId} onChange={(e) => setSelectedProjectId(e.target.value)} disabled={isActive} className={`w-full appearance-none bg-gray-100 dark:bg-[#1c1c1e] text-gray-900 dark:text-white px-4 py-2.5 pr-8 rounded-xl border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm font-bold text-center transition-all ${isActive ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200 dark:hover:bg-[#2c2c2e] cursor-pointer'}`}>
+                         <select value={selectedProjectId} onChange={(e) => setSelectedProjectId(e.target.value)} disabled={isActive} className={`w-full appearance-none px-4 py-2.5 pr-8 rounded-xl border text-sm font-bold text-center transition-all ${isCyberpunk ? 'bg-black border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff] focus:shadow-[0_0_10px_rgba(0,240,255,0.2)]' : 'bg-gray-100 dark:bg-[#1c1c1e] text-gray-900 dark:text-white border-transparent focus:border-blue-500'} ${isActive ? 'opacity-50 cursor-not-allowed' : isCyberpunk ? 'hover:border-[#00f0ff]/60' : 'hover:bg-gray-200 dark:hover:bg-[#2c2c2e] cursor-pointer'}`}>
                              {projects.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
                          </select>
                      </div>
@@ -731,8 +732,8 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
                         type="text" 
                         value={sessionLabel} 
                         onChange={(e) => setSessionLabel(e.target.value)} 
-                        placeholder="What are you working on?" 
-                        className="w-full bg-transparent border-b border-gray-200 dark:border-gray-700 text-center text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors py-1.5" 
+                        placeholder={isCyberpunk ? "ENTER MISSION OBJECTIVE" : "What are you working on?"} 
+                        className={`w-full bg-transparent border-b text-center text-sm focus:outline-none transition-colors py-1.5 ${isCyberpunk ? 'border-[#00f0ff]/30 text-[#00f0ff] placeholder-[#00f0ff]/30 focus:border-[#00f0ff]' : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 placeholder-gray-400 focus:border-blue-500'}`}
                         disabled={isActive}
                      />
                  </div>
@@ -741,15 +742,15 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
                  <div className="relative w-full max-w-[340px] aspect-square flex items-center justify-center mb-8 group">
                      <svg className="w-full h-full transform -rotate-90 drop-shadow-2xl" viewBox="0 0 100 100">
                          <defs>
-                             <linearGradient id="focusGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#60A5FA" /><stop offset="100%" stopColor="#3B82F6" /></linearGradient>
+                             <linearGradient id="focusGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={isCyberpunk ? "#00f0ff" : "#60A5FA"} /><stop offset="100%" stopColor={isCyberpunk ? "#0099ff" : "#3B82F6"} /></linearGradient>
                              <linearGradient id="breakGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#34D399" /><stop offset="100%" stopColor="#10B981" /></linearGradient>
                              <linearGradient id="stopwatchGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#FBBF24" /><stop offset="100%" stopColor="#F59E0B" /></linearGradient>
                          </defs>
-                         <circle cx="50" cy="50" r={radius} className="stroke-gray-100 dark:stroke-[#252527] transition-colors duration-300" strokeWidth="4" fill="transparent" />
-                         <circle cx="50" cy="50" r={radius} stroke={`url(#${mode === 'POMO' ? (phase === 'FOCUS' ? 'focusGradient' : 'breakGradient') : 'stopwatchGradient'})`} strokeWidth="4" fill="transparent" strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" className={`transition-all duration-1000 ease-linear ${isActive && 'drop-shadow-[0_0_15px_rgba(59,130,246,0.4)]'}`}/>
+                         <circle cx="50" cy="50" r={radius} className={`${isCyberpunk ? 'stroke-[#00f0ff]/10' : 'stroke-gray-100 dark:stroke-[#252527]'} transition-colors duration-300`} strokeWidth="4" fill="transparent" />
+                         <circle cx="50" cy="50" r={radius} stroke={`url(#${mode === 'POMO' ? (phase === 'FOCUS' ? 'focusGradient' : 'breakGradient') : 'stopwatchGradient'})`} strokeWidth="4" fill="transparent" strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" className={`transition-all duration-1000 ease-linear ${isActive && (isCyberpunk ? 'drop-shadow-[0_0_20px_rgba(0,240,255,0.6)]' : 'drop-shadow-[0_0_15px_rgba(59,130,246,0.4)]')}`}/>
                      </svg>
                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                         <div className={`text-7xl md:text-8xl font-bold tracking-tight tabular-nums select-none transition-colors duration-300 ${themeColor} drop-shadow-md`}>{formatTime(timeLeft)}</div>
+                         <div className={`text-7xl md:text-8xl font-bold tracking-tight tabular-nums select-none transition-colors duration-300 ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_10px_rgba(0,240,255,0.8)]' : themeColor} drop-shadow-md`}>{formatTime(timeLeft)}</div>
                      </div>
                  </div>
 
@@ -765,7 +766,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
                                     setInitialTime(mins * 60);
                                     setTimeLeft(mins * 60);
                                 }}
-                                className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-xs font-bold hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-blue-500 transition-all border border-transparent hover:border-blue-200 dark:hover:border-blue-900"
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/30 hover:bg-[#00f0ff]/20 hover:shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-transparent hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-blue-500 hover:border-blue-200 dark:hover:border-blue-900'}`}
                              >
                                  {mins}m
                              </button>
@@ -775,11 +776,11 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
 
                  {/* Controls */}
                  <div className="flex items-center space-x-6">
-                     <button onClick={resetTimer} className="p-4 bg-gray-100 dark:bg-[#1c1c1e] hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-full transition-all active:scale-95 shadow-sm hover:shadow-md">
+                     <button onClick={resetTimer} className={`p-4 rounded-full transition-all active:scale-95 shadow-sm hover:shadow-md ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'bg-gray-100 dark:bg-[#1c1c1e] hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                      </button>
                      
-                     <button onClick={toggleTimer} className={`h-20 w-20 rounded-full font-bold text-white shadow-xl transition-all hover:shadow-2xl active:scale-95 flex items-center justify-center ${mode === 'STOPWATCH' ? 'bg-orange-500 hover:bg-orange-600' : (phase === 'FOCUS' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700')}`}>
+                     <button onClick={toggleTimer} className={`h-20 w-20 rounded-full font-bold text-white shadow-xl transition-all hover:shadow-2xl active:scale-95 flex items-center justify-center ${isCyberpunk ? 'bg-black border-2 border-[#00f0ff] text-[#00f0ff] shadow-[0_0_20px_rgba(0,240,255,0.4)] hover:bg-[#00f0ff] hover:text-black' : (mode === 'STOPWATCH' ? 'bg-orange-500 hover:bg-orange-600' : (phase === 'FOCUS' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'))}`}>
                          {isActive ? (
                              <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
                          ) : (
@@ -797,10 +798,10 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
 
              {/* Bottom Controls */}
              <div className="absolute bottom-8 right-8 z-10 flex space-x-3">
-                 <button onClick={openSettings} className="p-2.5 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-all">
+                 <button onClick={openSettings} className={`p-2.5 rounded-xl transition-all ${isCyberpunk ? 'text-[#00f0ff]/60 hover:text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                  </button>
-                 <button onClick={() => setShowSidebar(!showSidebar)} className={`p-2.5 rounded-xl transition-all ${showSidebar ? 'text-blue-500' : 'text-gray-500 dark:text-gray-400 hover:text-white'}`}>
+                 <button onClick={() => setShowSidebar(!showSidebar)} className={`p-2.5 rounded-xl transition-all ${showSidebar ? (isCyberpunk ? 'text-[#00f0ff]' : 'text-blue-500') : (isCyberpunk ? 'text-[#00f0ff]/60 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-white')}`}>
                      {showSidebar ? (
                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
                      ) : (
@@ -811,18 +812,18 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
         </div>
 
         {/* RIGHT COLUMN: Sidebar Stats & History - Responsive */}
-        <div className={`bg-[#151516] border-l border-gray-800 flex flex-col overflow-hidden transition-all duration-300 absolute md:relative right-0 h-full z-30 shadow-2xl md:shadow-none ${showSidebar ? 'w-[320px] md:w-[360px] translate-x-0' : 'w-0 translate-x-full md:translate-x-0 md:w-0'}`}>
+        <div className={`${isCyberpunk ? 'bg-[#020202] border-[#00f0ff]/20' : 'bg-[#151516] border-gray-800'} border-l flex flex-col overflow-hidden transition-all duration-300 absolute md:relative right-0 h-full z-30 shadow-2xl md:shadow-none ${showSidebar ? 'w-[320px] md:w-[360px] translate-x-0' : 'w-0 translate-x-full md:translate-x-0 md:w-0'}`}>
              <div className="p-6 h-full flex flex-col w-[320px] md:w-[360px]"> 
                 <div className="mb-8 shrink-0">
-                    <h3 className="text-gray-400 font-bold text-[10px] uppercase tracking-wider mb-4">Today's Overview</h3>
+                    <h3 className={`${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-400'} font-bold text-[10px] uppercase tracking-wider mb-4`}>Today's Overview</h3>
                     <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-[#1c1c1e] p-4 rounded-xl border border-gray-800">
-                            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Sessions</div>
-                            <div className="text-3xl font-bold text-white">{stats.todayPomos}</div>
+                        <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-[#1c1c1e] border-gray-800'} p-4 rounded-xl border`}>
+                            <div className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Sessions</div>
+                            <div className={`text-3xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{stats.todayPomos}</div>
                         </div>
-                        <div className="bg-[#1c1c1e] p-4 rounded-xl border border-gray-800">
-                            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Focus Time</div>
-                            <div className="text-3xl font-bold text-white">{stats.todayFocus} <span className="text-sm font-medium text-gray-500">min</span></div>
+                        <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-[#1c1c1e] border-gray-800'} p-4 rounded-xl border`}>
+                            <div className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Focus Time</div>
+                            <div className={`text-3xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{stats.todayFocus} <span className={`text-sm font-medium ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>min</span></div>
                         </div>
                     </div>
                 </div>

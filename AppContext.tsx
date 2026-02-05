@@ -105,41 +105,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const checkReminders = useCallback(async () => {
         if (Notification.permission !== "granted") return;
-        const events = await storage.getCustomEvents();
-        const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
+        try {
+            const events = await storage.getCustomEvents();
+            const now = new Date();
+            const todayStr = now.toISOString().split('T')[0];
 
-        events.forEach(event => {
-            if (!event.reminderMinutes || !event.time) return;
-            
-            const parts = event.date.split('-');
-            const eventDateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-            
-            let occursToday = false;
-            if (event.recurrence === 'daily') occursToday = now >= eventDateObj;
-            else if (event.recurrence === 'weekly') occursToday = now >= eventDateObj && now.getDay() === eventDateObj.getDay();
-            else if (event.recurrence === 'monthly') occursToday = now >= eventDateObj && now.getDate() === eventDateObj.getDate();
-            else occursToday = event.date === todayStr;
-
-            if (occursToday) {
-                const [h, min] = (event.time?.split(':') || ['0', '0']).map(Number);
-                const eventTime = new Date(now);
-                eventTime.setHours(h, min, 0, 0);
-                const triggerTime = new Date(eventTime.getTime() - (event.reminderMinutes! * 60 * 1000));
-                const diff = now.getTime() - triggerTime.getTime();
+            events.forEach(event => {
+                if (!event.reminderMinutes || !event.time) return;
                 
-                if (diff >= 0 && diff < 90000) {
-                    const occurrenceId = `${event.id}-${todayStr}`;
-                    if (!notifiedEventsRef.current.has(occurrenceId)) {
-                        new Notification(`Reminder: ${event.title}`, {
-                            body: `Event starts in ${event.reminderMinutes} minutes.`,
-                            icon: '/favicon.ico' 
-                        });
-                        notifiedEventsRef.current.add(occurrenceId);
+                const parts = event.date.split('-');
+                const eventDateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                
+                let occursToday = false;
+                if (event.recurrence === 'daily') occursToday = now >= eventDateObj;
+                else if (event.recurrence === 'weekly') occursToday = now >= eventDateObj && now.getDay() === eventDateObj.getDay();
+                else if (event.recurrence === 'monthly') occursToday = now >= eventDateObj && now.getDate() === eventDateObj.getDate();
+                else occursToday = event.date === todayStr;
+
+                if (occursToday) {
+                    const [h, min] = (event.time?.split(':') || ['0', '0']).map(Number);
+                    const eventTime = new Date(now);
+                    eventTime.setHours(h, min, 0, 0);
+                    const triggerTime = new Date(eventTime.getTime() - (event.reminderMinutes! * 60 * 1000));
+                    const diff = now.getTime() - triggerTime.getTime();
+                    
+                    if (diff >= 0 && diff < 90000) {
+                        const occurrenceId = `${event.id}-${todayStr}`;
+                        if (!notifiedEventsRef.current.has(occurrenceId)) {
+                            new Notification(`Reminder: ${event.title}`, {
+                                body: `Event starts in ${event.reminderMinutes} minutes.`,
+                                icon: '/favicon.ico' 
+                            });
+                            notifiedEventsRef.current.add(occurrenceId);
+                        }
                     }
                 }
-            }
-        });
+            });
+        } catch (error) {
+            console.error("Failed to check reminders:", error);
+        }
     }, []);
 
     // --- Theme State ---
@@ -188,27 +192,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [currentProjectId, setCurrentProjectId] = useState<string>('default-project');
 
     const createProject = useCallback(async (name: string, theme: HeatmapTheme) => {
-        const newProject: Project = { id: Date.now().toString(), name, theme, createdAt: new Date().toISOString(), sortOrder: projects.length, isArchived: false };
-        const updated = await storage.saveProject(newProject);
-        setProjects(updated);
-        setCurrentProjectId(newProject.id);
+        try {
+            const newProject: Project = { id: Date.now().toString(), name, theme, createdAt: new Date().toISOString(), sortOrder: projects.length, isArchived: false };
+            const updated = await storage.saveProject(newProject);
+            if (Array.isArray(updated)) {
+                setProjects(updated);
+                setCurrentProjectId(newProject.id);
+            }
+        } catch (error) {
+            console.error("Failed to create project:", error);
+        }
     }, [projects.length]);
 
     const deleteProject = useCallback(async (id: string) => {
-        const updated = await storage.deleteProject(id);
-        setProjects(updated);
-        if (currentProjectId === id && updated.length > 0) {
-            setCurrentProjectId(updated[0].id);
+        try {
+            const updated = await storage.deleteProject(id);
+            if (Array.isArray(updated)) {
+                setProjects(updated);
+                if (currentProjectId === id && updated.length > 0) {
+                    setCurrentProjectId(updated[0].id);
+                }
+            }
+        } catch (error) {
+            console.error("Failed to delete project:", error);
         }
     }, [currentProjectId]);
 
     const updateProjects = useCallback(async (updated: Project[]) => {
-        setProjects(updated);
-        await storage.updateProjectsList(updated);
-        const current = updated.find(p => p.id === currentProjectId);
-        if (current && current.isArchived) {
-            const firstActive = updated.find(p => !p.isArchived);
-            if (firstActive) setCurrentProjectId(firstActive.id);
+        try {
+            setProjects(updated);
+            await storage.updateProjectsList(updated);
+            const current = updated.find(p => p.id === currentProjectId);
+            if (current && current.isArchived) {
+                const firstActive = updated.find(p => !p.isArchived);
+                if (firstActive) setCurrentProjectId(firstActive.id);
+            }
+        } catch (error) {
+            console.error("Failed to update projects:", error);
         }
     }, [currentProjectId]);
 
@@ -217,20 +237,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [goals, setGoals] = useState<UserGoals>({ daily: 4, weekly: 40, monthly: 160, yearly: 2000 });
 
     const saveLog = useCallback(async (date: string, hours: number, notes?: string, projectId?: string) => {
-        const targetProject = projectId || currentProjectId;
-        if (!targetProject) return;
-        const newLogs = await storage.saveLog({ date, hours, notes, projectId: targetProject });
-        setLogs(newLogs);
+        try {
+            const targetProject = projectId || currentProjectId;
+            if (!targetProject) return;
+            const newLogs = await storage.saveLog({ date, hours, notes, projectId: targetProject });
+            if (Array.isArray(newLogs)) {
+                setLogs(newLogs);
+            }
+        } catch (error) {
+            console.error("Failed to save log:", error);
+        }
     }, [currentProjectId]);
 
     const deleteLog = useCallback(async (date: string, projectId: string) => {
-        const newLogs = await storage.deleteLog(date, projectId);
-        setLogs(newLogs);
+        try {
+            const newLogs = await storage.deleteLog(date, projectId);
+            if (Array.isArray(newLogs)) {
+                setLogs(newLogs);
+            }
+        } catch (error) {
+            console.error("Failed to delete log:", error);
+        }
     }, []);
 
     const updateGoals = useCallback(async (newGoals: UserGoals) => {
-        setGoals(newGoals);
-        await storage.saveGoals(newGoals);
+        try {
+            setGoals(newGoals);
+            await storage.saveGoals(newGoals);
+        } catch (error) {
+            console.error("Failed to update goals:", error);
+        }
     }, []);
 
     // --- UI State ---
@@ -246,13 +282,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, []);
 
     const setSidebarConfig = useCallback(async (newConfig: SidebarConfig) => {
-        setSidebarConfigState(newConfig);
-        await storage.saveSidebarConfig(newConfig);
+        try {
+            setSidebarConfigState(newConfig);
+            await storage.saveSidebarConfig(newConfig);
+        } catch (error) {
+            console.error("Failed to save sidebar config:", error);
+        }
     }, []);
 
     const setMenuBarConfig = useCallback(async (newConfig: MenuBarConfig) => {
-        setMenuBarConfigState(newConfig);
-        await storage.saveMenuBarConfig(newConfig);
+        try {
+            setMenuBarConfigState(newConfig);
+            await storage.saveMenuBarConfig(newConfig);
+        } catch (error) {
+            console.error("Failed to save menu bar config:", error);
+        }
     }, []);
 
     // --- Timer State ---
@@ -262,18 +306,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [countdowns, setCountdowns] = useState<CountdownItem[]>([]);
 
     const saveCountdown = useCallback(async (item: CountdownItem) => {
-        const updated = await storage.saveCountdown(item);
-        setCountdowns(updated);
+        try {
+            const updated = await storage.saveCountdown(item);
+            if (Array.isArray(updated)) {
+                setCountdowns(updated);
+            }
+        } catch (error) {
+            console.error("Failed to save countdown:", error);
+        }
     }, []);
 
     const deleteCountdown = useCallback(async (id: string) => {
-        const updated = await storage.deleteCountdown(id);
-        setCountdowns(updated);
+        try {
+            const updated = await storage.deleteCountdown(id);
+            if (Array.isArray(updated)) {
+                setCountdowns(updated);
+            }
+        } catch (error) {
+            console.error("Failed to delete countdown:", error);
+        }
     }, []);
 
     const importCountdowns = useCallback(async (items: CountdownItem[]) => {
-        for (const item of items) await storage.saveCountdown(item);
-        setCountdowns(await storage.getCountdowns());
+        try {
+            for (const item of items) await storage.saveCountdown(item);
+            const updated = await storage.getCountdowns();
+            if (Array.isArray(updated)) {
+                setCountdowns(updated);
+            }
+        } catch (error) {
+            console.error("Failed to import countdowns:", error);
+        }
     }, []);
 
     // --- Global Init Effect ---

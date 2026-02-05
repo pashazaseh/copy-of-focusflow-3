@@ -6,6 +6,7 @@ import {
     PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis, ComposedChart
 } from 'recharts';
 import { getSessions } from '../services/storageService';
+import { useTheme } from '../AppContext';
 
 interface StatisticsPanelProps {
   logs: StudyLog[];
@@ -24,9 +25,14 @@ type ChartType = 'bar' | 'line' | 'area';
 type ScopeType = 'project' | 'global';
 type GoalPeriod = 'daily' | 'weekly' | 'monthly';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1'];
+const DEFAULT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1'];
+const CYBERPUNK_COLORS = ['#00f0ff', '#ff00ff', '#00ff00', '#ffff00', '#ff0099', '#9900ff', '#0099ff'];
 
 export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs, projects, goals, onUpdateGoals, onEditLog, projectId, goalHistory = [] }) => {
+  const { appTheme } = useTheme();
+  const isCyberpunk = appTheme === 'cyberpunk';
+  const COLORS = isCyberpunk ? CYBERPUNK_COLORS : DEFAULT_COLORS;
+
   // Persisted State
   const [scope, setScope] = useState<ScopeType>(() => {
       if (typeof window !== 'undefined') return (localStorage.getItem('focusflow_stats_scope') as ScopeType) || 'project';
@@ -327,7 +333,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
   }, [targetLogs, goalPeriod, goals, goalHistory]);
 
   const weekDayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
+  
   const renderChart = () => {
     const commonProps = {
         data: chartData,
@@ -337,15 +343,15 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
     if (chartType === 'line') {
         return (
             <LineChart {...commonProps}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" opacity={0.5} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isCyberpunk ? "#00f0ff" : "#e5e7eb"} opacity={isCyberpunk ? 0.1 : 0.5} />
                 <XAxis dataKey="date" tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} dy={10} minTickGap={30} />
                 <YAxis tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
                 <Tooltip 
-                    cursor={{ stroke: '#3b82f6', strokeWidth: 1 }}
-                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}} 
-                    itemStyle={{ color: '#1f2937' }}
+                    cursor={{ stroke: isCyberpunk ? '#00f0ff' : '#3b82f6', strokeWidth: 1 }}
+                    contentStyle={{borderRadius: '12px', border: isCyberpunk ? '1px solid rgba(0, 240, 255, 0.3)' : 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: isCyberpunk ? '#000' : '#ffffff', color: isCyberpunk ? '#00f0ff' : '#1f2937'}} 
+                    itemStyle={{ color: isCyberpunk ? '#00f0ff' : '#1f2937' }}
                 />
-                <Line type="monotone" dataKey="hours" stroke="#3b82f6" strokeWidth={3} dot={{r: 3, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff'}} activeDot={{r: 6}} />
+                <Line type="monotone" dataKey="hours" stroke={isCyberpunk ? "#00f0ff" : "#3b82f6"} strokeWidth={3} dot={{r: 3, fill: isCyberpunk ? "#00f0ff" : "#3b82f6", strokeWidth: 2, stroke: isCyberpunk ? '#000' : '#fff'}} activeDot={{r: 6}} />
             </LineChart>
         );
     } else if (chartType === 'area') {
@@ -353,33 +359,33 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
             <AreaChart {...commonProps}>
                 <defs>
                     <linearGradient id="colorHours" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                        <stop offset="5%" stopColor={isCyberpunk ? "#00f0ff" : "#8b5cf6"} stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor={isCyberpunk ? "#00f0ff" : "#8b5cf6"} stopOpacity={0}/>
                     </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" opacity={0.5} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isCyberpunk ? "#00f0ff" : "#e5e7eb"} opacity={isCyberpunk ? 0.1 : 0.5} />
                 <XAxis dataKey="date" tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} dy={10} minTickGap={30} />
                 <YAxis tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
                 <Tooltip 
-                    cursor={{ stroke: '#8b5cf6', strokeWidth: 1 }}
-                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}} 
-                    itemStyle={{ color: '#1f2937' }}
+                    cursor={{ stroke: isCyberpunk ? '#00f0ff' : '#8b5cf6', strokeWidth: 1 }}
+                    contentStyle={{borderRadius: '12px', border: isCyberpunk ? '1px solid rgba(0, 240, 255, 0.3)' : 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: isCyberpunk ? '#000' : '#ffffff', color: isCyberpunk ? '#00f0ff' : '#1f2937'}} 
+                    itemStyle={{ color: isCyberpunk ? '#00f0ff' : '#1f2937' }}
                 />
-                <Area type="monotone" dataKey="hours" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorHours)" strokeWidth={3} />
+                <Area type="monotone" dataKey="hours" stroke={isCyberpunk ? "#00f0ff" : "#8b5cf6"} fillOpacity={1} fill="url(#colorHours)" strokeWidth={3} />
             </AreaChart>
         );
     }
     return (
         <BarChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" opacity={0.5} />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isCyberpunk ? "#00f0ff" : "#e5e7eb"} opacity={isCyberpunk ? 0.1 : 0.5} />
             <XAxis dataKey="date" tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} dy={10} minTickGap={30} />
             <YAxis tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
             <Tooltip 
-                cursor={{fill: 'rgba(59, 130, 246, 0.1)'}} 
-                contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}} 
-                itemStyle={{ color: '#1f2937' }}
+                cursor={{fill: isCyberpunk ? 'rgba(0, 240, 255, 0.1)' : 'rgba(59, 130, 246, 0.1)'}} 
+                contentStyle={{borderRadius: '12px', border: isCyberpunk ? '1px solid rgba(0, 240, 255, 0.3)' : 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: isCyberpunk ? '#000' : '#ffffff', color: isCyberpunk ? '#00f0ff' : '#1f2937'}} 
+                itemStyle={{ color: isCyberpunk ? '#00f0ff' : '#1f2937' }}
             />
-            <Bar dataKey="hours" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={32} />
+            <Bar dataKey="hours" fill={isCyberpunk ? "#00f0ff" : "#3b82f6"} radius={[4, 4, 0, 0]} barSize={32} />
         </BarChart>
     );
   };
@@ -425,36 +431,36 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
             {/* --- Charts Header & Controls --- */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pt-4 border-t border-gray-200 dark:border-gray-800">
                 <div>
-                    <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Statistics</h2>
+                    <h2 className={`text-3xl font-bold ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_5px_rgba(0,240,255,0.5)]' : 'text-gray-900 dark:text-white'}`}>Statistics</h2>
                     <p className="text-gray-500 dark:text-gray-400 mt-1">Detailed breakdown of your study sessions.</p>
                 </div>
                 
                 <div className="flex gap-4">
                     {/* Scope Toggle */}
-                    <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl shadow-inner">
+                    <div className={`flex p-1 rounded-xl shadow-inner ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-800'}`}>
                         <button
                             onClick={() => setScope('project')}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wide ${scope === 'project' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wide ${scope === 'project' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm') : 'text-gray-500 dark:text-gray-400'}`}
                         >
                             Project
                         </button>
                         <button
                             onClick={() => setScope('global')}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wide ${scope === 'global' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wide ${scope === 'global' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm') : 'text-gray-500 dark:text-gray-400'}`}
                         >
                             Global
                         </button>
                     </div>
 
                     {/* Range Filter */}
-                    <div className="flex bg-white dark:bg-gray-800 p-1 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div className={`flex p-1 rounded-xl border shadow-sm ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
                         {(['all', 'year', '30days', '7days'] as FilterRange[]).map((range) => (
                             <button
                                 key={range}
                                 onClick={() => setFilterRange(range)}
                                 className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
                                     filterRange === range 
-                                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' 
+                                    ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm')
                                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                                 }`}
                             >
@@ -467,10 +473,10 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
 
             {/* Stats Overview Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
+                <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-5 rounded-2xl border shadow-sm flex flex-col`}>
                     <p className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider mb-2">Total Hours ({scope})</p>
                     <div className="flex items-baseline mt-auto">
-                        <p className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{stats.totalHours.toFixed(1)}</p>
+                        <p className={`text-3xl font-bold tracking-tight ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{stats.totalHours.toFixed(1)}</p>
                         <span className="ml-1 text-sm text-gray-400 font-medium">hrs</span>
                     </div>
                     {filterRange !== 'all' && (
@@ -479,41 +485,41 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                         </div>
                     )}
                 </div>
-                <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
+                <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-5 rounded-2xl border shadow-sm flex flex-col`}>
                     <p className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider mb-2">Daily Avg</p>
                     <div className="flex items-baseline mt-auto">
-                        <p className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{stats.avgHours.toFixed(1)}</p>
+                        <p className={`text-3xl font-bold tracking-tight ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{stats.avgHours.toFixed(1)}</p>
                         <span className="ml-1 text-sm text-gray-400 font-medium">hrs</span>
                     </div>
                 </div>
-                <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
+                <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-5 rounded-2xl border shadow-sm flex flex-col`}>
                     <p className="text-[10px] text-blue-500 dark:text-blue-400 font-bold uppercase tracking-wider mb-2">Weekday Avg</p>
                     <div className="flex items-baseline mt-auto">
-                        <p className="text-3xl font-bold text-blue-600 dark:text-blue-400 tracking-tight">{stats.avgWeekday.toFixed(1)}</p>
+                        <p className={`text-3xl font-bold tracking-tight ${isCyberpunk ? 'text-[#00f0ff]' : 'text-blue-600 dark:text-blue-400'}`}>{stats.avgWeekday.toFixed(1)}</p>
                         <span className="ml-1 text-sm text-blue-400/70 font-medium">hrs</span>
                     </div>
                 </div>
-                <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
+                <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-5 rounded-2xl border shadow-sm flex flex-col`}>
                     <p className="text-[10px] text-purple-500 dark:text-purple-400 font-bold uppercase tracking-wider mb-2">Weekend Avg</p>
                     <div className="flex items-baseline mt-auto">
-                        <p className="text-3xl font-bold text-purple-600 dark:text-purple-400 tracking-tight">{stats.avgWeekend.toFixed(1)}</p>
+                        <p className={`text-3xl font-bold tracking-tight ${isCyberpunk ? 'text-[#f0f]' : 'text-purple-600 dark:text-purple-400'}`}>{stats.avgWeekend.toFixed(1)}</p>
                         <span className="ml-1 text-sm text-purple-400/70 font-medium">hrs</span>
                     </div>
                 </div>
             </div>
 
             {/* Goal Adherence Chart */}
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm">
+            <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-6 rounded-2xl border shadow-sm`}>
                 <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-bold text-gray-900 dark:text-white text-lg">Goal Adherence</h3>
-                    <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+                    <h3 className={`font-bold text-lg ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Goal Adherence</h3>
+                    <div className={`flex p-1 rounded-lg ${isCyberpunk ? 'bg-[#000] border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-gray-700'}`}>
                         {(['daily', 'weekly', 'monthly'] as GoalPeriod[]).map(p => (
                             <button
                                 key={p}
                                 onClick={() => setGoalPeriod(p)}
                                 className={`px-3 py-1 text-xs font-bold rounded-md transition-all capitalize ${
                                     goalPeriod === p 
-                                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-white shadow-sm' 
+                                    ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-white dark:bg-gray-600 text-blue-600 dark:text-white shadow-sm')
                                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
                                 }`}
                             >
@@ -525,16 +531,16 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                 <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                         <ComposedChart data={goalData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" opacity={0.5} />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isCyberpunk ? "#00f0ff" : "#e5e7eb"} opacity={isCyberpunk ? 0.1 : 0.5} />
                             <XAxis dataKey="label" tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} dy={10} />
                             <YAxis tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
                             <Tooltip 
-                                cursor={{fill: 'rgba(59, 130, 246, 0.1)'}} 
-                                contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}}
-                                itemStyle={{ color: '#1f2937' }}
+                                cursor={{fill: isCyberpunk ? 'rgba(0, 240, 255, 0.1)' : 'rgba(59, 130, 246, 0.1)'}} 
+                                contentStyle={{borderRadius: '12px', border: isCyberpunk ? '1px solid rgba(0, 240, 255, 0.3)' : 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: isCyberpunk ? '#000' : '#ffffff', color: isCyberpunk ? '#00f0ff' : '#1f2937'}}
+                                itemStyle={{ color: isCyberpunk ? '#00f0ff' : '#1f2937' }}
                             />
-                            <Bar dataKey="hours" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
-                            <Line type="stepAfter" dataKey="goal" stroke="#ef4444" strokeWidth={2} dot={false} activeDot={false} strokeDasharray="5 5" />
+                            <Bar dataKey="hours" fill={isCyberpunk ? "#00f0ff" : "#3b82f6"} radius={[4, 4, 0, 0]} barSize={20} />
+                            <Line type="stepAfter" dataKey="goal" stroke={isCyberpunk ? "#ff00ff" : "#ef4444"} strokeWidth={2} dot={false} activeDot={false} strokeDasharray="5 5" />
                         </ComposedChart>
                     </ResponsiveContainer>
                 </div>
@@ -544,9 +550,9 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
                 {/* Activity Trend (Full Width) */}
-                <div className="w-full bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm lg:col-span-2">
+                <div className={`w-full ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-6 rounded-2xl border shadow-sm lg:col-span-2`}>
                     <div className="flex justify-between items-center mb-8">
-                        <h3 className="font-bold text-gray-900 dark:text-white text-lg">Activity Trend</h3>
+                        <h3 className={`font-bold text-lg ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Activity Trend</h3>
                         <div className="relative" ref={chartSettingsRef}>
                             <button 
                                 onClick={() => setShowChartSettings(!showChartSettings)}
@@ -578,15 +584,15 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                 </div>
 
                 {/* Activity by Day (Fixed Widths) */}
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm lg:col-span-2">
-                    <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-6">Activity by Day</h3>
+                <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-6 rounded-2xl border shadow-sm lg:col-span-2`}>
+                    <h3 className={`font-bold text-lg mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Activity by Day</h3>
                     <div className="space-y-4">
                         {activityByDay.map((item) => (
                             <div key={item.day} className="flex items-center text-sm">
                                 <div className="w-16 font-medium text-gray-500 dark:text-gray-400">{item.day}</div>
-                                <div className="flex-1 h-3 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden mx-3">
+                                <div className={`flex-1 h-3 rounded-full overflow-hidden mx-3 ${isCyberpunk ? 'bg-[#00f0ff]/10' : 'bg-gray-100 dark:bg-gray-700'}`}>
                                     <div 
-                                        className="h-full bg-blue-500 rounded-full relative group transition-all duration-1000 ease-out" 
+                                        className={`h-full rounded-full relative group transition-all duration-1000 ease-out ${isCyberpunk ? 'bg-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'bg-blue-500'}`}
                                         style={{ width: `${item.percent}%` }}
                                     >
                                     </div>
@@ -598,19 +604,19 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                 </div>
 
                 {/* Focus Patterns (Punch Card) */}
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm relative">
-                    <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-2">Focus Patterns</h3>
+                <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-6 rounded-2xl border shadow-sm relative`}>
+                    <h3 className={`font-bold text-lg mb-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Focus Patterns</h3>
                     <p className="text-xs text-gray-500 mb-6">Session Frequency: Day vs Hour</p>
                     <div className="h-64 w-full flex items-center justify-center">
                         {scatterData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
                                 <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: -20 }}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" opacity={0.3} />
+                                    <CartesianGrid strokeDasharray="3 3" stroke={isCyberpunk ? "#00f0ff" : "#e5e7eb"} opacity={isCyberpunk ? 0.1 : 0.3} />
                                     <XAxis type="number" dataKey="hour" name="Hour" unit=":00" domain={[0, 23]} tickCount={12} tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
                                     <YAxis type="number" dataKey="day" name="Day" domain={[0, 6]} ticks={[0,1,2,3,4,5,6]} tickFormatter={(val) => weekDayLabels[val]} tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
                                     <ZAxis type="number" dataKey="value" range={[50, 400]} name="Sessions" />
-                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}} itemStyle={{ color: '#1f2937' }} />
-                                    <Scatter name="Sessions" data={scatterData} fill="#8884d8" shape="circle">
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{borderRadius: '12px', border: isCyberpunk ? '1px solid rgba(0, 240, 255, 0.3)' : 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: isCyberpunk ? '#000' : '#ffffff', color: isCyberpunk ? '#00f0ff' : '#1f2937'}} itemStyle={{ color: isCyberpunk ? '#00f0ff' : '#1f2937' }} />
+                                    <Scatter name="Sessions" data={scatterData} fill={isCyberpunk ? "#00f0ff" : "#8884d8"} shape="circle">
                                         {scatterData.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={entry.value > 2 ? '#3b82f6' : '#93c5fd'} />
                                         ))}
@@ -630,20 +636,20 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                 </div>
 
                 {/* Session Duration Chart */}
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                    <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-6">Session Duration</h3>
+                <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-6 rounded-2xl border shadow-sm`}>
+                    <h3 className={`font-bold text-lg mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Session Duration</h3>
                     <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={durationData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" opacity={0.5} />
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isCyberpunk ? "#00f0ff" : "#e5e7eb"} opacity={isCyberpunk ? 0.1 : 0.5} />
                                 <XAxis dataKey="name" tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} dy={10} />
                                 <YAxis tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} allowDecimals={false} />
                                 <Tooltip 
-                                    cursor={{fill: 'rgba(59, 130, 246, 0.1)'}} 
-                                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}}
-                                    itemStyle={{ color: '#1f2937' }}
+                                    cursor={{fill: isCyberpunk ? 'rgba(0, 240, 255, 0.1)' : 'rgba(59, 130, 246, 0.1)'}} 
+                                    contentStyle={{borderRadius: '12px', border: isCyberpunk ? '1px solid rgba(0, 240, 255, 0.3)' : 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: isCyberpunk ? '#000' : '#ffffff', color: isCyberpunk ? '#00f0ff' : '#1f2937'}}
+                                    itemStyle={{ color: isCyberpunk ? '#00f0ff' : '#1f2937' }}
                                 />
-                                <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={40} />
+                                <Bar dataKey="count" fill={isCyberpunk ? "#00f0ff" : "#8b5cf6"} radius={[4, 4, 0, 0]} barSize={40} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
@@ -651,8 +657,8 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
 
                 {/* Project Distribution (Donut) - Only visible if Global Scope */}
                 {scope === 'global' ? (
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
-                        <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-6">Project Split</h3>
+                    <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-6 rounded-2xl border shadow-sm flex flex-col`}>
+                        <h3 className={`font-bold text-lg mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Project Split</h3>
                         <div className="flex-1 flex items-center justify-center relative">
                             <ResponsiveContainer width="100%" height={250}>
                                 <PieChart>
@@ -671,15 +677,15 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                                         ))}
                                     </Pie>
                                     <Tooltip 
-                                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}} 
-                                        itemStyle={{ color: '#1f2937' }}
+                                        contentStyle={{borderRadius: '12px', border: isCyberpunk ? '1px solid rgba(0, 240, 255, 0.3)' : 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: isCyberpunk ? '#000' : '#ffffff', color: isCyberpunk ? '#00f0ff' : '#1f2937'}} 
+                                        itemStyle={{ color: isCyberpunk ? '#00f0ff' : '#1f2937' }}
                                         formatter={(val: number, name: any) => [`${val.toFixed(1)} hrs`, name]} 
                                     />
                                 </PieChart>
                             </ResponsiveContainer>
                             {/* Center Label */}
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                <span className="text-3xl font-bold text-gray-900 dark:text-white">{stats.totalHours.toFixed(0)}</span>
+                                <span className={`text-3xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{stats.totalHours.toFixed(0)}</span>
                                 <span className="text-xs text-gray-500 uppercase tracking-widest">Total Hrs</span>
                             </div>
                         </div>

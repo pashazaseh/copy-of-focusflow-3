@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { CountdownItem, CountdownType, CountdownGroup, Project } from '../types';
 import * as storage from '../services/storageService';
 import { useCountdowns, useProjects } from '../AppContext';
+import { useTheme } from '../AppContext';
 
 const ICONS: Record<CountdownType, React.ReactNode> = {
     countdown: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
@@ -22,6 +23,9 @@ const COLORS: Record<string, string> = {
 type ViewStatus = 'active' | 'archived';
 
 export const CountdownPanel: React.FC = () => {
+    const { appTheme } = useTheme();
+    const isCyberpunk = appTheme === 'cyberpunk';
+
     const { countdowns, saveCountdown, deleteCountdown } = useCountdowns();
     const { projects } = useProjects();
     const [groups, setGroups] = useState<CountdownGroup[]>([]);
@@ -363,7 +367,7 @@ export const CountdownPanel: React.FC = () => {
                             
                             {/* Title + View Switcher */}
                             <div className="relative group cursor-pointer shrink-0 z-20" onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}>
-                                <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight flex items-center gap-3">
+                                <h1 className={`text-3xl font-black tracking-tight flex items-center gap-3 ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_5px_rgba(0,240,255,0.5)]' : 'text-gray-900 dark:text-white'}`}>
                                     Countdown
                                     <svg className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isHeaderMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
                                 </h1>
@@ -381,7 +385,7 @@ export const CountdownPanel: React.FC = () => {
                                 <div className="relative" ref={importMenuRef}>
                                     <button 
                                         onClick={() => setIsImportChoiceOpen(!isImportChoiceOpen)}
-                                        className="flex items-center justify-center gap-2 px-4 py-2 bg-orange-50 dark:bg-orange-500/10 hover:bg-orange-100 dark:hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-500/20 rounded-xl text-xs font-bold transition-all shadow-sm h-9 min-w-[100px]"
+                                        className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm h-9 min-w-[100px] ${isCyberpunk ? 'bg-[#ff9900]/10 text-[#ff9900] border border-[#ff9900]/30 hover:bg-[#ff9900]/20' : 'bg-orange-50 dark:bg-orange-500/10 hover:bg-orange-100 dark:hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-500/20'}`}
                                     >
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4-4m4 4V4" /></svg>
                                         Import
@@ -405,8 +409,8 @@ export const CountdownPanel: React.FC = () => {
                                     onClick={() => setIsGroupsVisible(!isGroupsVisible)}
                                     className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm h-9 min-w-[80px] ${
                                         !isGroupsVisible 
-                                        ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700' 
-                                        : 'bg-white dark:bg-[#1c1c1e] text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+                                        ? (isCyberpunk ? 'bg-[#0a0a0a] text-[#00f0ff]/40 border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700')
+                                        : (isCyberpunk ? 'bg-black text-[#00f0ff] border-[#00f0ff]/30 hover:bg-[#00f0ff]/10' : 'bg-white dark:bg-[#1c1c1e] text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800')
                                     }`}
                                 >
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
@@ -416,7 +420,7 @@ export const CountdownPanel: React.FC = () => {
                                 {/* Add Button */}
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); openModal(); }}
-                                    className="flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-white text-gray-900 dark:text-gray-900 rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg text-xs font-bold h-9 min-w-[80px]"
+                                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg text-xs font-bold h-9 min-w-[80px] ${isCyberpunk ? 'bg-[#00f0ff] text-black shadow-[0_0_10px_rgba(0,240,255,0.4)]' : 'bg-white dark:bg-white text-gray-900 dark:text-gray-900'}`}
                                 >
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
                                     Add
@@ -429,15 +433,15 @@ export const CountdownPanel: React.FC = () => {
                             <div className="flex flex-col items-center gap-2">
                                 {/* Type Filters */}
                                 {isGroupsVisible && (
-                                    <div className="flex items-center p-1 bg-white dark:bg-[#151516] rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-x-auto no-scrollbar">
+                                    <div className={`flex items-center p-1 rounded-xl border shadow-sm overflow-x-auto no-scrollbar ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-[#151516] border-gray-200 dark:border-gray-800'}`}>
                                         {['all', 'countdown', 'anniversary', 'birthday', 'holiday'].map(t => (
                                             <button
                                                 key={t}
                                                 onClick={() => setActiveTypeFilter(t)}
                                                 className={`px-4 py-1.5 rounded-lg text-xs font-bold capitalize transition-all duration-200 whitespace-nowrap ${
                                                     activeTypeFilter === t 
-                                                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
-                                                    : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5'
+                                                    ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-blue-600 text-white shadow-md shadow-blue-500/20')
+                                                    : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5')
                                                 }`}
                                             >
                                                 {t}
@@ -448,13 +452,13 @@ export const CountdownPanel: React.FC = () => {
 
                                 {/* Group Filters (Stacked Below) */}
                                 {isGroupsVisible && (
-                                    <div className="inline-flex items-center p-1.5 rounded-2xl bg-gradient-to-r from-gray-100 to-gray-50 dark:from-[#151516] dark:to-[#1c1c1e] border border-gray-200 dark:border-gray-800/50 shadow-sm overflow-x-auto custom-scrollbar max-w-full">
+                                    <div className={`inline-flex items-center p-1.5 rounded-2xl border shadow-sm overflow-x-auto custom-scrollbar max-w-full ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gradient-to-r from-gray-100 to-gray-50 dark:from-[#151516] dark:to-[#1c1c1e] border-gray-200 dark:border-gray-800/50'}`}>
                                         <button 
                                             onClick={() => setActiveGroupFilter('all')} 
                                             className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap mr-1 ${
                                                 activeGroupFilter === 'all' 
-                                                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
-                                                : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-white dark:hover:bg-white/5'
+                                                ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-blue-600 text-white shadow-md shadow-blue-500/20')
+                                                : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-white dark:hover:bg-white/5')
                                             }`}
                                         >
                                             All
@@ -469,8 +473,8 @@ export const CountdownPanel: React.FC = () => {
                                                     onClick={() => setActiveGroupFilter(g.id)} 
                                                     className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                                                         activeGroupFilter === g.id 
-                                                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
-                                                        : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-white dark:hover:bg-white/5'
+                                                        ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-blue-600 text-white shadow-md shadow-blue-500/20')
+                                                        : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-white dark:hover:bg-white/5')
                                                     }`}
                                                 >
                                                     {g.name}
@@ -482,7 +486,7 @@ export const CountdownPanel: React.FC = () => {
 
                                         <button 
                                             onClick={() => setIsGroupManagerOpen(true)} 
-                                            className="px-3 py-1.5 rounded-xl text-xs font-bold text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors flex items-center gap-1"
+                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 ${isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10'}`}
                                         >
                                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
                                             Manage
@@ -510,11 +514,11 @@ export const CountdownPanel: React.FC = () => {
                                 const linkedProject = projects.find(p => p.id === item.projectId);
                                 
                                 return (
-                                    <div key={item.id} className="relative group bg-white dark:bg-[#151516] rounded-3xl p-8 border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-xl dark:shadow-none hover:border-blue-200 dark:hover:border-gray-700 flex flex-col items-center justify-center text-center min-h-[240px] transition-all duration-300 hover:-translate-y-1">
+                                    <div key={item.id} className={`relative group rounded-3xl p-8 border shadow-sm flex flex-col items-center justify-center text-center min-h-[240px] transition-all duration-300 hover:-translate-y-1 ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-white dark:bg-[#151516] border-gray-200 dark:border-gray-800 hover:shadow-xl dark:shadow-none hover:border-blue-200 dark:hover:border-gray-700'}`}>
                                         <div className="flex flex-col items-center mb-6">
                                             <div className="flex items-center gap-2 mb-2">
-                                                <div className={`p-2 rounded-xl ${COLORS[item.color] || COLORS.blue} shadow-sm`}>{ICONS[item.type]}</div>
-                                                <span className="text-lg font-bold text-gray-900 dark:text-gray-200 truncate max-w-[180px]">{item.title}</span>
+                                                <div className={`p-2 rounded-xl shadow-sm ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : (COLORS[item.color] || COLORS.blue)}`}>{ICONS[item.type]}</div>
+                                                <span className={`text-lg font-bold truncate max-w-[180px] ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-gray-200'}`}>{item.title}</span>
                                             </div>
                                             {linkedProject && (
                                                 <span className="text-[10px] uppercase font-bold tracking-widest text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-800 px-2 py-0.5 rounded-full truncate max-w-[150px]">
@@ -524,18 +528,18 @@ export const CountdownPanel: React.FC = () => {
                                         </div>
                                         
                                         <div className="relative mb-6">
-                                            <div className="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-br from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 tracking-tighter drop-shadow-sm">
+                                            <div className={`text-7xl font-black tracking-tighter drop-shadow-sm ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'text-transparent bg-clip-text bg-gradient-to-br from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400'}`}>
                                                 {days}
                                             </div>
                                             <div className="text-xs font-bold text-gray-400 dark:text-gray-600 uppercase tracking-widest mt-1">Days Left</div>
                                         </div>
 
-                                        <div className="text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2 bg-gray-50 dark:bg-white/5 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-white/5">
+                                        <div className={`text-sm font-medium flex items-center gap-2 px-3 py-1.5 rounded-lg border ${isCyberpunk ? 'bg-[#00f0ff]/5 border-[#00f0ff]/20 text-[#00f0ff]/70' : 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-white/5 border-gray-100 dark:border-white/5'}`}>
                                             <span>{dateString}</span>
                                             {item.recurrence && item.recurrence !== 'none' && (
                                                 <>
-                                                    <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
-                                                    <span className="capitalize text-xs text-blue-500 dark:text-blue-400">{item.recurrence}</span>
+                                                    <span className={`w-1 h-1 rounded-full ${isCyberpunk ? 'bg-[#00f0ff]/50' : 'bg-gray-300 dark:bg-gray-600'}`}></span>
+                                                    <span className={`capitalize text-xs ${isCyberpunk ? 'text-[#00f0ff]' : 'text-blue-500 dark:text-blue-400'}`}>{item.recurrence}</span>
                                                 </>
                                             )}
                                         </div>
@@ -556,8 +560,8 @@ export const CountdownPanel: React.FC = () => {
             {/* Group Manager Modal (Enhanced) */}
             {isGroupManagerOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white dark:bg-[#151516] rounded-3xl w-[400px] shadow-2xl border border-gray-200 dark:border-gray-700/50 overflow-hidden animate-scale-in p-6">
-                        <h3 className="font-bold text-gray-900 dark:text-white text-xl mb-6">Manage Groups</h3>
+                    <div className={`rounded-3xl w-[400px] shadow-2xl border overflow-hidden animate-scale-in p-6 ${isCyberpunk ? 'bg-black border-[#00f0ff]/50' : 'bg-white dark:bg-[#151516] border-gray-200 dark:border-gray-700/50'}`}>
+                        <h3 className={`font-bold text-xl mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Manage Groups</h3>
                         
                         {/* Add New Group */}
                         <div className="flex gap-2 mb-6">
@@ -566,9 +570,9 @@ export const CountdownPanel: React.FC = () => {
                                 value={newGroupName} 
                                 onChange={e => setNewGroupName(e.target.value)} 
                                 placeholder="New Group Name" 
-                                className="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                className={`flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 transition-all ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-gray-50 dark:bg-[#2c2c2e] border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-blue-500'}`}
                             />
-                            <button onClick={handleAddGroup} className="bg-blue-600 hover:bg-blue-700 px-4 py-2.5 rounded-xl text-white text-sm font-bold shadow-lg shadow-blue-500/30 transition-all">Add</button>
+                            <button onClick={handleAddGroup} className={`px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/30'}`}>Add</button>
                         </div>
 
                         {/* List Groups */}
@@ -580,7 +584,7 @@ export const CountdownPanel: React.FC = () => {
                                     onDragStart={(e) => handleGroupDragStart(e, index)}
                                     onDragOver={(e) => handleGroupDragOver(e, index)}
                                     onDragEnd={handleGroupDragEnd}
-                                    className={`flex justify-between items-center p-3 bg-gray-50 dark:bg-[#2c2c2e] rounded-xl border border-transparent hover:border-gray-200 dark:hover:border-gray-600 transition-colors group ${draggingGroupIndex === index ? 'opacity-50' : ''}`}
+                                    className={`flex justify-between items-center p-3 rounded-xl border transition-colors group ${isCyberpunk ? 'bg-[#0a0a0a] border-transparent hover:border-[#00f0ff]/30' : 'bg-gray-50 dark:bg-[#2c2c2e] border-transparent hover:border-gray-200 dark:hover:border-gray-600'} ${draggingGroupIndex === index ? 'opacity-50' : ''}`}
                                 >
                                     <div className="flex items-center gap-3 flex-1">
                                         <div className="cursor-move text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1">
@@ -594,10 +598,10 @@ export const CountdownPanel: React.FC = () => {
                                                 onChange={e => setEditingGroupName(e.target.value)}
                                                 onBlur={saveGroupEdit}
                                                 onKeyDown={e => e.key === 'Enter' && saveGroupEdit()}
-                                                className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm px-2 py-1 rounded w-full border border-blue-500 focus:outline-none shadow-sm"
+                                                className={`text-sm px-2 py-1 rounded w-full border focus:outline-none shadow-sm ${isCyberpunk ? 'bg-black text-[#00f0ff] border-[#00f0ff]' : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white border-blue-500'}`}
                                             />
                                         ) : (
-                                            <span className="text-sm text-gray-700 dark:text-gray-200 font-medium">{g.name}</span>
+                                            <span className={`text-sm font-medium ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-gray-200'}`}>{g.name}</span>
                                         )}
                                     </div>
                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -615,8 +619,8 @@ export const CountdownPanel: React.FC = () => {
                                 </div>
                             ))}
                         </div>
-                        <div className="mt-6 pt-4 border-t border-gray-100 dark:border-gray-700/50 flex justify-end">
-                            <button onClick={() => setIsGroupManagerOpen(false)} className="px-5 py-2 text-sm font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors">Close</button>
+                        <div className={`mt-6 pt-4 border-t flex justify-end ${isCyberpunk ? 'border-[#00f0ff]/20' : 'border-gray-100 dark:border-gray-700/50'}`}>
+                            <button onClick={() => setIsGroupManagerOpen(false)} className={`px-5 py-2 text-sm font-medium transition-colors ${isCyberpunk ? 'text-[#00f0ff]/60 hover:text-[#00f0ff]' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}>Close</button>
                         </div>
                     </div>
                 </div>
@@ -625,29 +629,29 @@ export const CountdownPanel: React.FC = () => {
             {/* Item Edit Modal (Redesigned) */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
-                    <div className="bg-white dark:bg-[#151516] rounded-3xl w-full max-w-md border border-gray-200 dark:border-gray-700/50 shadow-2xl overflow-hidden animate-scale-in flex flex-col max-h-[90vh]">
-                        <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-[#1c1c1e] flex justify-between items-center">
-                            <h3 className="font-bold text-gray-900 dark:text-white text-lg">{editId ? 'Edit Countdown' : 'New Countdown'}</h3>
+                    <div className={`rounded-3xl w-full max-w-md border shadow-2xl overflow-hidden animate-scale-in flex flex-col max-h-[90vh] ${isCyberpunk ? 'bg-black border-[#00f0ff]/50' : 'bg-white dark:bg-[#151516] border-gray-200 dark:border-gray-700/50'}`}>
+                        <div className={`px-6 py-5 border-b flex justify-between items-center ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-[#1c1c1e] border-gray-100 dark:border-gray-800'}`}>
+                            <h3 className={`font-bold text-lg ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{editId ? 'Edit Countdown' : 'New Countdown'}</h3>
                             <button onClick={closeModal} className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-white/10"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                         </div>
                         <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar">
                             <div>
                                 <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 pl-1">Title</label>
-                                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. New Year's Day" className="w-full px-4 py-3 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white placeholder-gray-400 text-sm transition-all" />
+                                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. New Year's Day" className={`w-full px-4 py-3 rounded-xl focus:outline-none focus:ring-2 text-sm transition-all ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff] placeholder-[#00f0ff]/30' : 'bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 placeholder-gray-400'}`} />
                             </div>
                             
                             <div>
                                 <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 pl-1">Date</label>
-                                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-4 py-3 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white [color-scheme:light] dark:[color-scheme:dark] text-sm transition-all" />
+                                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`w-full px-4 py-3 rounded-xl focus:outline-none focus:ring-2 text-sm transition-all ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff] [color-scheme:dark]' : 'bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 [color-scheme:light] dark:[color-scheme:dark]'}`} />
                             </div>
 
                             <div>
                                 <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 pl-1">Type</label>
-                                <div className="grid grid-cols-2 gap-3 border-t border-b border-dashed border-gray-200 dark:border-gray-700/50 py-4">
+                                <div className={`grid grid-cols-2 gap-3 border-t border-b border-dashed py-4 ${isCyberpunk ? 'border-[#00f0ff]/20' : 'border-gray-200 dark:border-gray-700/50'}`}>
                                     {(Object.keys(ICONS) as CountdownType[]).map((t) => (
-                                        <button key={t} onClick={() => setType(t)} className={`flex items-center space-x-3 p-3 rounded-xl border transition-all text-left group ${type === t ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 ring-1 ring-blue-500' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#2c2c2e] hover:bg-white dark:hover:bg-[#3a3a3c]'}`}>
-                                            <div className={`${type === t ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} bg-white dark:bg-black/20 p-1.5 rounded-lg shadow-sm`}>{ICONS[t]}</div>
-                                            <span className={`text-sm font-bold ${type === t ? 'text-blue-700 dark:text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-200'}`}>{t.charAt(0).toUpperCase() + t.slice(1)}</span>
+                                        <button key={t} onClick={() => setType(t)} className={`flex items-center space-x-3 p-3 rounded-xl border transition-all text-left group ${type === t ? (isCyberpunk ? 'border-[#00f0ff] bg-[#00f0ff]/10 ring-1 ring-[#00f0ff]' : 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 ring-1 ring-blue-500') : (isCyberpunk ? 'border-[#00f0ff]/20 bg-[#0a0a0a] hover:bg-[#00f0ff]/5' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#2c2c2e] hover:bg-white dark:hover:bg-[#3a3a3c]')}`}>
+                                            <div className={`p-1.5 rounded-lg shadow-sm ${type === t ? (isCyberpunk ? 'text-[#00f0ff] bg-black' : 'text-blue-600 dark:text-blue-400 bg-white dark:bg-black/20') : 'text-gray-400 dark:text-gray-500 bg-white dark:bg-black/20'}`}>{ICONS[t]}</div>
+                                            <span className={`text-sm font-bold ${type === t ? (isCyberpunk ? 'text-[#00f0ff]' : 'text-blue-700 dark:text-white') : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-200'}`}>{t.charAt(0).toUpperCase() + t.slice(1)}</span>
                                         </button>
                                     ))}
                                 </div>
@@ -656,7 +660,7 @@ export const CountdownPanel: React.FC = () => {
                              <div>
                                 <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 pl-1">Recurrence</label>
                                 <div className="relative">
-                                    <select value={recurrence || 'none'} onChange={(e) => setRecurrence(e.target.value as any)} className="w-full px-4 py-3 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white appearance-none text-sm transition-all">
+                                    <select value={recurrence || 'none'} onChange={(e) => setRecurrence(e.target.value as any)} className={`w-full px-4 py-3 rounded-xl focus:outline-none focus:ring-2 appearance-none text-sm transition-all ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-blue-500'}`}>
                                         <option value="none">None</option>
                                         <option value="daily">Daily</option>
                                         <option value="weekly">Weekly</option>
@@ -673,7 +677,7 @@ export const CountdownPanel: React.FC = () => {
                                 <div>
                                     <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 pl-1">Group</label>
                                     <div className="relative">
-                                        <select value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)} className="w-full px-4 py-3 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white appearance-none text-sm transition-all">
+                                        <select value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)} className={`w-full px-4 py-3 rounded-xl focus:outline-none focus:ring-2 appearance-none text-sm transition-all ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-blue-500'}`}>
                                             {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                                         </select>
                                         <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-500">
@@ -684,7 +688,7 @@ export const CountdownPanel: React.FC = () => {
                                 <div>
                                     <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 pl-1">Link Project</label>
                                     <div className="relative">
-                                        <select value={selectedProjectId} onChange={(e) => setSelectedProjectId(e.target.value)} className="w-full px-4 py-3 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white appearance-none text-sm transition-all">
+                                        <select value={selectedProjectId} onChange={(e) => setSelectedProjectId(e.target.value)} className={`w-full px-4 py-3 rounded-xl focus:outline-none focus:ring-2 appearance-none text-sm transition-all ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-blue-500'}`}>
                                             <option value="">None</option>
                                             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                         </select>
@@ -695,9 +699,9 @@ export const CountdownPanel: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-                        <div className="p-6 bg-gray-50 dark:bg-[#1c1c1e] border-t border-gray-100 dark:border-gray-800 flex justify-end space-x-3">
-                            <button onClick={closeModal} className="px-6 py-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white dark:hover:bg-white/5 rounded-xl text-sm font-bold transition-colors">Cancel</button>
-                            <button onClick={handleSave} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all transform active:scale-95">Save Event</button>
+                        <div className={`p-6 border-t flex justify-end space-x-3 ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-[#1c1c1e] border-gray-100 dark:border-gray-800'}`}>
+                            <button onClick={closeModal} className={`px-6 py-3 rounded-xl text-sm font-bold transition-colors ${isCyberpunk ? 'text-[#00f0ff]/60 hover:text-[#00f0ff]' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white dark:hover:bg-white/5'}`}>Cancel</button>
+                            <button onClick={handleSave} className={`px-6 py-3 rounded-xl text-sm font-bold shadow-lg transition-all transform active:scale-95 ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20'}`}>Save Event</button>
                         </div>
                     </div>
                 </div>

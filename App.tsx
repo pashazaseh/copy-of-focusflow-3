@@ -2,9 +2,11 @@ import React, { Component, useState, useEffect, useMemo, useRef, lazy, Suspense,
 import { MacWindow } from './components/MacWindow';
 import { Sidebar } from './components/Sidebar';
 import { QuickTimerOverlay } from './components/QuickTimerOverlay';
-import { ViewMode, HeatmapTheme, UserGoals, CountdownItem } from './types';
+import { ViewMode, HeatmapTheme, UserGoals, CountdownItem, Achievement } from './types';
 import { AppProvider, useTheme, useProjects, useLogs, useUI, useTimerContext, useCountdowns } from './AppContext';
 import { TimerPanel } from './components/TimerPanel';
+import { getUnlockedAchievements } from './services/gamificationService';
+import { playWin } from './services/audioService';
 
 // Lazy load heavy components
 const CalendarPanel = lazy(() => import('./components/CalendarPanel').then(m => ({ default: m.CalendarPanel })));
@@ -33,22 +35,26 @@ const parseDate = (dateStr: string) => {
     return new Date(y, m - 1, d);
 };
 
-// Error Boundary for App Stability
-interface ErrorBoundaryProps {
-  children: React.ReactNode;
-}
+// Toast Notification Component
+const Toast = ({ title, icon, onClose, isCyberpunk }: { title: string, icon: string, onClose: () => void, isCyberpunk: boolean }) => (
+    <div className="fixed top-24 left-1/2 transform -translate-x-1/2 z-[100] animate-fade-in-down pointer-events-none">
+        <div className={`px-6 py-4 rounded-2xl shadow-2xl border flex items-center gap-4 backdrop-blur-xl pointer-events-auto transition-all ${isCyberpunk ? 'bg-black/90 border-[#00f0ff] text-[#00f0ff] shadow-[0_0_30px_rgba(0,240,255,0.4)]' : 'bg-gray-900/95 text-white border-white/10 shadow-xl'}`}>
+            <div className={`text-3xl ${isCyberpunk ? 'drop-shadow-[0_0_10px_rgba(0,240,255,0.8)]' : ''}`}>{icon}</div>
+            <div>
+                <p className={`text-[10px] font-bold uppercase tracking-widest mb-0.5 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-yellow-400'}`}>Achievement Unlocked</p>
+                <p className="font-bold text-base leading-none">{title}</p>
+            </div>
+            <button onClick={onClose} className={`ml-2 p-1 rounded-full transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20 text-[#00f0ff]/50 hover:text-[#00f0ff]' : 'hover:bg-white/20 text-gray-400 hover:text-white'}`}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+        </div>
+    </div>
+);
 
-interface ErrorBoundaryState {
-  hasError: boolean;
-}
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  public state = { hasError: false };
 
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError(error: any) {
+  static getDerivedStateFromError(_: any) {
     return { hasError: true };
   }
 
@@ -59,17 +65,19 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-white">
-          <div className="text-center p-8">
-            <h1 className="text-2xl font-bold mb-4">Something went wrong.</h1>
-            <p className="mb-4 text-gray-600 dark:text-gray-400">The application encountered an unexpected error.</p>
-            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-              Reload Application
-            </button>
-          </div>
+        <div className="flex flex-col items-center justify-center h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white p-4">
+          <h1 className="text-2xl font-bold mb-4">Something went wrong</h1>
+          <p className="mb-4 text-gray-600 dark:text-gray-400">An error occurred while rendering the application.</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+          >
+            Reload Application
+          </button>
         </div>
       );
     }
+
     return this.props.children;
   }
 }
@@ -132,6 +140,10 @@ function FocusFlowContent() {
   const [historyPage, setHistoryPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
+  // Toast State
+  const [toast, setToast] = useState<{title: string, icon: string} | null>(null);
+  const prevBadgeCount = useRef<number>(-1);
+
   // Reset page when filters change
   useEffect(() => setHistoryPage(1), [historyFilter, historyScope, historySortField, historySortDesc]);
 
@@ -179,7 +191,9 @@ function FocusFlowContent() {
       const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
       const existing = logs.find(l => l.date === today && l.projectId === targetProject);
       const totalHours = (existing ? existing.hours : 0) + sessionHours;
-      const mergedNotes = existing ? (existing.notes ? existing.notes + '; ' + sessionNote : sessionNote) : sessionNote;
+      const mergedNotes = [existing?.notes, sessionNote]
+          .filter(n => n && n.trim().length > 0)
+          .join('; ');
 
       saveLog(today, totalHours, mergedNotes, targetProject);
   };
@@ -302,29 +316,74 @@ function FocusFlowContent() {
       
       if (combinedDates.length === 0) return { current: 0, longest: 0 };
       const activeDates = combinedDates;
-      const timestamps = activeDates.map((d: string) => parseDate(d).getTime());
+      
+      // Use UTC for date calculations to avoid DST issues
+      const timestamps = activeDates.map((d: string) => {
+          const [y, m, day] = d.split('-').map(Number);
+          return Date.UTC(y, m - 1, day);
+      });
+
       let longest = 1;
       let currentRun = 1;
       for (let i = 1; i < timestamps.length; i++) {
           const diffDays = (timestamps[i] - timestamps[i-1]) / (1000 * 60 * 60 * 24);
-          if (diffDays === 1) currentRun++;
+          if (Math.round(diffDays) === 1) currentRun++;
           else currentRun = 1;
           if (currentRun > longest) longest = currentRun;
       }
-      const today = new Date().setHours(0,0,0,0);
+      
+      const now = new Date();
+      const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
       const yesterday = today - 86400000;
       const lastLogDate = timestamps[timestamps.length - 1];
+      
       let current = 0;
       if (lastLogDate === today || lastLogDate === yesterday) {
           current = 1;
           for (let i = timestamps.length - 2; i >= 0; i--) {
               const diffDays = (timestamps[i+1] - timestamps[i]) / (1000 * 60 * 60 * 24);
-              if (diffDays === 1) current++;
+              if (Math.round(diffDays) === 1) current++;
               else break;
           }
       }
       return { current, longest };
-  }, [logs]);
+  }, [logs, freezeDates]);
+
+  const latestBadge = useMemo<Achievement | null>(() => {
+      const all = getUnlockedAchievements(logs, totalHours, streaks.current);
+      const unlocked = all.filter(a => a.isUnlocked);
+      return unlocked.length > 0 ? unlocked[unlocked.length - 1] : null;
+  }, [logs, totalHours, streaks.current]);
+
+  // Badge Notification Effect
+  useEffect(() => {
+      const all = getUnlockedAchievements(logs, totalHours, streaks.current);
+      const unlocked = all.filter(a => a.isUnlocked);
+      const count = unlocked.length;
+
+      if (prevBadgeCount.current === -1) {
+          prevBadgeCount.current = count;
+          return;
+      }
+
+      if (count > prevBadgeCount.current) {
+          // Only toast if it's a small increment (user action), not a bulk load (import/sync)
+          if (count - prevBadgeCount.current <= 2) {
+              const latest = unlocked[unlocked.length - 1];
+              if (latest) {
+                  setToast({ title: latest.title, icon: latest.icon });
+                  
+                  const savedVol = localStorage.getItem('focusflow_timer_volume');
+                  const vol = savedVol ? parseFloat(savedVol) : 0.5;
+                  playWin(vol);
+
+                  const timer = setTimeout(() => setToast(null), 5000);
+                  return () => clearTimeout(timer);
+              }
+          }
+      }
+      prevBadgeCount.current = count;
+  }, [logs, totalHours, streaks.current]);
 
   // Streak Freeze Logic: Check on mount/update if we missed yesterday and need to consume a freeze
   useEffect(() => {
@@ -335,10 +394,9 @@ function FocusFlowContent() {
           if (freezesOwned <= 0) return;
 
           const today = new Date();
-          const yesterday = new Date(today);
-          yesterday.setDate(yesterday.getDate() - 1);
-          
-          const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
+          // Use UTC to determine yesterday's date string consistently
+          const yesterdayTs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+          const yesterdayStr = new Date(yesterdayTs).toISOString().split('T')[0];
           
           // Check if yesterday is already logged or frozen
           const hasLogYesterday = logs.some(l => l.date === yesterdayStr && l.hours > 0);
@@ -347,7 +405,13 @@ function FocusFlowContent() {
           if (!hasLogYesterday && !isFrozenYesterday) {
               // Only consume if there was a streak to save (day before yesterday was active)
               // This prevents consuming freezes when the user hasn't been active for weeks
-              if (streaks.current > 0) {
+              
+              // Check day before yesterday
+              const dayBeforeTs = yesterdayTs - 86400000;
+              const dayBeforeStr = new Date(dayBeforeTs).toISOString().split('T')[0];
+              const hasLogDayBefore = logs.some(l => l.date === dayBeforeStr && l.hours > 0) || freezeDates.includes(dayBeforeStr);
+
+              if (hasLogDayBefore) {
                   // Consume Freeze
                   inventory.streakFreeze = freezesOwned - 1;
                   localStorage.setItem('focusflow_inventory', JSON.stringify(inventory));
@@ -359,7 +423,7 @@ function FocusFlowContent() {
           }
       };
       checkStreakFreeze();
-  }, [logs, streaks.current]); // Check when logs change or streak updates
+  }, [logs, freezeDates]); // Check when logs change or freezeDates update
 
   const activeProject = projects.find(p => p.id === currentProjectId);
   const activeProjectName = activeProject?.name || 'Project';
@@ -433,11 +497,12 @@ function FocusFlowContent() {
   }, [menuBarConfig, logs, goals, streaks, totalHours, countdowns]);
 
   const contentBgClass = appTheme === 'cyberpunk' 
-    ? 'bg-[#0f172a] text-white' 
+    ? 'bg-[#050505] text-[#00f0ff] font-mono' 
     : 'bg-white dark:bg-gray-900';
 
   return (
     <div className={isElectron ? "w-screen h-screen overflow-hidden" : "min-h-screen flex items-center justify-center p-4 sm:p-8 transition-colors duration-500"}>
+      {toast && <Toast title={toast.title} icon={toast.icon} onClose={() => setToast(null)} isCyberpunk={appTheme === 'cyberpunk'} />}
       <MacWindow isDarkMode={isDarkMode} onToggleTheme={toggleTheme} appTheme={appTheme}>
         <Sidebar 
             currentView={currentView} 
@@ -452,6 +517,8 @@ function FocusFlowContent() {
             navConfig={navConfig}
             onManageProjects={handleManageProjects}
             sidebarConfig={sidebarConfig}
+            appTheme={appTheme}
+            latestBadge={latestBadge}
         />
         
         <div className={`flex-1 relative overflow-hidden flex flex-col transition-colors duration-300 ${contentBgClass}`}>
@@ -779,14 +846,12 @@ const getNextDate = (item: CountdownItem): Date => {
     return target;
 };
 
-function App() {
-  return (
-    <AppProvider>
-      <ErrorBoundary>
-        <FocusFlowContent />
-      </ErrorBoundary>
-    </AppProvider>
-  );
+export default function App() {
+    return (
+        <AppProvider>
+            <ErrorBoundary>
+                <FocusFlowContent />
+            </ErrorBoundary>
+        </AppProvider>
+    );
 }
-
-export default App;
