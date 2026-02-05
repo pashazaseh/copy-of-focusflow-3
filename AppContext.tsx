@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Project, StudyLog, UserGoals, ViewMode, SettingsTab, SidebarConfig, MenuBarConfig, HeatmapTheme } from './types';
+import { Project, StudyLog, UserGoals, ViewMode, SettingsTab, SidebarConfig, MenuBarConfig, HeatmapTheme, AppTheme } from './types';
 import { NAV_ITEMS_DEF } from './components/Sidebar';
 import * as storage from './services/storageService';
 
@@ -7,6 +7,8 @@ import * as storage from './services/storageService';
 interface ThemeContextType {
     isDarkMode: boolean;
     toggleTheme: () => void;
+    appTheme: AppTheme;
+    setAppTheme: (theme: AppTheme) => void;
 }
 const ThemeContext = createContext<ThemeContextType | null>(null);
 export const useTheme = () => {
@@ -136,6 +138,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return false;
     });
 
+    // --- App Theme State (Cyberpunk, etc) ---
+    const [appTheme, setAppTheme] = useState<AppTheme>(() => {
+        if (typeof window !== 'undefined') {
+            return (localStorage.getItem('focusflow_app_theme') as AppTheme) || 'default';
+        }
+        return 'default';
+    });
+
+    const handleSetAppTheme = useCallback((theme: AppTheme) => {
+        setAppTheme(theme);
+        localStorage.setItem('focusflow_app_theme', theme);
+        // Cyberpunk is inherently a dark theme
+        if (theme === 'cyberpunk') {
+            setIsDarkMode(true);
+            localStorage.setItem('focusflow_theme', 'dark');
+        }
+    }, []);
+
     const toggleTheme = useCallback(() => {
         setIsDarkMode(prev => {
             const newMode = !prev;
@@ -150,32 +170,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [isDarkMode]);
 
     // --- Project State ---
-    const [projects, setProjects] = useState<Project[]>(() => storage.getProjects());
-    const [currentProjectId, setCurrentProjectId] = useState<string>(() => {
-        // Use the projects we just loaded if possible, or read efficiently
-        const allProjects = storage.getProjects();
-        const active = allProjects.find(proj => !proj.isArchived);
-        return active ? active.id : allProjects[0]?.id || 'default';
-    });
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [currentProjectId, setCurrentProjectId] = useState<string>('default-project');
 
-    const createProject = useCallback((name: string, theme: HeatmapTheme) => {
+    const createProject = useCallback(async (name: string, theme: HeatmapTheme) => {
         const newProject: Project = { id: Date.now().toString(), name, theme, createdAt: new Date().toISOString(), sortOrder: projects.length, isArchived: false };
-        const updated = storage.saveProject(newProject);
+        const updated = await storage.saveProject(newProject);
         setProjects(updated);
         setCurrentProjectId(newProject.id);
     }, [projects.length]);
 
-    const deleteProject = useCallback((id: string) => {
-        const updated = storage.deleteProject(id);
+    const deleteProject = useCallback(async (id: string) => {
+        const updated = await storage.deleteProject(id);
         setProjects(updated);
         if (currentProjectId === id && updated.length > 0) {
             setCurrentProjectId(updated[0].id);
         }
     }, [currentProjectId]);
 
-    const updateProjects = useCallback((updated: Project[]) => {
+    const updateProjects = useCallback(async (updated: Project[]) => {
         setProjects(updated);
-        storage.updateProjectsList(updated);
+        await storage.updateProjectsList(updated);
         const current = updated.find(p => p.id === currentProjectId);
         if (current && current.isArchived) {
             const firstActive = updated.find(p => !p.isArchived);
@@ -184,46 +199,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [currentProjectId]);
 
     // --- Log State ---
-    const [logs, setLogs] = useState<StudyLog[]>(() => storage.getLogs());
-    const [goals, setGoals] = useState<UserGoals>(() => storage.getGoals());
+    const [logs, setLogs] = useState<StudyLog[]>([]);
+    const [goals, setGoals] = useState<UserGoals>({ daily: 4, weekly: 40, monthly: 160, yearly: 2000 });
 
-    const saveLog = useCallback((date: string, hours: number, notes?: string, projectId?: string) => {
+    const saveLog = useCallback(async (date: string, hours: number, notes?: string, projectId?: string) => {
         const targetProject = projectId || currentProjectId;
         if (!targetProject) return;
-        const newLogs = storage.saveLog({ date, hours, notes, projectId: targetProject });
+        const newLogs = await storage.saveLog({ date, hours, notes, projectId: targetProject });
         setLogs(newLogs);
     }, [currentProjectId]);
 
-    const deleteLog = useCallback((date: string, projectId: string) => {
-        const newLogs = storage.deleteLog(date, projectId);
+    const deleteLog = useCallback(async (date: string, projectId: string) => {
+        const newLogs = await storage.deleteLog(date, projectId);
         setLogs(newLogs);
     }, []);
 
-    const updateGoals = useCallback((newGoals: UserGoals) => {
+    const updateGoals = useCallback(async (newGoals: UserGoals) => {
         setGoals(newGoals);
-        storage.saveGoals(newGoals);
+        await storage.saveGoals(newGoals);
     }, []);
 
     // --- UI State ---
     const [currentView, setCurrentView] = useState<ViewMode>(ViewMode.DASHBOARD);
     const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
     const [navConfig, setNavConfigState] = useState<StoredNavConfig[]>([]);
-    const [sidebarConfig, setSidebarConfigState] = useState<SidebarConfig>(() => storage.getSidebarConfig());
-    const [menuBarConfig, setMenuBarConfigState] = useState<MenuBarConfig>(() => storage.getMenuBarConfig());
+    const [sidebarConfig, setSidebarConfigState] = useState<SidebarConfig>({ showWeeklyGoalWidget: true });
+    const [menuBarConfig, setMenuBarConfigState] = useState<MenuBarConfig>({ mode: 'none' });
 
     const setNavConfig = useCallback((newConfig: StoredNavConfig[]) => {
         setNavConfigState(newConfig);
         localStorage.setItem('focusflow_sidebar_config_v1', JSON.stringify(newConfig));
     }, []);
 
-    const setSidebarConfig = useCallback((newConfig: SidebarConfig) => {
+    const setSidebarConfig = useCallback(async (newConfig: SidebarConfig) => {
         setSidebarConfigState(newConfig);
-        storage.saveSidebarConfig(newConfig);
+        await storage.saveSidebarConfig(newConfig);
     }, []);
 
-    const setMenuBarConfig = useCallback((newConfig: MenuBarConfig) => {
+    const setMenuBarConfig = useCallback(async (newConfig: MenuBarConfig) => {
         setMenuBarConfigState(newConfig);
-        storage.saveMenuBarConfig(newConfig);
+        await storage.saveMenuBarConfig(newConfig);
     }, []);
 
     // --- Timer State ---
@@ -231,16 +246,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // --- Global Init Effect ---
     useEffect(() => {
-        if (!storage.isInitialized()) {
-            console.log("First time initialization: Seeding sample data...");
-            storage.seedData();
-            storage.seedCountdowns();
-            storage.setInitialized();
-            // Refresh state
-            setProjects(storage.getProjects());
-            setLogs(storage.getLogs());
-            setGoals(storage.getGoals());
-        }
+        const init = async () => {
+          try {
+            const initialized = await storage.isInitialized();
+            if (!initialized) {
+                console.log("First time initialization: Seeding sample data...");
+                await storage.seedData();
+                await storage.seedCountdowns();
+                await storage.setInitialized();
+            }
+
+            // Load all data async
+            const [p, l, g, sb, mb] = await Promise.all([
+                storage.getProjects(),
+                storage.getLogs(),
+                storage.getGoals(),
+                storage.getSidebarConfig(),
+                storage.getMenuBarConfig()
+            ]);
+
+            setProjects(p);
+            setLogs(l);
+            setGoals(g);
+            setSidebarConfigState(sb);
+            setMenuBarConfigState(mb);
+
+            // Set initial project if needed
+            if (p.length > 0 && currentProjectId === 'default-project') {
+                const active = p.find(proj => !proj.isArchived);
+                if (active) setCurrentProjectId(active.id);
+                else setCurrentProjectId(p[0].id);
+            }
+          } catch (error) {
+            console.error("Failed to initialize app data:", error);
+          }
+        };
+        init();
 
         // Load Nav Config
         const savedConfig = localStorage.getItem('focusflow_sidebar_config_v1');
@@ -275,8 +316,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return () => clearInterval(reminderInterval);
     }, [checkReminders]);
 
+    // --- Auto Backup ---
+    useEffect(() => {
+        const performAutoBackup = async () => {
+            const lastBackup = localStorage.getItem('focusflow_last_backup');
+            const now = Date.now();
+            const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+
+            if (!lastBackup || now - parseInt(lastBackup) > ONE_WEEK) {
+                try {
+                    const data = await storage.exportData();
+                    const blob = new Blob([data], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `focusflow_backup_${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    
+                    localStorage.setItem('focusflow_last_backup', now.toString());
+                    if (typeof Notification !== 'undefined' && Notification.permission === "granted") {
+                        new Notification("FocusFlow", { body: "Weekly backup saved successfully." });
+                    }
+                } catch (e) {
+                    console.error("Auto-backup failed:", e);
+                }
+            }
+        };
+        
+        const timer = setTimeout(performAutoBackup, 5000);
+        return () => clearTimeout(timer);
+    }, []);
+
     // --- Memoized Values ---
-    const themeValue = useMemo(() => ({ isDarkMode, toggleTheme }), [isDarkMode, toggleTheme]);
+    const themeValue = useMemo(() => ({ isDarkMode, toggleTheme, appTheme, setAppTheme: handleSetAppTheme }), [isDarkMode, toggleTheme, appTheme, handleSetAppTheme]);
     const projectValue = useMemo(() => ({ projects, currentProjectId, setCurrentProjectId, createProject, deleteProject, updateProjects }), [projects, currentProjectId, createProject, deleteProject, updateProjects]);
     const logValue = useMemo(() => ({ logs, goals, saveLog, deleteLog, updateGoals }), [logs, goals, saveLog, deleteLog, updateGoals]);
     const uiValue = useMemo(() => ({ currentView, setCurrentView, settingsTab, setSettingsTab, navConfig, setNavConfig, sidebarConfig, setSidebarConfig, menuBarConfig, setMenuBarConfig }), [currentView, settingsTab, navConfig, sidebarConfig, menuBarConfig, setNavConfig, setSidebarConfig, setMenuBarConfig]);

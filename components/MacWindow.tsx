@@ -1,30 +1,45 @@
 
 import React, { useState } from 'react';
+import { AppTheme } from '../types';
 
 interface MacWindowProps {
   children: React.ReactNode;
   title?: string;
   isDarkMode: boolean;
   onToggleTheme: () => void;
+  appTheme?: AppTheme;
 }
 
-export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMode, onToggleTheme }) => {
+export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMode, onToggleTheme, appTheme = 'default' }) => {
   const [isElectron] = useState(() => typeof window !== 'undefined' && !!window.electronAPI);
 
   const handleClose = () => window.electronAPI?.close();
   const handleMinimize = () => window.electronAPI?.minimize();
   const handleMaximize = () => window.electronAPI?.maximize();
 
+  // Determine background based on theme
+  const bgClass = appTheme === 'cyberpunk' 
+    ? 'bg-[#0f172a] text-white' 
+    : 'bg-white dark:bg-gray-900';
+
+  const borderClass = appTheme === 'cyberpunk'
+    ? 'border-purple-500/30 shadow-[0_0_30px_rgba(168,85,247,0.15)]'
+    : 'border-gray-200 dark:border-gray-700 dark:shadow-black/50';
+
+  const headerClass = appTheme === 'cyberpunk'
+    ? 'bg-[#1e293b] border-purple-500/20'
+    : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
+
   // Enforce solid backgrounds: bg-white or bg-gray-900 (removed opacity values like /80)
   const containerClass = isElectron
-    ? `w-screen h-screen flex flex-col overflow-hidden bg-white dark:bg-gray-900`
-    : `w-full max-w-6xl h-[85vh] rounded-xl shadow-2xl border flex flex-col overflow-hidden animate-fade-in-up bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 dark:shadow-black/50`;
+    ? `w-screen h-screen flex flex-col overflow-hidden ${bgClass}`
+    : `w-full max-w-6xl h-[85vh] rounded-xl shadow-2xl border flex flex-col overflow-hidden animate-fade-in-up ${bgClass} ${borderClass}`;
 
   return (
     <div className={containerClass}>
       {/* Window Title Bar */}
       <div 
-        className="h-10 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 shrink-0 select-none transition-colors duration-300"
+        className={`h-10 border-b flex items-center justify-between px-4 shrink-0 select-none transition-colors duration-300 ${headerClass}`}
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <div 

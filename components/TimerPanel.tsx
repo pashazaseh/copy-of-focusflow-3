@@ -25,7 +25,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   const [sessionLabel, setSessionLabel] = useState('');
   
   const [selectedProjectId, setSelectedProjectId] = useState(projectId);
-  const [settings, setSettings] = useState<TimerSettings>(storage.getTimerSettings());
+  const [settings, setSettings] = useState<TimerSettings>({ pomoDuration: 25, shortBreakDuration: 5, longBreakDuration: 15, pomosPerLongBreak: 4, autoStartNextPomo: false, autoStartBreak: false, quickDurations: [25, 45, 60], shortBreakPresets: [5, 10, 15] });
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [pomosCompleted, setPomosCompleted] = useState(0); 
 
@@ -69,11 +69,17 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
 
   // --- Initialization ---
   useEffect(() => {
-      setSessions(storage.getSessions());
-      // Initialize with correct duration based on settings, though effect runs after render
-      const duration = settings.pomoDuration * 60;
-      setInitialTime(duration);
-      setTimeLeft(duration);
+      // Defer session loading to unblock initial render for faster startup
+      setTimeout(async () => {
+          setSessions(await storage.getSessions());
+          const s = await storage.getTimerSettings();
+          setSettings(s);
+          // Initialize with correct duration based on settings
+          const duration = s.pomoDuration * 60;
+          setInitialTime(duration);
+          setTimeLeft(duration);
+      }, 10);
+
       
       // Changed to local asset for offline support. Ensure 'alarm.mp3' is in your public/assets folder.
       audioRef.current = new Audio('./assets/alarm.mp3');
@@ -163,7 +169,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isActive, mode]);
 
-  const handleTimerComplete = () => {
+  const handleTimerComplete = async () => {
       setIsActive(false);
       if (timerRef.current) clearInterval(timerRef.current);
       endTimeRef.current = null;
@@ -185,7 +191,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
               label: labelText,
               projectId: selectedProjectId
           };
-          const updatedSessions = storage.saveSessionRecord(newSession);
+          const updatedSessions = await storage.saveSessionRecord(newSession);
           setSessions(updatedSessions);
           
           const hours = Math.round((durationSecs / 3600) * 10) / 10;
@@ -233,7 +239,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       }
   };
 
-  const handleStopwatchFinish = () => {
+  const handleStopwatchFinish = async () => {
       setIsActive(false);
       if (timerRef.current) clearInterval(timerRef.current);
       
@@ -254,7 +260,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
               projectId: selectedProjectId
           };
           
-          const updatedSessions = storage.saveSessionRecord(newSession);
+          const updatedSessions = await storage.saveSessionRecord(newSession);
           setSessions(updatedSessions);
           
           const hours = Math.round((durationSecs / 3600) * 10) / 10;
@@ -296,8 +302,8 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   const openSettings = () => { setTempSettings(settings); setIsSettingsOpen(true); };
   const closeSettings = () => setIsSettingsOpen(false);
   
-  const saveSettings = () => {
-      storage.saveTimerSettings(tempSettings);
+  const saveSettings = async () => {
+      await storage.saveTimerSettings(tempSettings);
       setSettings(tempSettings);
       // Reset timer to new settings if currently stopped
       if (!isActive) {
@@ -320,7 +326,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   };
 
   // --- Add Session Logic ---
-  const handleSaveManualSession = () => {
+  const handleSaveManualSession = async () => {
       if (manualDuration <= 0) return;
       
       const startDateTime = new Date(`${manualDate}T${manualTime}`);
@@ -337,7 +343,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
           projectId: manualProject
       };
       
-      const updated = storage.saveSessionRecord(newSession);
+      const updated = await storage.saveSessionRecord(newSession);
       setSessions(updated);
       
       const hours = Math.round((durationSecs / 3600) * 10) / 10;
@@ -377,7 +383,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       setIsHistoryMenuOpen(false);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
       let updatedSessions = [...sessions];
 
       if (editingSessionIds.length === 1) {
@@ -396,11 +402,11 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
                   endTime: endDateTime.toISOString(),
                   duration: (endDateTime.getTime() - startDateTime.getTime()) / 1000
               };
-              storage.saveSessionRecord(updatedSession);
+              await storage.saveSessionRecord(updatedSession);
           }
       } else {
           // Batch Update
-          updatedSessions.forEach(s => {
+          for (const s of updatedSessions) {
               if (editingSessionIds.includes(s.id)) {
                   let newStart = s.startTime;
                   let newEnd = s.endTime;
@@ -421,12 +427,12 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
                       startTime: newStart,
                       endTime: newEnd
                   };
-                  storage.saveSessionRecord(updatedSession);
+                  await storage.saveSessionRecord(updatedSession);
               }
-          });
+          }
       }
       
-      setSessions(storage.getSessions());
+      setSessions(await storage.getSessions());
       setIsEditModalOpen(false);
       setEditingSessionIds([]);
       setSelectedSessionIds(new Set()); // Clear selection after batch edit
@@ -446,20 +452,20 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       setSelectedSessionIds(newSet);
   };
 
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = async () => {
       if (selectedSessionIds.size === 0) return;
       if (confirm(`Delete ${selectedSessionIds.size} sessions?`)) {
-          const updated = storage.batchDeleteSessions(Array.from(selectedSessionIds));
+          const updated = await storage.batchDeleteSessions(Array.from(selectedSessionIds));
           setSessions(updated);
           setSelectedSessionIds(new Set());
           setIsHistoryMenuOpen(false);
       }
   };
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
       if (confirm("Clear all session history? This cannot be undone.")) {
           const allIds = sessions.map(s => s.id);
-          const updated = storage.batchDeleteSessions(allIds);
+          const updated = await storage.batchDeleteSessions(allIds);
           setSessions(updated);
           setSelectedSessionIds(new Set());
           setIsHistoryMenuOpen(false);

@@ -13,6 +13,8 @@ const CountdownPanel = lazy(() => import('./components/CountdownPanel').then(m =
 const SettingsPanel = lazy(() => import('./components/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
 const Heatmap = lazy(() => import('./components/Heatmap').then(m => ({ default: m.Heatmap })));
 const InsightsPanel = lazy(() => import('./components/InsightsPanel').then(m => ({ default: m.InsightsPanel })));
+const GamificationPanel = lazy(() => import('./components/GamificationPanel').then(m => ({ default: m.GamificationPanel })));
+const GoalsPanel = lazy(() => import('./components/GoalsPanel').then(m => ({ default: m.GoalsPanel })));
 
 // Add loading fallback
 const PanelLoader = () => (
@@ -24,9 +26,49 @@ const PanelLoader = () => (
   </div>
 );
 
+// Helper for safe local date parsing
+const parseDate = (dateStr: string) => {
+    if (!dateStr) return new Date();
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d);
+};
+
+// Error Boundary for App Stability
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean}> {
+  constructor(props: {children: React.ReactNode}) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-white">
+          <div className="text-center p-8">
+            <h1 className="text-2xl font-bold mb-4">Something went wrong.</h1>
+            <p className="mb-4 text-gray-600 dark:text-gray-400">The application encountered an unexpected error.</p>
+            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              Reload Application
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function FocusFlowContent() {
   // --- Context Hooks ---
-  const { isDarkMode, toggleTheme } = useTheme();
+  const { isDarkMode, toggleTheme, appTheme, setAppTheme } = useTheme();
   const { projects, currentProjectId, setCurrentProjectId, createProject, deleteProject, updateProjects } = useProjects();
   const { logs, goals, saveLog, deleteLog, updateGoals } = useLogs();
   const { currentView, setCurrentView, settingsTab, setSettingsTab, navConfig, setNavConfig, sidebarConfig, setSidebarConfig, menuBarConfig, setMenuBarConfig } = useUI();
@@ -49,6 +91,41 @@ function FocusFlowContent() {
   const [hoursInput, setHoursInput] = useState<number | string>('');
   const [notesInput, setNotesInput] = useState<string>('');
   
+  // Gamification State (Lifted/Shared via LocalStorage)
+  const [freezeDates, setFreezeDates] = useState<string[]>(() => {
+      if (typeof window !== 'undefined') {
+          try {
+              return JSON.parse(localStorage.getItem('focusflow_freeze_dates') || '[]');
+          } catch (e) {
+              return [];
+          }
+      }
+      return [];
+  });
+
+  // Goal History State (Lifted/Shared via LocalStorage)
+  const [goalHistory, setGoalHistory] = useState<{date: string, goals: UserGoals}[]>(() => {
+      if (typeof window !== 'undefined') {
+          try {
+              return JSON.parse(localStorage.getItem('focusflow_goal_history') || '[]');
+          } catch { return []; }
+      }
+      return [];
+  });
+
+  // Log History State (Moved from StatisticsPanel)
+  const [historyScope, setHistoryScope] = useState<'project' | 'global'>('project');
+  const [historyFilter, setHistoryFilter] = useState<'all' | '7days' | '30days' | 'year'>('30days');
+  const [historySortField, setHistorySortField] = useState<'date' | 'hours'>('date');
+  const [historySortDesc, setHistorySortDesc] = useState(true);
+
+  // Pagination State
+  const [historyPage, setHistoryPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
+  // Reset page when filters change
+  useEffect(() => setHistoryPage(1), [historyFilter, historyScope, historySortField, historySortDesc]);
+
   const formRef = useRef<HTMLDivElement>(null); 
 
   useEffect(() => {
@@ -64,6 +141,17 @@ function FocusFlowContent() {
   }, [currentProjectId, projects, selectedDate, logs]);
 
   const handleUpdateGoals = (newGoals: UserGoals) => {
+      const now = new Date().toISOString();
+      const newHistory = [...goalHistory];
+      
+      // If history is empty, assume the *previous* goals applied from the beginning of time
+      if (newHistory.length === 0) {
+          newHistory.push({ date: '1970-01-01T00:00:00.000Z', goals: goals });
+      }
+      
+      newHistory.push({ date: now, goals: newGoals });
+      setGoalHistory(newHistory);
+      localStorage.setItem('focusflow_goal_history', JSON.stringify(newHistory));
       updateGoals(newGoals);
   };
 
@@ -83,6 +171,16 @@ function FocusFlowContent() {
       const existing = logs.find(l => l.date === today && l.projectId === targetProject);
       const totalHours = (existing ? existing.hours : 0) + sessionHours;
       const mergedNotes = existing ? (existing.notes ? existing.notes + '; ' + sessionNote : sessionNote) : sessionNote;
+      
+      // Check for Double XP Potion
+      const inventory = JSON.parse(localStorage.getItem('focusflow_inventory') || '{}');
+      if (inventory.doubleGemExpiry && inventory.doubleGemExpiry > Date.now()) {
+          // Award bonus gems (10 gems per hour is base, so add another 10 per hour)
+          const bonus = Math.floor(sessionHours * 10);
+          const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0');
+          localStorage.setItem('focusflow_bonus_gems', (currentBonus + bonus).toString());
+      }
+
       saveLog(today, totalHours, mergedNotes, targetProject);
   };
   
@@ -129,18 +227,52 @@ function FocusFlowContent() {
       setSettingsTab('projects');
   };
 
-  // Helper for safe local date parsing
-  const parseDate = (dateStr: string) => {
-      const [y, m, d] = dateStr.split('-').map(Number);
-      return new Date(y, m - 1, d);
-  };
-
   // --- Calculations ---
   const currentYear = new Date().getFullYear();
   const projectLogs = useMemo(() => logs.filter(l => l.projectId === currentProjectId), [logs, currentProjectId]);
   const activeLog = useMemo(() => projectLogs.find(l => l.date === selectedDate), [projectLogs, selectedDate]);
+
+  const historyLogs = useMemo(() => {
+      let target = historyScope === 'global' ? logs : projectLogs;
+      let filtered = [...target];
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      
+      if (historyFilter === '7days') {
+          const cutoff = new Date(now);
+          cutoff.setDate(now.getDate() - 7);
+          filtered = filtered.filter(l => parseDate(l.date) >= cutoff);
+      } else if (historyFilter === '30days') {
+          const cutoff = new Date(now);
+          cutoff.setDate(now.getDate() - 30);
+          filtered = filtered.filter(l => parseDate(l.date) >= cutoff);
+      } else if (historyFilter === 'year') {
+          const startOfYear = new Date(now.getFullYear(), 0, 1);
+          filtered = filtered.filter(l => parseDate(l.date) >= startOfYear);
+      }
+
+      filtered.sort((a, b) => {
+          let valA = historySortField === 'date' ? parseDate(a.date).getTime() : a.hours;
+          let valB = historySortField === 'date' ? parseDate(b.date).getTime() : b.hours;
+          return historySortDesc ? valB - valA : valA - valB;
+      });
+
+      return filtered;
+  }, [logs, projectLogs, historyScope, historyFilter, historySortField, historySortDesc]);
+
+  const paginatedHistoryLogs = useMemo(() => {
+      const start = (historyPage - 1) * ITEMS_PER_PAGE;
+      return historyLogs.slice(start, start + ITEMS_PER_PAGE);
+  }, [historyLogs, historyPage]);
+
   const totalHours = useMemo(() => logs.reduce((acc, curr) => acc + curr.hours, 0), [logs]); 
   
+  const currentDailyHours = useMemo(() => {
+      const d = new Date();
+      const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      return logs.filter(l => l.date === todayStr).reduce((acc, curr) => acc + curr.hours, 0);
+  }, [logs]);
+
   const currentWeeklyHours = useMemo(() => {
       const now = new Date();
       const day = now.getDay();
@@ -151,10 +283,25 @@ function FocusFlowContent() {
       return logs.filter(l => parseDate(l.date) >= monday).reduce((acc, curr) => acc + curr.hours, 0);
   }, [logs]);
 
+  const currentMonthlyHours = useMemo(() => {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      return logs.filter(l => parseDate(l.date) >= startOfMonth).reduce((acc, curr) => acc + curr.hours, 0);
+  }, [logs]);
+
+  const currentYearlyHours = useMemo(() => {
+      const now = new Date();
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      return logs.filter(l => parseDate(l.date) >= startOfYear).reduce((acc, curr) => acc + curr.hours, 0);
+  }, [logs]);
+
   const streaks = useMemo(() => {
-      if (logs.length === 0) return { current: 0, longest: 0 };
-      const activeDates = Array.from(new Set<string>(logs.filter(l => l.hours > 0).map(l => l.date))).sort();
-      if (activeDates.length === 0) return { current: 0, longest: 0 };
+      const activeLogDates = logs.filter(l => l.hours > 0).map(l => l.date);
+      // Combine log dates and freeze dates
+      const combinedDates = Array.from(new Set<string>([...activeLogDates, ...freezeDates])).sort();
+      
+      if (combinedDates.length === 0) return { current: 0, longest: 0 };
+      const activeDates = combinedDates;
       const timestamps = activeDates.map((d: string) => parseDate(d).getTime());
       let longest = 1;
       let currentRun = 1;
@@ -178,6 +325,41 @@ function FocusFlowContent() {
       }
       return { current, longest };
   }, [logs]);
+
+  // Streak Freeze Logic: Check on mount/update if we missed yesterday and need to consume a freeze
+  useEffect(() => {
+      const checkStreakFreeze = () => {
+          const inventory = JSON.parse(localStorage.getItem('focusflow_inventory') || '{}');
+          const freezesOwned = inventory.streakFreeze || 0;
+          
+          if (freezesOwned <= 0) return;
+
+          const today = new Date();
+          const yesterday = new Date(today);
+          yesterday.setDate(yesterday.getDate() - 1);
+          
+          const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
+          
+          // Check if yesterday is already logged or frozen
+          const hasLogYesterday = logs.some(l => l.date === yesterdayStr && l.hours > 0);
+          const isFrozenYesterday = freezeDates.includes(yesterdayStr);
+
+          if (!hasLogYesterday && !isFrozenYesterday) {
+              // Only consume if there was a streak to save (day before yesterday was active)
+              // This prevents consuming freezes when the user hasn't been active for weeks
+              if (streaks.current > 0) {
+                  // Consume Freeze
+                  inventory.streakFreeze = freezesOwned - 1;
+                  localStorage.setItem('focusflow_inventory', JSON.stringify(inventory));
+                  
+                  const newFreezeDates = [...freezeDates, yesterdayStr];
+                  localStorage.setItem('focusflow_freeze_dates', JSON.stringify(newFreezeDates));
+                  setFreezeDates(newFreezeDates);
+              }
+          }
+      };
+      checkStreakFreeze();
+  }, [logs, streaks.current]); // Check when logs change or streak updates
 
   const activeProject = projects.find(p => p.id === currentProjectId);
   const activeProjectName = activeProject?.name || 'Project';
@@ -212,9 +394,13 @@ function FocusFlowContent() {
       if (text) window.electronAPI?.updateTrayTitle(text);
   }, [menuBarConfig, logs, goals, streaks, totalHours]);
 
+  const contentBgClass = appTheme === 'cyberpunk' 
+    ? 'bg-[#0f172a] text-white' 
+    : 'bg-white dark:bg-gray-900';
+
   return (
     <div className={isElectron ? "w-screen h-screen overflow-hidden" : "min-h-screen flex items-center justify-center p-4 sm:p-8 transition-colors duration-500"}>
-      <MacWindow isDarkMode={isDarkMode} onToggleTheme={toggleTheme}>
+      <MacWindow isDarkMode={isDarkMode} onToggleTheme={toggleTheme} appTheme={appTheme}>
         <Sidebar 
             currentView={currentView} 
             onChangeView={setCurrentView} 
@@ -230,7 +416,7 @@ function FocusFlowContent() {
             sidebarConfig={sidebarConfig}
         />
         
-        <div className="flex-1 bg-white dark:bg-gray-900 relative overflow-hidden flex flex-col transition-colors duration-300">
+        <div className={`flex-1 relative overflow-hidden flex flex-col transition-colors duration-300 ${contentBgClass}`}>
           
           {/* TimerPanel must be outside Suspense to prevent unmounting when other tabs load */}
           {(currentView === ViewMode.TIMER || timerViewInitialized) && (
@@ -343,6 +529,113 @@ function FocusFlowContent() {
                 </div>
 
                 <div className="mb-8 w-full"><Heatmap data={projectLogs} year={currentYear} onDayClick={handleDayClick} isDarkMode={isDarkMode} theme={heatmapTheme} onThemeChange={handleThemeChange} /></div>
+                
+                {/* Log History Table */}
+                <div className="mb-8 w-full">
+                    <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">Log History</h3>
+                        <div className="flex gap-2">
+                             <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-lg">
+                                <button onClick={() => setHistoryScope('project')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyScope === 'project' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Project</button>
+                                <button onClick={() => setHistoryScope('global')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyScope === 'global' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Global</button>
+                             </div>
+                             <select 
+                                value={historyFilter} 
+                                onChange={(e) => setHistoryFilter(e.target.value as any)}
+                                className="bg-gray-200 dark:bg-gray-800 border-none text-xs font-bold rounded-lg px-3 py-1 text-gray-700 dark:text-gray-300 focus:ring-0 outline-none"
+                             >
+                                 <option value="7days">7 Days</option>
+                                 <option value="30days">30 Days</option>
+                                 <option value="year">Year</option>
+                                 <option value="all">All Time</option>
+                             </select>
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl border border-gray-200 dark:border-gray-700/50 shadow-sm overflow-hidden">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
+                                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                                        onClick={() => {
+                                            if (historySortField === 'date') setHistorySortDesc(!historySortDesc);
+                                            else { setHistorySortField('date'); setHistorySortDesc(true); }
+                                        }}
+                                    >
+                                        <div className="flex items-center space-x-1">
+                                            <span>Date</span>
+                                            {historySortField === 'date' && <span>{historySortDesc ? '↓' : '↑'}</span>}
+                                        </div>
+                                    </th>
+                                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                                        onClick={() => {
+                                            if (historySortField === 'hours') setHistorySortDesc(!historySortDesc);
+                                            else { setHistorySortField('hours'); setHistorySortDesc(true); }
+                                        }}
+                                    >
+                                        <div className="flex items-center space-x-1">
+                                            <span>Hours</span>
+                                            {historySortField === 'hours' && <span>{historySortDesc ? '↓' : '↑'}</span>}
+                                        </div>
+                                    </th>
+                                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Notes</th>
+                                    <th className="p-4 w-10"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                {historyLogs.length === 0 ? (
+                                    <tr><td colSpan={4} className="p-8 text-center text-gray-500 dark:text-gray-400">No logs found for this period.</td></tr>
+                                ) : (
+                                    paginatedHistoryLogs.map((log) => (
+                                        <tr key={`${log.date}-${log.projectId}`} className="group hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                            <td className="p-4 text-sm text-gray-900 dark:text-gray-200 font-medium">
+                                                {log.date}
+                                                <div className="text-xs text-gray-400 font-normal">{new Date(log.date).toLocaleDateString('en-US', { weekday: 'long' })}</div>
+                                            </td>
+                                            <td className="p-4 text-sm text-gray-900 dark:text-gray-200">
+                                                <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${log.hours >= 4 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : log.hours >= 1 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>{log.hours} hrs</span>
+                                            </td>
+                                            <td className="p-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
+                                                {log.notes || <span className="text-gray-300 dark:text-gray-600 italic">-</span>}
+                                                {historyScope === 'global' && (
+                                                    <span className="ml-2 text-[10px] text-gray-400 border border-gray-200 dark:border-gray-700 px-1 rounded">{projects.find(p => p.id === log.projectId)?.name}</span>
+                                                )}
+                                            </td>
+                                            <td className="p-4 text-right">
+                                                <button onClick={() => handleDayClick(log.date)} className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all" title="Edit">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                        
+                        {/* Pagination Controls */}
+                        {historyLogs.length > ITEMS_PER_PAGE && (
+                            <div className="flex justify-between items-center p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
+                                <button 
+                                    onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                                    disabled={historyPage === 1}
+                                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                                >
+                                    Previous
+                                </button>
+                                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                                    Page {historyPage} of {Math.ceil(historyLogs.length / ITEMS_PER_PAGE)}
+                                </span>
+                                <button 
+                                    onClick={() => setHistoryPage(p => Math.min(Math.ceil(historyLogs.length / ITEMS_PER_PAGE), p + 1))}
+                                    disabled={historyPage >= Math.ceil(historyLogs.length / ITEMS_PER_PAGE)}
+                                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
               </div>
               </div>
             )}
@@ -356,8 +649,19 @@ function FocusFlowContent() {
                   onUpdateGoals={handleUpdateGoals}
                   onEditLog={handleEditLogFromStats}
                   projectId={currentProjectId}
-                  totalHours={totalHours}
-                  streak={streaks.current}
+                  goalHistory={goalHistory}
+              />
+            )}
+
+            {currentView === ViewMode.GOALS && (
+              <GoalsPanel 
+                  goals={goals}
+                  onUpdateGoals={handleUpdateGoals}
+                  currentDailyHours={currentDailyHours}
+                  currentWeeklyHours={currentWeeklyHours}
+                  currentMonthlyHours={currentMonthlyHours}
+                  currentYearlyHours={currentYearlyHours}
+                  goalHistory={goalHistory}
               />
             )}
 
@@ -376,6 +680,14 @@ function FocusFlowContent() {
               <InsightsPanel logs={projectLogs} />
             )}
 
+            {currentView === ViewMode.GAMIFICATION && (
+              <GamificationPanel 
+                  allLogs={logs}
+                  totalHours={totalHours}
+                  streak={streaks.current}
+              />
+            )}
+
             {currentView === ViewMode.SETTINGS && (
               <SettingsPanel 
                   navConfig={navConfig} 
@@ -392,6 +704,8 @@ function FocusFlowContent() {
                   onTabChange={setSettingsTab}
                   sidebarConfig={sidebarConfig}
                   onUpdateSidebarConfig={setSidebarConfig}
+                  appTheme={appTheme}
+                  setAppTheme={setAppTheme}
               />
             )}
           </Suspense>
@@ -404,7 +718,9 @@ function FocusFlowContent() {
 function App() {
   return (
     <AppProvider>
-      <FocusFlowContent />
+      <ErrorBoundary>
+        <FocusFlowContent />
+      </ErrorBoundary>
     </AppProvider>
   );
 }

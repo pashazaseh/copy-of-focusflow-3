@@ -3,9 +3,8 @@ import { StudyLog, UserGoals, Project, SessionRecord } from '../types';
 import { 
     BarChart, Bar, LineChart, Line, AreaChart, Area, 
     XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis
+    PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis, ComposedChart
 } from 'recharts';
-import { calculateLevel, getUnlockedAchievements } from '../services/gamificationService';
 import { getSessions } from '../services/storageService';
 
 interface StatisticsPanelProps {
@@ -16,18 +15,18 @@ interface StatisticsPanelProps {
   onUpdateGoals: (goals: UserGoals) => void;
   onEditLog: (date: string) => void;
   projectId: string;
-  totalHours: number;
-  streak: number;
+  goalHistory?: { date: string; goals: UserGoals }[];
 }
 
 type SortField = 'date' | 'hours';
 type FilterRange = 'all' | '7days' | '30days' | 'year';
 type ChartType = 'bar' | 'line' | 'area';
 type ScopeType = 'project' | 'global';
+type GoalPeriod = 'daily' | 'weekly' | 'monthly';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1'];
 
-export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs, projects, goals, onUpdateGoals, onEditLog, projectId, totalHours, streak }) => {
+export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs, projects, goals, onUpdateGoals, onEditLog, projectId, goalHistory = [] }) => {
   // Persisted State
   const [scope, setScope] = useState<ScopeType>(() => {
       if (typeof window !== 'undefined') return (localStorage.getItem('focusflow_stats_scope') as ScopeType) || 'project';
@@ -47,6 +46,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDesc, setSortDesc] = useState(true);
   const [showChartSettings, setShowChartSettings] = useState(false);
+  const [goalPeriod, setGoalPeriod] = useState<GoalPeriod>('daily');
   
   // Session Data for Scatter Plot
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
@@ -55,7 +55,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
 
   useEffect(() => {
       // Load sessions for advanced analytics
-      setSessions(getSessions());
+      getSessions().then(setSessions);
 
       const handleClickOutside = (event: MouseEvent) => {
           if (chartSettingsRef.current && !chartSettingsRef.current.contains(event.target as Node)) {
@@ -73,11 +73,6 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
 
   // Determine which logs to use based on scope
   const targetLogs = scope === 'global' ? allLogs : logs;
-
-  // Gamification Data (Always Global based on totalHours passed)
-  const levelData = useMemo(() => calculateLevel(totalHours), [totalHours]);
-  const achievements = useMemo(() => getUnlockedAchievements(allLogs, totalHours, streak), [allLogs, totalHours, streak]);
-  const unlockedCount = achievements.filter(a => a.isUnlocked).length;
 
   const filteredLogs = useMemo(() => {
     let filtered = [...targetLogs];
@@ -214,8 +209,122 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
       const avgWeekday = weekdays.length ? weekdays.reduce((a, b) => a + b.hours, 0) / weekdays.length : 0;
       const avgWeekend = weekends.length ? weekends.reduce((a, b) => a + b.hours, 0) / weekends.length : 0;
 
-      return { totalHours, avgHours, avgWeekday, avgWeekend };
-  }, [filteredLogs]);
+      // Trend Calculation
+      const now = new Date();
+      let startCurrent = new Date(0);
+      let startPrevious = new Date(0);
+      let endPrevious = new Date(0);
+
+      if (filterRange === '7days') {
+          startCurrent = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          startPrevious = new Date(startCurrent.getTime() - 7 * 24 * 60 * 60 * 1000);
+          endPrevious = startCurrent;
+      } else if (filterRange === '30days') {
+          startCurrent = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          startPrevious = new Date(startCurrent.getTime() - 30 * 24 * 60 * 60 * 1000);
+          endPrevious = startCurrent;
+      } else if (filterRange === 'year') {
+          startCurrent = new Date(now.getFullYear(), 0, 1);
+          startPrevious = new Date(now.getFullYear() - 1, 0, 1);
+          endPrevious = new Date(now.getFullYear() - 1, 11, 31);
+      }
+
+      let trend = 0;
+      if (filterRange !== 'all') {
+          const prevLogs = targetLogs.filter(l => {
+              const d = new Date(l.date);
+              return d >= startPrevious && d < endPrevious;
+          });
+          const prevTotal = prevLogs.reduce((acc, curr) => acc + curr.hours, 0);
+          trend = prevTotal > 0 ? ((totalHours - prevTotal) / prevTotal) * 100 : 0;
+      }
+
+      return { totalHours, avgHours, avgWeekday, avgWeekend, trend };
+  }, [filteredLogs, targetLogs, filterRange]);
+
+  // Helper to get goal for a specific date from history
+  const getGoalForDate = (date: Date) => {
+      if (!goalHistory || goalHistory.length === 0) return goals;
+      
+      const dateStr = date.toISOString();
+      // Find the latest goal setting that is before or equal to this date
+      // We assume history is sorted or we filter and sort to find the effective one
+      const applicable = goalHistory
+          .filter(h => h.date <= dateStr)
+          .sort((a, b) => b.date.localeCompare(a.date))[0];
+          
+      return applicable ? applicable.goals : (goalHistory[0]?.goals || goals);
+  };
+
+  // Goal Adherence Data
+  const goalData = useMemo(() => {
+      const data: { label: string; hours: number; goal: number }[] = [];
+      const now = new Date();
+
+      if (goalPeriod === 'daily') {
+          // Last 14 days
+          for (let i = 13; i >= 0; i--) {
+              const d = new Date(now);
+              d.setDate(d.getDate() - i);
+              const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+              const hours = targetLogs.filter(l => l.date === dateStr).reduce((acc, curr) => acc + curr.hours, 0);
+              const historicalGoal = getGoalForDate(d);
+              data.push({
+                  label: d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
+                  hours,
+                  goal: historicalGoal.daily || 4
+              });
+          }
+      } else if (goalPeriod === 'weekly') {
+          // Last 8 weeks
+          for (let i = 7; i >= 0; i--) {
+              const d = new Date(now);
+              d.setDate(d.getDate() - (i * 7));
+              const day = d.getDay();
+              const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+              const monday = new Date(d.setDate(diff));
+              const nextSunday = new Date(monday);
+              nextSunday.setDate(monday.getDate() + 6);
+              
+              const startStr = monday.toISOString().split('T')[0]; // Approximate check
+              // Better to use timestamps for range
+              const startTs = monday.setHours(0,0,0,0);
+              const endTs = nextSunday.setHours(23,59,59,999);
+
+              const hours = targetLogs.filter(l => {
+                  const lTs = new Date(l.date).getTime();
+                  return lTs >= startTs && lTs <= endTs;
+              }).reduce((acc, curr) => acc + curr.hours, 0);
+              
+              const historicalGoal = getGoalForDate(monday);
+              data.push({
+                  label: `W${8-i}`,
+                  hours,
+                  goal: historicalGoal.weekly
+              });
+          }
+      } else if (goalPeriod === 'monthly') {
+          // Last 6 months
+          for (let i = 5; i >= 0; i--) {
+              const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+              const month = d.getMonth();
+              const year = d.getFullYear();
+              
+              const hours = targetLogs.filter(l => {
+                  const ld = new Date(l.date);
+                  return ld.getMonth() === month && ld.getFullYear() === year;
+              }).reduce((acc, curr) => acc + curr.hours, 0);
+              
+              const historicalGoal = getGoalForDate(d);
+              data.push({
+                  label: d.toLocaleDateString('en-US', { month: 'short' }),
+                  hours,
+                  goal: historicalGoal.monthly
+              });
+          }
+      }
+      return data;
+  }, [targetLogs, goalPeriod, goals, goalHistory]);
 
   const weekDayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -233,7 +342,8 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                 <YAxis tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
                 <Tooltip 
                     cursor={{ stroke: '#3b82f6', strokeWidth: 1 }}
-                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: 'rgba(255, 255, 255, 0.95)'}} 
+                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}} 
+                    itemStyle={{ color: '#1f2937' }}
                 />
                 <Line type="monotone" dataKey="hours" stroke="#3b82f6" strokeWidth={3} dot={{r: 3, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff'}} activeDot={{r: 6}} />
             </LineChart>
@@ -252,7 +362,8 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                 <YAxis tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
                 <Tooltip 
                     cursor={{ stroke: '#8b5cf6', strokeWidth: 1 }}
-                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: 'rgba(255, 255, 255, 0.95)'}} 
+                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}} 
+                    itemStyle={{ color: '#1f2937' }}
                 />
                 <Area type="monotone" dataKey="hours" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorHours)" strokeWidth={3} />
             </AreaChart>
@@ -265,54 +376,52 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
             <YAxis tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
             <Tooltip 
                 cursor={{fill: 'rgba(59, 130, 246, 0.1)'}} 
-                contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: 'rgba(255, 255, 255, 0.95)'}} 
+                contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}} 
+                itemStyle={{ color: '#1f2937' }}
             />
             <Bar dataKey="hours" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={32} />
         </BarChart>
     );
   };
 
+  // Session Duration Data
+  const durationData = useMemo(() => {
+      const now = new Date();
+      let cutoff = new Date(0); 
+      if (filterRange === '7days') cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      if (filterRange === '30days') cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      if (filterRange === 'year') cutoff = new Date(now.getFullYear(), 0, 1);
+
+      const relevantSessions = sessions.filter(s => {
+          const sDate = new Date(s.startTime);
+          const dateMatch = sDate >= cutoff;
+          const scopeMatch = scope === 'global' || s.projectId === projectId;
+          return dateMatch && scopeMatch;
+      });
+
+      const buckets = [
+          { name: '< 25m', count: 0 },
+          { name: '25-50m', count: 0 },
+          { name: '50-90m', count: 0 },
+          { name: '> 90m', count: 0 },
+      ];
+
+      relevantSessions.forEach(s => {
+          const m = s.duration / 60;
+          if (m < 25) buckets[0].count++;
+          else if (m < 50) buckets[1].count++;
+          else if (m < 90) buckets[2].count++;
+          else buckets[3].count++;
+      });
+
+      return buckets;
+  }, [sessions, scope, projectId, filterRange]);
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50/50 dark:bg-gray-900 transition-colors duration-300">
       <div className="p-8 h-full overflow-y-auto custom-scrollbar">
         <div className="max-w-6xl mx-auto space-y-8 animate-fade-in-up">
             
-            {/* --- Hero Section (Level & XP) --- */}
-            <div className="relative bg-white dark:bg-gray-800 rounded-3xl p-8 border border-gray-200 dark:border-gray-700 shadow-xl overflow-hidden group">
-                <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none transition-transform duration-1000 group-hover:scale-110"></div>
-                <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
-                    <div className="shrink-0 relative group/rank">
-                        <div className="w-36 h-36 rounded-full p-2 bg-gradient-to-br from-white/10 to-white/5 border border-white/20 backdrop-blur-sm shadow-2xl flex items-center justify-center">
-                            <div className="w-full h-full rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-5xl shadow-inner text-white font-black ring-4 ring-white dark:ring-gray-800 transform group-hover/rank:rotate-12 transition-transform duration-500 relative overflow-hidden">
-                                {levelData.rank.title.charAt(0)}
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
-                            </div>
-                        </div>
-                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-yellow-400 text-yellow-900 text-xs font-bold px-3 py-1 rounded-full shadow-lg border-2 border-white dark:border-gray-800 z-10 min-w-[60px] text-center">
-                            Lvl {Math.floor(totalHours / 10) + 1}
-                        </div>
-                    </div>
-                    <div className="flex-1 w-full text-center md:text-left">
-                        <h3 className={`text-5xl font-black ${levelData.rank.color} mb-1 tracking-tight drop-shadow-sm`}>{levelData.rank.title}</h3>
-                        <p className="text-gray-500 dark:text-gray-400 font-medium mb-6">
-                            Total Focus Time: <span className="text-gray-900 dark:text-white font-bold">{totalHours.toFixed(1)} Hours</span>
-                        </p>
-                        <div className="relative pt-1 max-w-xl mx-auto md:mx-0">
-                            <div className="flex mb-2 items-center justify-between">
-                                <div><span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300">XP Progress</span></div>
-                                <div className="text-right"><span className="text-xs font-bold inline-block text-blue-600 dark:text-blue-400">{levelData.currentXP} / {levelData.nextLevelXP} XP</span></div>
-                            </div>
-                            <div className="overflow-hidden h-4 mb-4 text-xs flex rounded-full bg-blue-100 dark:bg-gray-700 shadow-inner relative">
-                                <div style={{ width: `${levelData.progress}%` }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-1000 ease-out relative z-10">
-                                    <div className="absolute inset-0 bg-white/30 w-full h-full animate-[shimmer_2s_infinite]"></div>
-                                </div>
-                            </div>
-                            <p className="text-xs text-gray-400">{levelData.hoursToNext > 0 ? `${levelData.hoursToNext.toFixed(1)} more hours to reach ${levelData.nextRank?.title}` : 'Max Rank Achieved!'}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             {/* --- Charts Header & Controls --- */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pt-4 border-t border-gray-200 dark:border-gray-800">
                 <div>
@@ -364,6 +473,11 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                         <p className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{stats.totalHours.toFixed(1)}</p>
                         <span className="ml-1 text-sm text-gray-400 font-medium">hrs</span>
                     </div>
+                    {filterRange !== 'all' && (
+                        <div className={`text-xs font-bold mt-2 ${stats.trend >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            {stats.trend > 0 ? '+' : ''}{stats.trend.toFixed(1)}% <span className="text-gray-400 font-normal">vs prev</span>
+                        </div>
+                    )}
                 </div>
                 <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
                     <p className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider mb-2">Daily Avg</p>
@@ -385,6 +499,44 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                         <p className="text-3xl font-bold text-purple-600 dark:text-purple-400 tracking-tight">{stats.avgWeekend.toFixed(1)}</p>
                         <span className="ml-1 text-sm text-purple-400/70 font-medium">hrs</span>
                     </div>
+                </div>
+            </div>
+
+            {/* Goal Adherence Chart */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="font-bold text-gray-900 dark:text-white text-lg">Goal Adherence</h3>
+                    <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+                        {(['daily', 'weekly', 'monthly'] as GoalPeriod[]).map(p => (
+                            <button
+                                key={p}
+                                onClick={() => setGoalPeriod(p)}
+                                className={`px-3 py-1 text-xs font-bold rounded-md transition-all capitalize ${
+                                    goalPeriod === p 
+                                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-white shadow-sm' 
+                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                                }`}
+                            >
+                                {p}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={goalData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" opacity={0.5} />
+                            <XAxis dataKey="label" tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} dy={10} />
+                            <YAxis tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
+                            <Tooltip 
+                                cursor={{fill: 'rgba(59, 130, 246, 0.1)'}} 
+                                contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}}
+                                itemStyle={{ color: '#1f2937' }}
+                            />
+                            <Bar dataKey="hours" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
+                            <Line type="stepAfter" dataKey="goal" stroke="#ef4444" strokeWidth={2} dot={false} activeDot={false} strokeDasharray="5 5" />
+                        </ComposedChart>
+                    </ResponsiveContainer>
                 </div>
             </div>
 
@@ -457,7 +609,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                                     <XAxis type="number" dataKey="hour" name="Hour" unit=":00" domain={[0, 23]} tickCount={12} tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
                                     <YAxis type="number" dataKey="day" name="Day" domain={[0, 6]} ticks={[0,1,2,3,4,5,6]} tickFormatter={(val) => weekDayLabels[val]} tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} />
                                     <ZAxis type="number" dataKey="value" range={[50, 400]} name="Sessions" />
-                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: 'rgba(255, 255, 255, 0.95)'}} />
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}} itemStyle={{ color: '#1f2937' }} />
                                     <Scatter name="Sessions" data={scatterData} fill="#8884d8" shape="circle">
                                         {scatterData.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={entry.value > 2 ? '#3b82f6' : '#93c5fd'} />
@@ -477,6 +629,26 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                     </div>
                 </div>
 
+                {/* Session Duration Chart */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-6">Session Duration</h3>
+                    <div className="h-64 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={durationData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" opacity={0.5} />
+                                <XAxis dataKey="name" tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} dy={10} />
+                                <YAxis tick={{fontSize: 10, fill: '#9CA3AF'}} tickLine={false} axisLine={false} allowDecimals={false} />
+                                <Tooltip 
+                                    cursor={{fill: 'rgba(59, 130, 246, 0.1)'}} 
+                                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}}
+                                    itemStyle={{ color: '#1f2937' }}
+                                />
+                                <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={40} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
                 {/* Project Distribution (Donut) - Only visible if Global Scope */}
                 {scope === 'global' ? (
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
@@ -492,14 +664,16 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                                         outerRadius={80}
                                         paddingAngle={5}
                                         dataKey="value"
+                                        nameKey="name"
                                     >
                                         {projectDistData.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
                                         ))}
                                     </Pie>
                                     <Tooltip 
-                                        contentStyle={{borderRadius: '8px', border: 'none', backgroundColor: 'rgba(0,0,0,0.8)', color: '#fff'}} 
-                                        formatter={(val: number) => [`${val.toFixed(1)} hrs`, '']} 
+                                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: '#ffffff', color: '#1f2937'}} 
+                                        itemStyle={{ color: '#1f2937' }}
+                                        formatter={(val: number, name: any) => [`${val.toFixed(1)} hrs`, name]} 
                                     />
                                 </PieChart>
                             </ResponsiveContainer>
@@ -527,149 +701,6 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                         <p className="text-sm text-gray-500">Project Split is available in Global View</p>
                     </div>
                 )}
-            </div>
-
-            {/* Badges Section */}
-            {/* ... (Badges section remains unchanged) ... */}
-            <div className="mt-8">
-                <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Badges & Achievements</h3>
-                    <div className="px-4 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-full border border-blue-100 dark:border-blue-800">
-                        <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-                            {unlockedCount} / {achievements.length} Unlocked
-                        </span>
-                    </div>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-                    {achievements.map((badge) => (
-                        <div 
-                            key={badge.id}
-                            className={`relative p-5 rounded-2xl border flex flex-col items-center text-center transition-all duration-300 group overflow-hidden ${
-                                badge.isUnlocked 
-                                ? 'bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 border-gray-200 dark:border-gray-700 shadow-md hover:shadow-xl hover:border-blue-400 dark:hover:border-blue-500 hover:-translate-y-1' 
-                                : 'bg-gray-100 dark:bg-gray-900/50 border-gray-100 dark:border-gray-800 opacity-60'
-                            }`}
-                        >
-                            <div className={`w-20 h-20 flex items-center justify-center rounded-full text-4xl shadow-inner mb-4 transition-transform duration-500 group-hover:scale-110 ${
-                                badge.isUnlocked 
-                                ? 'bg-gradient-to-tr from-blue-100 to-white dark:from-gray-700 dark:to-gray-600 ring-2 ring-blue-500/20' 
-                                : 'bg-gray-200 dark:bg-gray-800 grayscale'
-                            }`}>
-                                {badge.icon}
-                            </div>
-                            
-                            <div className="w-full z-10">
-                                <div className="flex items-center justify-center gap-1.5 mb-2">
-                                    <h4 className={`font-bold text-base truncate ${badge.isUnlocked ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-500'}`}>
-                                        {badge.title}
-                                    </h4>
-                                </div>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 leading-snug px-1 h-8 line-clamp-2">
-                                    {badge.description}
-                                </p>
-                            </div>
-
-                            {badge.isUnlocked && (
-                                <>
-                                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-blue-500/20 to-transparent -mr-8 -mt-8 rounded-full blur-xl pointer-events-none"></div>
-                                    <div className="absolute top-3 right-3 bg-blue-500 text-white p-1 rounded-full shadow-lg transform scale-90 group-hover:scale-110 transition-transform">
-                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* Table */}
-            {/* ... (Table section remains unchanged) ... */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden mt-8">
-                <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50 flex justify-between items-center">
-                    <h3 className="font-semibold text-gray-900 dark:text-white">Log History ({scope})</h3>
-                </div>
-                <table className="w-full text-left border-collapse">
-                    <thead>
-                        <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
-                            <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                                onClick={() => {
-                                    if (sortField === 'date') setSortDesc(!sortDesc);
-                                    else { setSortField('date'); setSortDesc(true); }
-                                }}
-                            >
-                                <div className="flex items-center space-x-1">
-                                    <span>Date</span>
-                                    {sortField === 'date' && (
-                                        <span>{sortDesc ? '↓' : '↑'}</span>
-                                    )}
-                                </div>
-                            </th>
-                            <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                                onClick={() => {
-                                    if (sortField === 'hours') setSortDesc(!sortDesc);
-                                    else { setSortField('hours'); setSortDesc(true); }
-                                }}
-                            >
-                                <div className="flex items-center space-x-1">
-                                    <span>Hours</span>
-                                    {sortField === 'hours' && (
-                                        <span>{sortDesc ? '↓' : '↑'}</span>
-                                    )}
-                                </div>
-                            </th>
-                            <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Notes
-                            </th>
-                            <th className="p-4 w-10"></th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {filteredLogs.length === 0 ? (
-                            <tr>
-                                <td colSpan={4} className="p-8 text-center text-gray-500 dark:text-gray-400">
-                                    No logs found for this period.
-                                </td>
-                            </tr>
-                        ) : (
-                            filteredLogs.map((log) => (
-                                <tr key={`${log.date}-${log.projectId}`} className="group hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                    <td className="p-4 text-sm text-gray-900 dark:text-gray-200 font-medium">
-                                        {log.date}
-                                        <div className="text-xs text-gray-400 font-normal">
-                                            {new Date(log.date).toLocaleDateString('en-US', { weekday: 'long' })}
-                                        </div>
-                                    </td>
-                                    <td className="p-4 text-sm text-gray-900 dark:text-gray-200">
-                                        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                                            log.hours >= 4 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
-                                            log.hours >= 1 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' :
-                                            'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                                        }`}>
-                                            {log.hours} hrs
-                                        </span>
-                                    </td>
-                                    <td className="p-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
-                                        {log.notes || <span className="text-gray-300 dark:text-gray-600 italic">-</span>}
-                                        {scope === 'global' && (
-                                            <span className="ml-2 text-[10px] text-gray-400 border border-gray-200 dark:border-gray-700 px-1 rounded">
-                                                {projects.find(p => p.id === log.projectId)?.name}
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <button 
-                                            onClick={() => onEditLog(log.date)}
-                                            className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all"
-                                            title="Edit"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
             </div>
 
         </div>

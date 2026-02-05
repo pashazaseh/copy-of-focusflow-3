@@ -4,21 +4,34 @@ import { UserGoals } from '../types';
 interface GoalsPanelProps {
   goals: UserGoals;
   onUpdateGoals: (goals: UserGoals) => void;
+  currentDailyHours: number;
   currentWeeklyHours: number;
   currentMonthlyHours: number;
   currentYearlyHours: number;
+  goalHistory?: { date: string; goals: UserGoals }[];
 }
 
 export const GoalsPanel: React.FC<GoalsPanelProps> = ({ 
     goals, 
     onUpdateGoals, 
+    currentDailyHours,
     currentWeeklyHours, 
     currentMonthlyHours, 
-    currentYearlyHours 
+    currentYearlyHours,
+    goalHistory = []
 }) => {
+  const [dailyInput, setDailyInput] = useState((goals.daily || 4).toString());
   const [weeklyInput, setWeeklyInput] = useState(goals.weekly.toString());
   const [monthlyInput, setMonthlyInput] = useState(goals.monthly.toString());
   const [yearlyInput, setYearlyInput] = useState(goals.yearly.toString());
+
+  const handleDailySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = parseInt(dailyInput);
+    if (!isNaN(val) && val > 0) {
+      onUpdateGoals({ ...goals, daily: val });
+    }
+  };
 
   const handleWeeklySubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +57,7 @@ export const GoalsPanel: React.FC<GoalsPanelProps> = ({
     }
   };
 
+  const dailyPercent = Math.min(100, (currentDailyHours / (goals.daily || 4)) * 100);
   const weeklyPercent = Math.min(100, (currentWeeklyHours / goals.weekly) * 100);
   const monthlyPercent = Math.min(100, (currentMonthlyHours / goals.monthly) * 100);
   const yearlyPercent = Math.min(100, (currentYearlyHours / goals.yearly) * 100);
@@ -58,6 +72,49 @@ export const GoalsPanel: React.FC<GoalsPanelProps> = ({
           </div>
 
           <div className="grid gap-6">
+            {/* Daily Goal Card */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-800 dark:text-white">Daily Goal</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Hours per day</p>
+                </div>
+                <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl text-green-600 dark:text-green-400">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                 <div className="flex justify-between text-sm mb-2">
+                    <span className="text-gray-600 dark:text-gray-300 font-medium">Progress</span>
+                    <span className="text-green-600 dark:text-green-400 font-bold">{currentDailyHours.toFixed(1)} / {goals.daily || 4} hrs</span>
+                 </div>
+                 <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
+                    <div 
+                        className="bg-green-500 h-4 rounded-full transition-all duration-700 ease-out relative"
+                        style={{ width: `${dailyPercent}%` }}
+                    >
+                         <div className="absolute inset-0 bg-white/20 animate-[pulse_2s_infinite]"></div>
+                    </div>
+                 </div>
+              </div>
+
+              <form onSubmit={handleDailySubmit} className="flex items-center space-x-4">
+                  <div className="flex-1">
+                      <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Target Hours</label>
+                      <input 
+                        type="number"
+                        value={dailyInput}
+                        onChange={(e) => setDailyInput(e.target.value)}
+                        className="w-full px-4 py-2 rounded-lg bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                  </div>
+                  <button type="submit" className="mt-5 px-6 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg font-medium hover:bg-black dark:hover:bg-gray-200 transition-colors">
+                      Update
+                  </button>
+              </form>
+            </div>
+
             {/* Weekly Goal Card */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
               <div className="flex justify-between items-start mb-6">
@@ -186,6 +243,32 @@ export const GoalsPanel: React.FC<GoalsPanelProps> = ({
                   </button>
               </form>
             </div>
+
+            {/* History Section */}
+            {goalHistory.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm mt-2">
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Goal History</h3>
+                    <div className="space-y-0 divide-y divide-gray-100 dark:divide-gray-700 max-h-60 overflow-y-auto custom-scrollbar">
+                        {[...goalHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((entry, i) => (
+                            <div key={i} className="flex justify-between items-center py-3 text-sm">
+                                <div className="text-gray-500 dark:text-gray-400 font-medium">
+                                    {entry.date.startsWith('1970') ? 'Initial Setup' : new Date(entry.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                                <div className="flex gap-4 text-gray-700 dark:text-gray-300">
+                                    <div className="flex flex-col items-end">
+                                        <span className="text-[10px] text-gray-400 uppercase tracking-wider">Daily</span>
+                                        <span className="font-bold">{entry.goals.daily || '-'}h</span>
+                                    </div>
+                                    <div className="flex flex-col items-end">
+                                        <span className="text-[10px] text-gray-400 uppercase tracking-wider">Weekly</span>
+                                        <span className="font-bold">{entry.goals.weekly}h</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
           </div>
         </div>
       </div>

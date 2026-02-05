@@ -39,12 +39,16 @@ export enum ViewMode {
   COUNTDOWN = 'COUNTDOWN',
   CALENDAR = 'CALENDAR',
   SETTINGS = 'SETTINGS',
+  GAMIFICATION = 'GAMIFICATION',
   PROFILE = 'PROFILE' // New View
 }
+
+export type AppTheme = 'default' | 'cyberpunk';
 
 export type HeatmapTheme = 'green' | 'blue' | 'orange' | 'purple';
 
 export interface UserGoals {
+  daily: number;
   weekly: number;
   monthly: number;
   yearly: number;

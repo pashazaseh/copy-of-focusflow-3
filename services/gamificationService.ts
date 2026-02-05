@@ -162,46 +162,6 @@ export const ACHIEVEMENTS_LIST: Achievement[] = [
     ...RANK_ACHIEVEMENTS
 ];
 
-export const calculateLevel = (totalHours: number) => {
-    // Find the highest rank achieved
-    let currentRankIndex = 0;
-    for (let i = 0; i < RANKS.length; i++) {
-        if (totalHours >= RANKS[i].minHours) {
-            currentRankIndex = i;
-        } else {
-            break;
-        }
-    }
-
-    const currentRank = RANKS[currentRankIndex];
-    const nextRank = RANKS[currentRankIndex + 1];
-    
-    let progress = 100;
-    let nextRankHours = totalHours; // Maxed out
-    let hoursToNext = 0;
-
-    if (nextRank) {
-        const range = nextRank.minHours - currentRank.minHours;
-        const currentInRank = totalHours - currentRank.minHours;
-        progress = (currentInRank / range) * 100;
-        nextRankHours = nextRank.minHours;
-        hoursToNext = nextRank.minHours - totalHours;
-    }
-
-    // XP Logic: 1 Hour = 100 XP
-    const currentXP = Math.floor(totalHours * 100);
-    const nextLevelXP = nextRank ? nextRank.minHours * 100 : currentXP;
-
-    return {
-        rank: currentRank,
-        nextRank,
-        progress: Math.min(100, Math.max(0, progress)),
-        hoursToNext,
-        currentXP,
-        nextLevelXP
-    };
-};
-
 export const getUnlockedAchievements = (logs: StudyLog[], totalHours: number, currentStreak: number): Achievement[] => {
     return ACHIEVEMENTS_LIST.map(achievement => ({
         ...achievement,

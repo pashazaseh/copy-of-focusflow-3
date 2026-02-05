@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import * as storage from '../services/storageService';
 import { StoredNavConfig, NAV_ITEMS_DEF } from './Sidebar';
-import { TimerSettings, CountdownItem, MenuBarConfig, MenuBarMode, Project, HeatmapTheme, SidebarConfig, SettingsTab } from '../types';
+import { TimerSettings, CountdownItem, MenuBarConfig, MenuBarMode, Project, HeatmapTheme, SidebarConfig, SettingsTab, AppTheme } from '../types';
 
 interface SettingsPanelProps {
     navConfig: StoredNavConfig[];
@@ -18,6 +18,8 @@ interface SettingsPanelProps {
     onTabChange: (tab: SettingsTab) => void;
     sidebarConfig: SidebarConfig;
     onUpdateSidebarConfig: (config: SidebarConfig) => void;
+    appTheme: AppTheme;
+    setAppTheme: (theme: AppTheme) => void;
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
@@ -34,7 +36,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     activeTab,
     onTabChange,
     sidebarConfig,
-    onUpdateSidebarConfig
+    onUpdateSidebarConfig,
+    appTheme,
+    setAppTheme
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
@@ -54,7 +58,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const [newProjectTheme, setNewProjectTheme] = useState<HeatmapTheme>('green');
 
     // Timer Settings State
-    const [timerSettings, setTimerSettings] = useState<TimerSettings>(storage.getTimerSettings());
+    const [timerSettings, setTimerSettings] = useState<TimerSettings>({ pomoDuration: 25, shortBreakDuration: 5, longBreakDuration: 15, pomosPerLongBreak: 4, autoStartNextPomo: false, autoStartBreak: false, quickDurations: [25, 45, 60], shortBreakPresets: [5, 10, 15] });
     const [timerVolume, setTimerVolume] = useState<number>(() => {
         const v = localStorage.getItem('focusflow_timer_volume');
         return v ? parseFloat(v) : 0.5;
@@ -79,11 +83,41 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         return '';
     });
     const [isImportingBirthdays, setIsImportingBirthdays] = useState(false);
+    const [isUploadingDrive, setIsUploadingDrive] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [lastBackup, setLastBackup] = useState<string | null>(() => {
+        if (typeof window !== 'undefined') {
+            const ts = localStorage.getItem('focusflow_last_backup');
+            if (ts) return new Date(parseInt(ts)).toLocaleString();
+        }
+        return null;
+    });
+    
+    const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+    const [driveFiles, setDriveFiles] = useState<any[]>([]);
+    const [isLoadingDriveFiles, setIsLoadingDriveFiles] = useState(false);
+    const [accessToken, setAccessToken] = useState<string | null>(null);
+    const [restoreFileCandidate, setRestoreFileCandidate] = useState<{id: string, name: string} | null>(null);
+    const [driveSearchQuery, setDriveSearchQuery] = useState('');
+
+    const googleActionRef = useRef<'calendar' | 'drive' | 'login' | 'restore'>('none');
     const [tokenClient, setTokenClient] = useState<any>(null);
+
+    // Inventory State for Themes
+    const [inventory, setInventory] = useState<Record<string, any>>({});
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                setInventory(JSON.parse(localStorage.getItem('focusflow_inventory') || '{}'));
+            } catch {}
+        }
+    }, []);
 
     // Init Data
     useEffect(() => {
-        setCountdowns(storage.getCountdowns());
+        storage.getCountdowns().then(setCountdowns);
+        storage.getTimerSettings().then(setTimerSettings);
         
         if (typeof (window as any).google === 'undefined') {
             // Only attempt to load external scripts if online
@@ -104,13 +138,29 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }, [googleClientId]);
 
     const initTokenClient = (clientId: string) => {
-        if (typeof (window as any).google !== 'undefined') {
+        if (typeof (window as any).google !== 'undefined' && (window as any).google.accounts && (window as any).google.accounts.oauth2) {
             const client = (window as any).google.accounts.oauth2.initTokenClient({
                 client_id: clientId,
                 // Request broader scope for reading calendars
                 scope: 'https://www.googleapis.com/auth/calendar.readonly', 
+                ux_mode: 'popup',
+                error_callback: (err: any) => {
+                    console.error("Google Auth Error:", err);
+                    alert(`Google Auth Error: ${err.type} ${err.message ? `- ${err.message}` : ''}. \n\nEnsure '${window.location.origin}' is added to Authorized JavaScript Origins in Google Cloud Console.`);
+                },
                 callback: (resp: any) => {
-                    if (resp.access_token) importBirthdays(resp.access_token);
+                    if (resp.access_token) {
+                        setAccessToken(resp.access_token);
+                        if (googleActionRef.current === 'calendar') {
+                            importBirthdays(resp.access_token);
+                        } else if (googleActionRef.current === 'drive') {
+                            uploadToDrive(resp.access_token);
+                        } else if (googleActionRef.current === 'login') {
+                            alert("Google Account connected successfully.");
+                        } else if (googleActionRef.current === 'restore') {
+                            listDriveBackups(resp.access_token);
+                        }
+                    }
                     else {
                         setIsImportingBirthdays(false);
                         console.error("OAuth error:", resp);
@@ -118,13 +168,103 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 },
             });
             setTokenClient(client);
+            googleActionRef.current = 'none';
+        }
+    };
+
+    const handleGoogleLogin = () => {
+        if (!googleClientId) {
+            alert("Please enter a Google Client ID first.");
+            return;
+        }
+        googleActionRef.current = 'login';
+        if (tokenClient) {
+            tokenClient.requestAccessToken();
+        } else {
+            initTokenClient(googleClientId);
+            setTimeout(() => {
+                if (tokenClient) tokenClient.requestAccessToken();
+            }, 500);
+        }
+    };
+
+    const handleRestoreFromDriveClick = () => {
+        if (!googleClientId) {
+            alert("Please enter a Google Client ID in the 'Integrations & API' section first.");
+            return;
+        }
+        googleActionRef.current = 'restore';
+        if (tokenClient) {
+            tokenClient.requestAccessToken();
+        } else {
+            initTokenClient(googleClientId);
+            setTimeout(() => {
+                if ((window as any).google && (window as any).google.accounts) {
+                    alert("Google Services are initializing. Please try again.");
+                }
+            }, 1000);
+        }
+    };
+
+    const listDriveBackups = async (token: string) => {
+        setIsLoadingDriveFiles(true);
+        setIsRestoreModalOpen(true);
+        setDriveSearchQuery('');
+        try {
+            const q = "mimeType = 'application/json' and name contains 'focusflow_backup' and trashed = false";
+            const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id, name, createdTime, size)&orderBy=createdTime desc`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            if (!response.ok) throw new Error('Failed to list files');
+            
+            const data = await response.json();
+            setDriveFiles(data.files || []);
+        } catch (e: any) {
+            console.error(e);
+            alert(`Failed to list backups: ${e.message}`);
+            setIsRestoreModalOpen(false);
+        } finally {
+            setIsLoadingDriveFiles(false);
+        }
+    };
+
+    const onSelectRestoreFile = (fileId: string, fileName: string) => {
+        setRestoreFileCandidate({ id: fileId, name: fileName });
+    };
+
+    const performRestore = async () => {
+        if (!accessToken || !restoreFileCandidate) return;
+        const fileId = restoreFileCandidate.id;
+        
+        try {
+            const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            
+            if (!response.ok) throw new Error('Failed to download file');
+            
+            const content = await response.text();
+            const result = await storage.importData(content);
+            
+            if (result.success) {
+                alert('Data restored successfully. The application will now reload.');
+                window.location.reload();
+            } else {
+                alert(`Restore Failed: ${result.message}`);
+            }
+        } catch (e: any) {
+            console.error(e);
+            alert(`Restore Failed: ${e.message}`);
+        } finally {
+            setRestoreFileCandidate(null);
         }
     };
 
     // --- Export Handlers ---
 
-    const handleExportJSON = () => {
-        const data = storage.exportData();
+    const handleExportJSON = async () => {
+        const data = await storage.exportData();
         const blob = new Blob([data], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -134,10 +274,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+
+        const now = Date.now();
+        localStorage.setItem('focusflow_last_backup', now.toString());
+        setLastBackup(new Date(now).toLocaleString());
     };
 
-    const handleExportCSV = () => {
-        const csv = storage.exportLogsToCSV();
+    const handleExportCSV = async () => {
+        const csv = await storage.exportLogsToCSV();
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -149,8 +293,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         URL.revokeObjectURL(url);
     };
 
-    const handleExportBirthdaysCSV = () => {
-        const csv = storage.exportBirthdaysToCSV();
+    const handleExportBirthdaysCSV = async () => {
+        const csv = await storage.exportBirthdaysToCSV();
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -162,8 +306,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         URL.revokeObjectURL(url);
     };
 
-    const handleCopyToClipboard = () => {
-        const data = storage.exportData();
+    const handleCopyToClipboard = async () => {
+        const data = await storage.exportData();
         navigator.clipboard.writeText(data).then(() => {
             setCopyStatus('Copied!');
             setTimeout(() => setCopyStatus(''), 2000);
@@ -186,10 +330,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         if (!file) return;
 
         const reader = new FileReader();
-        reader.onload = (event) => {
+        reader.onload = async (event) => {
             const content = event.target?.result as string;
             if (content) {
-                const result = storage.importData(content);
+                const result = await storage.importData(content);
                 if (result.success) {
                     alert('Data imported successfully. The application will now reload.');
                     window.location.reload();
@@ -203,18 +347,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     };
 
     // --- Timer Settings Handlers ---
-    const handleTimerSettingChange = (key: keyof TimerSettings, value: any) => {
+    const handleTimerSettingChange = async (key: keyof TimerSettings, value: any) => {
         const newSettings = { ...timerSettings, [key]: value };
         setTimerSettings(newSettings);
-        storage.saveTimerSettings(newSettings);
+        await storage.saveTimerSettings(newSettings);
     };
 
-    const handlePresetChange = (type: 'quickDurations' | 'shortBreakPresets', index: number, value: number) => {
+    const handlePresetChange = async (type: 'quickDurations' | 'shortBreakPresets', index: number, value: number) => {
         const newPresets = [...timerSettings[type]];
         newPresets[index] = value;
         const newSettings = { ...timerSettings, [type]: newPresets };
         setTimerSettings(newSettings);
-        storage.saveTimerSettings(newSettings);
+        await storage.saveTimerSettings(newSettings);
     };
 
     const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -322,34 +466,34 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
 
     // --- Danger Zone ---
-    const handleClearLogs = () => {
+    const handleClearLogs = async () => {
         if(confirm("Are you sure you want to delete ALL study logs? This cannot be undone.")) {
-            storage.clearLogs();
-            if (!storage.isInitialized()) storage.setInitialized();
+            await storage.clearLogs();
+            if (!await storage.isInitialized()) await storage.setInitialized();
             window.location.reload();
         }
     };
 
-    const handleClearSettings = () => {
+    const handleClearSettings = async () => {
         if(confirm("Are you sure you want to reset timer settings and goals?")) {
-            storage.clearSettings();
+            await storage.clearSettings();
             window.location.reload();
         }
     };
 
-    const handleClearCountdowns = () => {
+    const handleClearCountdowns = async () => {
         if(confirm("Are you sure you want to delete all countdowns and calendar events?")) {
-            storage.clearCountdowns();
+            await storage.clearCountdowns();
             window.location.reload();
         }
     };
 
-    const handleFactoryReset = () => {
+    const handleFactoryReset = async () => {
         if (confirm("DANGER: This will delete ALL your data, logs, projects, and settings. This action cannot be undone.\n\nType 'DELETE' to confirm.")) {
             const check = prompt("Type 'DELETE' to confirm factory reset:");
             if (check === 'DELETE') {
-                storage.clearAllData();
-                storage.setInitialized(); 
+                await storage.clearAllData();
+                await storage.setInitialized(); 
                 window.location.reload();
             }
         }
@@ -373,6 +517,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             alert("Please enter a Google Client ID in the 'Integrations & API' section first.");
             return;
         }
+        googleActionRef.current = 'calendar';
         setIsImportingBirthdays(true);
         if (tokenClient) {
             tokenClient.requestAccessToken();
@@ -385,6 +530,83 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                  }
                  setIsImportingBirthdays(false);
              }, 1000);
+        }
+    };
+
+    const handleDriveBackupClick = () => {
+        if (!googleClientId) {
+            alert("Please enter a Google Client ID in the 'Integrations & API' section first.");
+            return;
+        }
+        setIsUploadingDrive(true);
+        googleActionRef.current = 'drive';
+        if (tokenClient) {
+            tokenClient.requestAccessToken();
+        } else {
+            initTokenClient(googleClientId);
+            setTimeout(() => {
+                if ((window as any).google && (window as any).google.accounts) {
+                    alert("Google Services are initializing. Please try again.");
+                }
+                setIsUploadingDrive(false);
+            }, 1000);
+        }
+    };
+
+    const uploadToDrive = async (accessToken: string) => {
+        setUploadProgress(0);
+        try {
+            const data = await storage.exportData();
+            const fileContent = new Blob([data], { type: 'application/json' });
+            const metadata = {
+                name: `focusflow_backup_${new Date().toISOString().split('T')[0]}.json`,
+                mimeType: 'application/json',
+            };
+
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', fileContent);
+
+            await new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart');
+                xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+                
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable) {
+                        const percent = (event.loaded / event.total) * 100;
+                        setUploadProgress(percent);
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(xhr.response);
+                    } else {
+                        try {
+                            const err = JSON.parse(xhr.responseText);
+                            reject(new Error(err.error?.message || 'Upload failed'));
+                        } catch {
+                            reject(new Error(`Upload failed with status ${xhr.status}`));
+                        }
+                    }
+                };
+
+                xhr.onerror = () => reject(new Error('Network error during upload'));
+                xhr.send(form);
+            });
+
+            alert(`Backup uploaded to Google Drive successfully!`);
+            
+            const now = Date.now();
+            localStorage.setItem('focusflow_last_backup', now.toString());
+            setLastBackup(new Date(now).toLocaleString());
+        } catch (e: any) {
+            console.error(e);
+            alert(`Drive Backup Failed: ${e.message}`);
+        } finally {
+            setIsUploadingDrive(false);
+            setUploadProgress(0);
         }
     };
 
@@ -429,7 +651,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             let importedCount = 0;
             
             if (eventsData.items) {
-                const currentCountdowns = storage.getCountdowns();
+                const currentCountdowns = await storage.getCountdowns();
                 const newItems: CountdownItem[] = [];
                 
                 eventsData.items.forEach((evt: any) => {
@@ -452,7 +674,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     }
                 });
                 
-                newItems.forEach(item => storage.saveCountdown(item));
+                for (const item of newItems) { await storage.saveCountdown(item); }
             }
             alert(`Successfully imported ${importedCount} birthdays.`);
         } catch (e: any) {
@@ -573,6 +795,30 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                         >
                                             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isDarkMode ? 'translate-x-6' : 'translate-x-1'}`} />
                                         </button>
+                                    </div>
+
+                                    {/* Theme Selector */}
+                                    <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                        <div className="mb-3">
+                                            <p className="font-semibold text-gray-900 dark:text-white">Visual Theme</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">Select your preferred interface style</p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button 
+                                                onClick={() => setAppTheme('default')}
+                                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${appTheme === 'default' ? 'bg-white dark:bg-gray-700 border-blue-500 text-blue-600 dark:text-white shadow-sm' : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800'}`}
+                                            >
+                                                Default
+                                            </button>
+                                            <button 
+                                                onClick={() => setAppTheme('cyberpunk')}
+                                                disabled={!inventory.theme_cyber}
+                                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border flex items-center gap-2 ${appTheme === 'cyberpunk' ? 'bg-slate-900 border-purple-500 text-purple-400 shadow-sm' : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed'}`}
+                                            >
+                                                <span>Cyberpunk</span>
+                                                {!inventory.theme_cyber && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 px-1.5 rounded text-gray-500">Locked</span>}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -994,7 +1240,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                 Save
                                             </button>
                                         </div>
-                                        <p className="text-xs text-gray-400 mt-2">Required for syncing birthdays and events from Google Calendar.</p>
+                                        <div className="flex justify-between items-center mt-3">
+                                            <p className="text-xs text-gray-400">Required for syncing birthdays, events, and Drive backups.</p>
+                                            <button 
+                                                onClick={handleGoogleLogin}
+                                                className="flex items-center space-x-2 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                                            >
+                                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/></svg>
+                                                <span>Connect Account</span>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className="w-full h-px bg-gray-100 dark:bg-gray-700"></div>
@@ -1043,7 +1298,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                         {/* JSON Column */}
                                         <div className="space-y-4">
-                                            <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">Full Backup (JSON)</h4>
+                                            <div className="flex justify-between items-center">
+                                                <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">Full Backup (JSON)</h4>
+                                                {lastBackup && <span className="text-[10px] text-gray-400 font-mono">Last: {lastBackup}</span>}
+                                            </div>
                                             
                                             <button onClick={handleExportJSON} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all">
                                                 <div className="text-left">
@@ -1051,6 +1309,36 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                     <span className="text-xs text-gray-500 dark:text-gray-400">Save full state to file</span>
                                                 </div>
                                                 <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                            </button>
+
+                                            <button onClick={handleDriveBackupClick} disabled={isUploadingDrive} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden">
+                                                {isUploadingDrive && (
+                                                    <div 
+                                                        className="absolute left-0 top-0 bottom-0 bg-blue-500/10 transition-all duration-300 ease-out"
+                                                        style={{ width: `${uploadProgress}%` }}
+                                                    />
+                                                )}
+                                                <div className="text-left relative z-10">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">
+                                                        {isUploadingDrive ? `Uploading... ${Math.round(uploadProgress)}%` : 'Backup to Google Drive'}
+                                                    </span>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400">Upload backup to cloud</span>
+                                                </div>
+                                                <div className="relative z-10">
+                                                    {isUploadingDrive ? (
+                                                        <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
+                                                    ) : (
+                                                        <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                                                    )}
+                                                </div>
+                                            </button>
+
+                                            <button onClick={handleRestoreFromDriveClick} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all">
+                                                <div className="text-left">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">Restore from Drive</span>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400">Load backup from cloud</span>
+                                                </div>
+                                                <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                                             </button>
 
                                             <button onClick={handleCopyToClipboard} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all">
@@ -1166,6 +1454,91 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     </div>
                 </div>
             </div>
+
+            {/* Restore Modal */}
+            {isRestoreModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white dark:bg-[#1c1c1e] w-full max-w-lg rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden animate-scale-in flex flex-col max-h-[80vh]">
+                        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#252527] flex justify-between items-center">
+                            <h3 className="font-bold text-gray-900 dark:text-white">Restore from Google Drive</h3>
+                            <button onClick={() => setIsRestoreModalOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-[#1c1c1e]">
+                            <div className="relative">
+                                <svg className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                <input 
+                                    type="text" 
+                                    placeholder="Search backups..." 
+                                    value={driveSearchQuery}
+                                    onChange={(e) => setDriveSearchQuery(e.target.value)}
+                                    className="w-full pl-9 pr-4 py-2 bg-gray-100 dark:bg-gray-800 border-none rounded-lg text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none placeholder-gray-500"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+                            {isLoadingDriveFiles ? (
+                                <div className="flex flex-col items-center justify-center py-10">
+                                    <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+                                    <p className="text-sm text-gray-500">Loading backups...</p>
+                                </div>
+                            ) : driveFiles.length === 0 ? (
+                                <div className="text-center py-10 text-gray-500">No backup files found.</div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {driveFiles.filter(f => f.name.toLowerCase().includes(driveSearchQuery.toLowerCase())).map((file) => (
+                                        <button 
+                                            key={file.id}
+                                            onClick={() => onSelectRestoreFile(file.id, file.name)}
+                                            className="w-full flex items-center justify-between p-3 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-left group border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+                                        >
+                                            <div>
+                                                <p className="font-bold text-sm text-gray-900 dark:text-white">{file.name}</p>
+                                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                    {new Date(file.createdTime).toLocaleString()} • {(parseInt(file.size)/1024).toFixed(1)} KB
+                                                </p>
+                                            </div>
+                                            <svg className="w-5 h-5 text-gray-400 group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#252527] flex justify-end">
+                            <button onClick={() => setIsRestoreModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Restore Confirmation Modal */}
+            {restoreFileCandidate && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white dark:bg-[#1c1c1e] w-full max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-6 animate-scale-in">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Confirm Restore</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                            Are you sure you want to restore <span className="font-bold text-gray-900 dark:text-white">{restoreFileCandidate.name}</span>?
+                            <br/><br/>
+                            <span className="text-red-500 font-bold">Warning:</span> This will overwrite all current data.
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button 
+                                onClick={() => setRestoreFileCandidate(null)}
+                                className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={performRestore}
+                                className="px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-lg transition-colors"
+                            >
+                                Restore Data
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

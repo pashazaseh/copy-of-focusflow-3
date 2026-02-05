@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { StudyLog, UserGoals } from '../types';
-import { calculateLevel, getUnlockedAchievements } from '../services/gamificationService';
+import { getUnlockedAchievements } from '../services/gamificationService';
 
 interface ProfilePanelProps {
     logs: StudyLog[];
@@ -13,16 +13,9 @@ interface ProfilePanelProps {
 export const ProfilePanel: React.FC<ProfilePanelProps> = ({ logs, streak, totalHours, goals, onUpdateGoals }) => {
     const [isEditingGoals, setIsEditingGoals] = useState(false);
     const [tempGoals, setTempGoals] = useState<UserGoals>(goals);
-    const [displayedProgress, setDisplayedProgress] = useState(0);
 
-    const levelData = useMemo(() => calculateLevel(totalHours), [totalHours]);
     const achievements = useMemo(() => getUnlockedAchievements(logs, totalHours, streak), [logs, totalHours, streak]);
     const unlockedCount = achievements.filter(a => a.isUnlocked).length;
-
-    useEffect(() => {
-        const timer = setTimeout(() => setDisplayedProgress(levelData.progress), 100);
-        return () => clearTimeout(timer);
-    }, [levelData.progress]);
 
     // Calculate Goal Progress
     const currentWeeklyHours = useMemo(() => {
@@ -105,59 +98,6 @@ export const ProfilePanel: React.FC<ProfilePanelProps> = ({ logs, streak, totalH
             <div className="p-8 h-full overflow-y-auto custom-scrollbar">
                 <div className="max-w-6xl mx-auto space-y-8 animate-fade-in-up">
                     
-                    {/* Top Hero Section: Level & XP */}
-                    <div className="relative bg-white dark:bg-gray-800 rounded-3xl p-8 border border-gray-200 dark:border-gray-700 shadow-xl overflow-hidden group">
-                        {/* Background Decor */}
-                        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none transition-transform duration-1000 group-hover:scale-110"></div>
-                        
-                        <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
-                            <div className="shrink-0 relative group/rank">
-                                <div className="w-32 h-32 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-5xl shadow-2xl text-white font-black ring-4 ring-white dark:ring-gray-700 transform group-hover/rank:rotate-12 transition-transform duration-500">
-                                    {levelData.rank.title.charAt(0)}
-                                </div>
-                                <div className="absolute -bottom-2 -right-2 bg-yellow-400 text-yellow-900 text-xs font-bold px-3 py-1 rounded-full shadow-lg border-2 border-white dark:border-gray-800 z-10">
-                                    Lvl {Math.floor(totalHours / 10) + 1}
-                                </div>
-                            </div>
-
-                            <div className="flex-1 w-full text-center md:text-left">
-                                <h3 className={`text-5xl font-black ${levelData.rank.color} mb-1 tracking-tight drop-shadow-sm`}>{levelData.rank.title}</h3>
-                                <p className="text-gray-500 dark:text-gray-400 font-medium mb-6">
-                                    Total Focus Time: <span className="text-gray-900 dark:text-white font-bold">{totalHours.toFixed(1)} Hours</span>
-                                </p>
-
-                                {/* XP Bar */}
-                                <div className="relative pt-1 max-w-xl mx-auto md:mx-0">
-                                    <div className="flex mb-2 items-center justify-between">
-                                        <div>
-                                            <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300">
-                                                XP Progress
-                                            </span>
-                                        </div>
-                                        <div className="text-right">
-                                            <span className="text-xs font-bold inline-block text-blue-600 dark:text-blue-400">
-                                                {levelData.currentXP} / {levelData.nextLevelXP} XP
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="overflow-hidden h-4 mb-4 text-xs flex rounded-full bg-blue-100 dark:bg-gray-700 shadow-inner">
-                                        <div 
-                                            style={{ width: `${displayedProgress}%` }} 
-                                            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-1000 ease-out relative overflow-hidden"
-                                        >
-                                            <div className="absolute inset-0 shimmer-gradient animate-[shimmer_3s_ease-in-out_infinite] w-[200%] h-full"></div>
-                                        </div>
-                                    </div>
-                                    <p className="text-xs text-gray-400">
-                                        {levelData.hoursToNext > 0 
-                                            ? `${levelData.hoursToNext.toFixed(1)} more hours to reach ${levelData.nextRank?.title}` 
-                                            : 'Max Rank Achieved!'}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     {/* Goals Section */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                         <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-3xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">

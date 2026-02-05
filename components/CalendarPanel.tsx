@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { StudyLog, CustomEvent, GoogleEvent, Project } from '../types';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { StudyLog, CustomEvent, GoogleEvent, Project, CountdownItem } from '../types';
 import * as storage from '../services/storageService';
 
 declare const google: any;
@@ -14,8 +14,8 @@ interface CalendarEventDisplay {
     originalId?: string; 
     title: string;
     date: Date;
-    type: 'study' | 'custom' | 'google';
-    customType?: CustomEvent['type'];
+    type: 'study' | 'custom' | 'google' | 'countdown';
+    customType?: string;
     color: string;
     isCustom?: boolean;
     time?: string;
@@ -37,6 +37,12 @@ const EVENT_COLORS = [
 
 export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
+    const currentDateRef = useRef(currentDate);
+
+    useEffect(() => {
+        currentDateRef.current = currentDate;
+    }, [currentDate]);
+
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedProjectFilter, setSelectedProjectFilter] = useState<string>('all');
     
@@ -53,6 +59,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
     const [tokenClient, setTokenClient] = useState<any>(null);
 
     const [customEvents, setCustomEvents] = useState<CustomEvent[]>([]);
+    const [countdowns, setCountdowns] = useState<CountdownItem[]>([]);
     
     // Calendar Visibility States
     const [calendars, setCalendars] = useState({
@@ -83,7 +90,8 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
     const [newEventReminder, setNewEventReminder] = useState<number>(0);
 
     useEffect(() => {
-        setCustomEvents(storage.getCustomEvents());
+        storage.getCustomEvents().then(setCustomEvents);
+        storage.getCountdowns().then(setCountdowns);
         
         if (typeof google === 'undefined') {
             const script = document.createElement('script');
@@ -112,6 +120,11 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                 const client = google.accounts.oauth2.initTokenClient({
                     client_id: clientId,
                     scope: 'https://www.googleapis.com/auth/calendar.events.readonly',
+                    ux_mode: 'popup',
+                    error_callback: (err: any) => {
+                        console.error("Google Auth Error:", err);
+                        alert(`Google Auth Error: ${err.type} ${err.message ? `- ${err.message}` : ''}. \n\nEnsure '${window.location.origin}' is added to Authorized JavaScript Origins in Google Cloud Console.`);
+                    },
                     callback: async (tokenResponse: any) => {
                         if (tokenResponse && tokenResponse.access_token) {
                             setIsConnected(true);
@@ -154,8 +167,9 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
 
     const fetchGoogleEvents = async (accessToken: string) => {
         try {
-            const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1).toISOString();
-            const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 2, 0).toISOString();
+            const date = currentDateRef.current;
+            const startOfMonth = new Date(date.getFullYear(), date.getMonth() - 1, 1).toISOString();
+            const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 2, 0).toISOString();
 
             const response = await fetch(
                 `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${startOfMonth}&timeMax=${endOfMonth}&singleEvents=true&orderBy=startTime`,
@@ -216,15 +230,27 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
 
         // Study Logs
         if (calendars.studyLogs) {
+            // Optimization: Filter logs by visible date range to improve performance
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            // Buffer: 1 month before and after to cover grid edges
+            const minDateStr = new Date(year, month - 1, 1).toISOString().split('T')[0];
+            const maxDateStr = new Date(year, month + 2, 0).toISOString().split('T')[0];
+
             logs.filter(log => {
+                if (log.date < minDateStr || log.date > maxDateStr) return false;
                 if (selectedProjectFilter === 'all') return true;
                 return log.projectId === selectedProjectFilter;
             }).forEach(log => {
-                if (log.hours > 0) {
+                if (log.hours > 0 && log.date) {
+                    // Fix: Parse date components manually to ensure Local Time construction
+                    // This prevents UTC timezone shifts (e.g. 2024-05-20 becoming May 19th)
+                    const [y, m, d] = log.date.split('-').map(Number);
+                    
                     allEvents.push({
                         id: `log-${log.date}-${log.projectId}`,
                         title: `${log.hours}h Study`,
-                        date: new Date(log.date),
+                        date: new Date(y, m - 1, d),
                         type: 'study',
                         color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200 border-indigo-200 dark:border-indigo-500/30',
                         description: log.notes,
@@ -306,6 +332,59 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
             });
         }
 
+        // Countdowns
+        const viewStart = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+        const viewEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 31);
+
+        countdowns.forEach(item => {
+            if (item.isArchived) return;
+
+            // Map color name to tailwind classes
+            const colorObj = EVENT_COLORS.find(c => c.name.toLowerCase() === item.color) || EVENT_COLORS[0];
+            const color = colorObj.value;
+
+            if (!item.recurrence || item.recurrence === 'none') {
+                 allEvents.push({
+                    id: item.id,
+                    title: item.title,
+                    date: new Date(item.date),
+                    type: 'countdown',
+                    customType: item.type,
+                    color: color,
+                    calendar: 'Countdown'
+                });
+            } else {
+                const startDate = new Date(item.date);
+                const startMidnight = new Date(startDate);
+                startMidnight.setHours(0,0,0,0);
+
+                for (let d = new Date(viewStart); d <= viewEnd; d.setDate(d.getDate() + 1)) {
+                     const currentMidnight = new Date(d);
+                     currentMidnight.setHours(0,0,0,0);
+                     
+                    if (currentMidnight < startMidnight) continue;
+
+                    let isMatch = false;
+                    if (item.recurrence === 'daily') isMatch = true;
+                    if (item.recurrence === 'weekly' && d.getDay() === startDate.getDay()) isMatch = true;
+                    if (item.recurrence === 'monthly' && d.getDate() === startDate.getDate()) isMatch = true;
+                    if (item.recurrence === 'yearly' && d.getMonth() === startDate.getMonth() && d.getDate() === startDate.getDate()) isMatch = true;
+
+                    if (isMatch) {
+                        allEvents.push({
+                            id: `${item.id}-${d.toISOString().split('T')[0]}`,
+                            title: item.title,
+                            date: new Date(d),
+                            type: 'countdown',
+                            customType: item.type,
+                            color: color,
+                            calendar: 'Countdown'
+                        });
+                    }
+                }
+            }
+        });
+
         if (calendars.google && googleEvents.length > 0) {
             googleEvents.forEach(evt => {
                 const start = evt.start.dateTime || evt.start.date;
@@ -349,7 +428,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
              }
              return a.date.getTime() - b.date.getTime();
         });
-    }, [logs, calendars, currentDate, customEvents, googleEvents, searchQuery, selectedProjectFilter]);
+    }, [logs, calendars, currentDate, customEvents, googleEvents, countdowns, searchQuery, selectedProjectFilter]);
 
     // Pre-group events by date for O(1) lookup during render
     const eventsByDate = useMemo(() => {
@@ -409,7 +488,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
         setIsModalOpen(true); // Open form modal
     };
 
-    const handleSaveEvent = (e: React.FormEvent) => {
+    const handleSaveEvent = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newEventTitle) return;
 
@@ -427,17 +506,17 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
             reminderMinutes: newEventReminder
         };
         
-        const updatedEvents = storage.saveCustomEvent(eventData);
+        const updatedEvents = await storage.saveCustomEvent(eventData);
         setCustomEvents(updatedEvents);
         setIsModalOpen(false);
         resetForm();
     };
 
-    const handleDeleteEvent = () => {
+    const handleDeleteEvent = async () => {
          const idToDelete = editingId || viewEvent?.originalId;
 
          if (idToDelete && confirm('Are you sure you want to delete this event?')) {
-             const updatedEvents = storage.deleteCustomEvent(idToDelete);
+             const updatedEvents = await storage.deleteCustomEvent(idToDelete);
              setCustomEvents(updatedEvents);
              setIsModalOpen(false);
              setIsDetailsOpen(false);
@@ -560,6 +639,9 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                          }
 
                          const dateStr = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayNumber).toISOString().split('T')[0];
+                         const dObj = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayNumber);
+                         const dayEvents = eventsByDate.get(dObj.toDateString()) || [];
+                         const countdownEvent = dayEvents.find(e => e.type === 'countdown');
 
                          return (
                              <div 
@@ -568,9 +650,21 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                                 onClick={() => handleDayClick(dateStr)}
                              >
                                  <div className="flex justify-between items-start mb-2">
-                                     <span className={`text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full transition-colors ${isToday ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' : 'text-gray-700 dark:text-gray-300 group-hover:bg-gray-100 dark:group-hover:bg-gray-700'}`}>
-                                         {dayNumber}
-                                     </span>
+                                     <div className="relative">
+                                         <span className={`text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full transition-colors ${isToday ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' : 'text-gray-700 dark:text-gray-300 group-hover:bg-gray-100 dark:group-hover:bg-gray-700'}`}>
+                                             {dayNumber}
+                                         </span>
+                                         {countdownEvent && (
+                                             <button
+                                                 onClick={(e) => {
+                                                     e.stopPropagation();
+                                                     handleEventClick(countdownEvent);
+                                                 }}
+                                                 className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-orange-500 rounded-full border-2 border-white dark:border-[#1c1c1e] hover:scale-125 transition-transform cursor-pointer z-10"
+                                                 title={`Countdown: ${countdownEvent.title}`}
+                                             />
+                                         )}
+                                     </div>
                                      <button 
                                         className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-blue-500 transition-all"
                                         title="Add event"
@@ -600,7 +694,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                              </div>
                              <div className="mt-2">
                                 <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-2 bg-white/30 backdrop-blur-sm text-current border border-white/20`}>
-                                    {viewEvent.type === 'study' ? 'Study Log' : viewEvent.customType || viewEvent.type}
+                                   {viewEvent.type === 'study' ? 'Study Log' : viewEvent.type === 'countdown' ? (viewEvent.customType || 'Countdown') : (viewEvent.customType || viewEvent.type)}
                                 </span>
                                 <h3 className="text-2xl font-bold leading-tight opacity-95">{viewEvent.title}</h3>
                              </div>

@@ -13,44 +13,143 @@ const CUSTOM_EVENTS_KEY = 'focusflow_custom_events_v1';
 const INIT_KEY = 'focusflow_initialized_v1';
 const DEFAULT_PROJECT_ID = 'default-project';
 
-// Helper for safe parsing
-const safeParse = <T>(key: string, fallback: T): T => {
+// --- IndexedDB Infrastructure ---
+const DB_NAME = 'FocusFlowDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'keyvalue';
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+const getDB = (): Promise<IDBDatabase> => {
+    if (!dbPromise) {
+        dbPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onupgradeneeded = (event) => {
+                const db = (event.target as IDBOpenDBRequest).result;
+                if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    db.createObjectStore(STORE_NAME);
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => {
+                dbPromise = null; // Reset promise so we can retry later
+                reject(request.error);
+            };
+        });
+    }
+    return dbPromise;
+};
+
+const dbGet = async <T>(key: string, fallback: T): Promise<T> => {
     try {
-        const item = localStorage.getItem(key);
-        return item ? JSON.parse(item) : fallback;
-    } catch (error) {
-        console.error(`Error parsing key "${key}":`, error);
+        const db = await getDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const request = store.get(key);
+            request.onsuccess = () => {
+                resolve(request.result === undefined ? fallback : request.result);
+            };
+            request.onerror = () => resolve(fallback);
+        });
+    } catch (e) {
+        console.error(`Storage read error (${key}):`, e);
         return fallback;
     }
 };
 
-// --- Initialization State Management ---
-
-export const isInitialized = (): boolean => {
-    return localStorage.getItem(INIT_KEY) === 'true';
+const dbSet = async (key: string, value: any): Promise<void> => {
+    try {
+        const db = await getDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const request = store.put(value, key);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    } catch (e) {
+        console.error(`Storage write error (${key}):`, e);
+    }
 };
 
-export const setInitialized = () => {
-    localStorage.setItem(INIT_KEY, 'true');
+const dbDelete = async (key: string): Promise<void> => {
+    try {
+        const db = await getDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const request = store.delete(key);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    } catch (e) {
+        console.error(`Storage delete error (${key}):`, e);
+    }
+};
+
+// --- Migration Logic ---
+const migrateFromLocalStorage = async () => {
+    const initialized = await dbGet(INIT_KEY, false);
+    if (initialized) return;
+
+    console.log("Migrating from localStorage to IndexedDB...");
+    const keys = [
+        STORAGE_KEY, GOALS_KEY, COUNTDOWNS_KEY, COUNTDOWN_GROUPS_KEY,
+        SESSIONS_KEY, TIMER_SETTINGS_KEY, MENUBAR_CONFIG_KEY,
+        SIDEBAR_CONFIG_KEY, PROJECTS_KEY, CUSTOM_EVENTS_KEY, INIT_KEY
+    ];
+
+    for (const key of keys) {
+        const item = localStorage.getItem(key);
+        if (item) {
+            try {
+                await dbSet(key, JSON.parse(item));
+            } catch (e) {
+                console.error(`Failed to migrate ${key}`, e);
+            }
+        }
+    }
+    await dbSet(INIT_KEY, true);
+};
+
+// --- Initialization State Management ---
+
+export const isInitialized = async (): Promise<boolean> => {
+    // Check if migration has run or if DB is seeded
+    return dbGet(INIT_KEY, false);
+};
+
+export const setInitialized = async () => {
+    await dbSet(INIT_KEY, true);
 };
 
 // --- Data Management (Export/Import) ---
 
-export const exportData = (): string => {
+export const exportData = async (): Promise<string> => {
     const data: Record<string, string | null> = {};
-    // Collect all keys related to the app
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.startsWith('focusflow_') || key.startsWith('heatmap_'))) {
-            data[key] = localStorage.getItem(key);
+    
+    const db = await getDB();
+    const keys = await new Promise<IDBValidKey[]>((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.getAllKeys();
+        req.onsuccess = () => resolve(req.result);
+    });
+
+    for (const key of keys) {
+        const kStr = key.toString();
+        if (kStr.startsWith('focusflow_') || kStr.startsWith('heatmap_')) {
+            const val = await dbGet(kStr, null);
+            data[kStr] = JSON.stringify(val); // Export as JSON string to match old format
         }
     }
     return JSON.stringify(data, null, 2);
 };
 
-export const exportLogsToCSV = (): string => {
-    const logs = getLogs();
-    const projects = getProjects();
+export const exportLogsToCSV = async (): Promise<string> => {
+    const logs = await getLogs();
+    const projects = await getProjects();
     const projectMap = new Map(projects.map(p => [p.id, p.name]));
 
     const header = ['Date', 'Hours', 'Project', 'Notes'];
@@ -65,8 +164,8 @@ export const exportLogsToCSV = (): string => {
     return [header.join(','), ...rows].join('\n');
 };
 
-export const exportBirthdaysToCSV = (): string => {
-    const items = getCountdowns();
+export const exportBirthdaysToCSV = async (): Promise<string> => {
+    const items = await getCountdowns();
     const header = ['Title', 'Date', 'Type', 'Recurrence'];
     const rows = items.map(item => {
         const cleanTitle = `"${item.title.replace(/"/g, '""')}"`;
@@ -75,7 +174,7 @@ export const exportBirthdaysToCSV = (): string => {
     return [header.join(','), ...rows].join('\n');
 };
 
-export const importCountdownsFromCSV = (csvText: string): { success: boolean, message: string } => {
+export const importCountdownsFromCSV = async (csvText: string): Promise<{ success: boolean, message: string }> => {
     try {
         const lines = csvText.split('\n');
         if (lines.length < 2) return { success: false, message: "Empty or invalid CSV file." };
@@ -125,10 +224,10 @@ export const importCountdownsFromCSV = (csvText: string): { success: boolean, me
         
         if (newItems.length === 0) return { success: false, message: "No valid events found in CSV." };
         
-        const current = getCountdowns();
+        const current = await getCountdowns();
         // Merge strategy: just append for now
         const merged = [...current, ...newItems];
-        localStorage.setItem(COUNTDOWNS_KEY, JSON.stringify(merged));
+        await dbSet(COUNTDOWNS_KEY, merged);
         return { success: true, message: `Successfully imported ${newItems.length} events.` };
     } catch (e) {
         console.error(e);
@@ -143,7 +242,7 @@ export const validateBackupData = (data: any): boolean => {
     return keys.some(k => k.startsWith('focusflow_') || k.startsWith('heatmap_'));
 };
 
-export const importData = (jsonString: string): { success: boolean; message: string } => {
+export const importData = async (jsonString: string): Promise<{ success: boolean; message: string }> => {
     try {
         const data = JSON.parse(jsonString);
         
@@ -151,14 +250,14 @@ export const importData = (jsonString: string): { success: boolean; message: str
             return { success: false, message: "Invalid backup file: Missing FocusFlow data." };
         }
 
-        clearAllData();
+        await clearAllData();
 
         // Restore data
-        Object.keys(data).forEach(key => {
+        for (const key of Object.keys(data)) {
             if (data[key] !== null) {
-                localStorage.setItem(key, data[key]);
+                await dbSet(key, JSON.parse(data[key]));
             }
-        });
+        }
         return { success: true, message: "Data restored successfully." };
     } catch (e) {
         console.error("Import failed", e);
@@ -166,36 +265,36 @@ export const importData = (jsonString: string): { success: boolean; message: str
     }
 };
 
-export const clearAllData = () => {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.startsWith('focusflow_') || key.startsWith('heatmap_'))) {
-            keysToRemove.push(key);
-        }
-    }
-    keysToRemove.forEach(key => localStorage.removeItem(key));
+export const clearAllData = async () => {
+    const db = await getDB();
+    return new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.clear();
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
 };
 
-export const clearLogs = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(SESSIONS_KEY);
+export const clearLogs = async () => {
+    await dbDelete(STORAGE_KEY);
+    await dbDelete(SESSIONS_KEY);
 };
 
-export const clearSettings = () => {
-    localStorage.removeItem(TIMER_SETTINGS_KEY);
-    localStorage.removeItem(GOALS_KEY);
+export const clearSettings = async () => {
+    await dbDelete(TIMER_SETTINGS_KEY);
+    await dbDelete(GOALS_KEY);
 };
 
-export const clearCountdowns = () => {
-    localStorage.removeItem(COUNTDOWNS_KEY);
-    localStorage.removeItem(COUNTDOWN_GROUPS_KEY);
-    localStorage.removeItem(CUSTOM_EVENTS_KEY);
+export const clearCountdowns = async () => {
+    await dbDelete(COUNTDOWNS_KEY);
+    await dbDelete(COUNTDOWN_GROUPS_KEY);
+    await dbDelete(CUSTOM_EVENTS_KEY);
 };
 
 // --- Projects ---
 
-export const getProjects = (): Project[] => {
+export const getProjects = async (): Promise<Project[]> => {
     const defaultProject: Project = {
         id: DEFAULT_PROJECT_ID,
         name: 'Main Project',
@@ -205,11 +304,11 @@ export const getProjects = (): Project[] => {
         isArchived: false
     };
     
-    let projects = safeParse<Project[]>(PROJECTS_KEY, [defaultProject]);
+    let projects = await dbGet<Project[]>(PROJECTS_KEY, [defaultProject]);
     
     if (!Array.isArray(projects) || projects.length === 0) {
         // Repair state if invalid
-        localStorage.setItem(PROJECTS_KEY, JSON.stringify([defaultProject]));
+        await dbSet(PROJECTS_KEY, [defaultProject]);
         projects = [defaultProject];
     }
 
@@ -222,8 +321,8 @@ export const getProjects = (): Project[] => {
     });
 };
 
-export const saveProject = (project: Project): Project[] => {
-  const projects = getProjects();
+export const saveProject = async (project: Project): Promise<Project[]> => {
+  const projects = await getProjects();
   const index = projects.findIndex(p => p.id === project.id);
   let newProjects;
   if (index >= 0) {
@@ -235,29 +334,29 @@ export const saveProject = (project: Project): Project[] => {
     const projectWithOrder = { ...project, sortOrder: maxOrder + 1, isArchived: false };
     newProjects = [...projects, projectWithOrder];
   }
-  localStorage.setItem(PROJECTS_KEY, JSON.stringify(newProjects));
+  await dbSet(PROJECTS_KEY, newProjects);
   return newProjects;
 };
 
-export const updateProjectsList = (projects: Project[]): Project[] => {
-    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+export const updateProjectsList = async (projects: Project[]): Promise<Project[]> => {
+    await dbSet(PROJECTS_KEY, projects);
     return projects;
 };
 
-export const deleteProject = (id: string): Project[] => {
+export const deleteProject = async (id: string): Promise<Project[]> => {
     // Prevent deleting the last project
-    const projects = getProjects();
+    const projects = await getProjects();
     if (projects.length <= 1) return projects;
     
     const newProjects = projects.filter(p => p.id !== id);
-    localStorage.setItem(PROJECTS_KEY, JSON.stringify(newProjects));
+    await dbSet(PROJECTS_KEY, newProjects);
     return newProjects;
 };
 
 // --- Logs ---
 
-export const getLogs = (): StudyLog[] => {
-    let logs = safeParse<StudyLog[]>(STORAGE_KEY, []);
+export const getLogs = async (): Promise<StudyLog[]> => {
+    let logs = await dbGet<StudyLog[]>(STORAGE_KEY, []);
     
     // Migration: If logs exist but have no projectId, assign them to default
     let needsMigration = false;
@@ -270,14 +369,14 @@ export const getLogs = (): StudyLog[] => {
     });
 
     if (needsMigration) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
+        await dbSet(STORAGE_KEY, logs);
     }
 
     return logs;
 };
 
-export const saveLog = (log: StudyLog): StudyLog[] => {
-  const logs = getLogs();
+export const saveLog = async (log: StudyLog): Promise<StudyLog[]> => {
+  const logs = await getLogs();
   
   // Check if entry exists for this date AND this project
   const existingIndex = logs.findIndex(l => l.date === log.date && l.projectId === log.projectId);
@@ -293,21 +392,21 @@ export const saveLog = (log: StudyLog): StudyLog[] => {
   // Sort logs by date
   newLogs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(newLogs));
+  await dbSet(STORAGE_KEY, newLogs);
   return newLogs;
 };
 
-export const deleteLog = (date: string, projectId: string): StudyLog[] => {
-  const logs = getLogs();
+export const deleteLog = async (date: string, projectId: string): Promise<StudyLog[]> => {
+  const logs = await getLogs();
   // Only delete log for specific project and date
   const newLogs = logs.filter(l => !(l.date === date && l.projectId === projectId));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(newLogs));
+  await dbSet(STORAGE_KEY, newLogs);
   return newLogs;
 };
 
-export const getGoals = (): UserGoals => {
+export const getGoals = async (): Promise<UserGoals> => {
     const defaultGoals = { weekly: 40, monthly: 160, yearly: 2000 };
-    const saved = safeParse<any>(GOALS_KEY, {});
+    const saved = await dbGet<any>(GOALS_KEY, {});
     return {
         weekly: saved.weekly || defaultGoals.weekly,
         monthly: saved.monthly || defaultGoals.monthly,
@@ -315,48 +414,48 @@ export const getGoals = (): UserGoals => {
     };
 };
 
-export const saveGoals = (goals: UserGoals): UserGoals => {
-  localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
+export const saveGoals = async (goals: UserGoals): Promise<UserGoals> => {
+  await dbSet(GOALS_KEY, goals);
   return goals;
 };
 
 // --- Countdown Groups ---
-export const getCountdownGroups = (): CountdownGroup[] => {
-    return safeParse<CountdownGroup[]>(COUNTDOWN_GROUPS_KEY, [
+export const getCountdownGroups = async (): Promise<CountdownGroup[]> => {
+    return dbGet<CountdownGroup[]>(COUNTDOWN_GROUPS_KEY, [
         { id: 'general', name: 'General', color: 'blue' }
     ]);
 };
 
-export const saveCountdownGroup = (group: CountdownGroup): CountdownGroup[] => {
-    const groups = getCountdownGroups();
+export const saveCountdownGroup = async (group: CountdownGroup): Promise<CountdownGroup[]> => {
+    const groups = await getCountdownGroups();
     const idx = groups.findIndex(g => g.id === group.id);
     let newGroups = [...groups];
     if (idx >= 0) newGroups[idx] = group;
     else newGroups.push(group);
-    localStorage.setItem(COUNTDOWN_GROUPS_KEY, JSON.stringify(newGroups));
+    await dbSet(COUNTDOWN_GROUPS_KEY, newGroups);
     return newGroups;
 };
 
-export const saveCountdownGroups = (groups: CountdownGroup[]): CountdownGroup[] => {
-    localStorage.setItem(COUNTDOWN_GROUPS_KEY, JSON.stringify(groups));
+export const saveCountdownGroups = async (groups: CountdownGroup[]): Promise<CountdownGroup[]> => {
+    await dbSet(COUNTDOWN_GROUPS_KEY, groups);
     return groups;
 };
 
-export const deleteCountdownGroup = (id: string): CountdownGroup[] => {
-    const groups = getCountdownGroups();
+export const deleteCountdownGroup = async (id: string): Promise<CountdownGroup[]> => {
+    const groups = await getCountdownGroups();
     const newGroups = groups.filter(g => g.id !== id);
-    localStorage.setItem(COUNTDOWN_GROUPS_KEY, JSON.stringify(newGroups));
+    await dbSet(COUNTDOWN_GROUPS_KEY, newGroups);
     return newGroups;
 };
 
 // --- Countdowns ---
 
-export const getCountdowns = (): CountdownItem[] => {
-    return safeParse<CountdownItem[]>(COUNTDOWNS_KEY, []);
+export const getCountdowns = async (): Promise<CountdownItem[]> => {
+    return dbGet<CountdownItem[]>(COUNTDOWNS_KEY, []);
 };
 
-export const saveCountdown = (item: CountdownItem): CountdownItem[] => {
-  const items = getCountdowns();
+export const saveCountdown = async (item: CountdownItem): Promise<CountdownItem[]> => {
+  const items = await getCountdowns();
   const index = items.findIndex(i => i.id === item.id);
   let newItems;
   if (index >= 0) {
@@ -365,18 +464,18 @@ export const saveCountdown = (item: CountdownItem): CountdownItem[] => {
   } else {
     newItems = [...items, item];
   }
-  localStorage.setItem(COUNTDOWNS_KEY, JSON.stringify(newItems));
+  await dbSet(COUNTDOWNS_KEY, newItems);
   return newItems;
 };
 
-export const deleteCountdown = (id: string): CountdownItem[] => {
-  const items = getCountdowns();
+export const deleteCountdown = async (id: string): Promise<CountdownItem[]> => {
+  const items = await getCountdowns();
   const newItems = items.filter(i => i.id !== id);
-  localStorage.setItem(COUNTDOWNS_KEY, JSON.stringify(newItems));
+  await dbSet(COUNTDOWNS_KEY, newItems);
   return newItems;
 };
 
-export const seedCountdowns = (): CountdownItem[] => {
+export const seedCountdowns = async (): Promise<CountdownItem[]> => {
     const nextYear = new Date().getFullYear() + 1;
     const items: CountdownItem[] = [
         {
@@ -388,17 +487,17 @@ export const seedCountdowns = (): CountdownItem[] => {
             groupId: 'general'
         }
     ];
-    localStorage.setItem(COUNTDOWNS_KEY, JSON.stringify(items));
+    await dbSet(COUNTDOWNS_KEY, items);
     return items;
 }
 
 // Session Records
-export const getSessions = (): SessionRecord[] => {
-    return safeParse<SessionRecord[]>(SESSIONS_KEY, []);
+export const getSessions = async (): Promise<SessionRecord[]> => {
+    return dbGet<SessionRecord[]>(SESSIONS_KEY, []);
 };
 
-export const saveSessionRecord = (session: SessionRecord): SessionRecord[] => {
-  const sessions = getSessions();
+export const saveSessionRecord = async (session: SessionRecord): Promise<SessionRecord[]> => {
+  const sessions = await getSessions();
   const idx = sessions.findIndex(s => s.id === session.id);
   let newSessions;
   if (idx >= 0) {
@@ -407,26 +506,26 @@ export const saveSessionRecord = (session: SessionRecord): SessionRecord[] => {
   } else {
       newSessions = [session, ...sessions];
   }
-  localStorage.setItem(SESSIONS_KEY, JSON.stringify(newSessions));
+  await dbSet(SESSIONS_KEY, newSessions);
   return newSessions;
 };
 
-export const deleteSessionRecord = (id: string): SessionRecord[] => {
-    const sessions = getSessions();
+export const deleteSessionRecord = async (id: string): Promise<SessionRecord[]> => {
+    const sessions = await getSessions();
     const newSessions = sessions.filter(s => s.id !== id);
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(newSessions));
+    await dbSet(SESSIONS_KEY, newSessions);
     return newSessions;
 };
 
-export const batchDeleteSessions = (ids: string[]): SessionRecord[] => {
-    const sessions = getSessions();
+export const batchDeleteSessions = async (ids: string[]): Promise<SessionRecord[]> => {
+    const sessions = await getSessions();
     const newSessions = sessions.filter(s => !ids.includes(s.id));
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(newSessions));
+    await dbSet(SESSIONS_KEY, newSessions);
     return newSessions;
 }
 
 // Timer Settings
-export const getTimerSettings = (): TimerSettings => {
+export const getTimerSettings = async (): Promise<TimerSettings> => {
     const defaultSettings: TimerSettings = {
         pomoDuration: 25,
         shortBreakDuration: 5,
@@ -437,42 +536,42 @@ export const getTimerSettings = (): TimerSettings => {
         quickDurations: [25, 45, 60],
         shortBreakPresets: [5, 10, 15]
     };
-    const saved = safeParse<TimerSettings>(TIMER_SETTINGS_KEY, defaultSettings);
+    const saved = await dbGet<TimerSettings>(TIMER_SETTINGS_KEY, defaultSettings);
     return { ...defaultSettings, ...saved };
 };
 
-export const saveTimerSettings = (settings: TimerSettings): TimerSettings => {
-    localStorage.setItem(TIMER_SETTINGS_KEY, JSON.stringify(settings));
+export const saveTimerSettings = async (settings: TimerSettings): Promise<TimerSettings> => {
+    await dbSet(TIMER_SETTINGS_KEY, settings);
     return settings;
 };
 
 // Menu Bar Configuration
-export const getMenuBarConfig = (): MenuBarConfig => {
-    return safeParse<MenuBarConfig>(MENUBAR_CONFIG_KEY, { mode: 'none' });
+export const getMenuBarConfig = async (): Promise<MenuBarConfig> => {
+    return dbGet<MenuBarConfig>(MENUBAR_CONFIG_KEY, { mode: 'none' });
 };
 
-export const saveMenuBarConfig = (config: MenuBarConfig): MenuBarConfig => {
-    localStorage.setItem(MENUBAR_CONFIG_KEY, JSON.stringify(config));
+export const saveMenuBarConfig = async (config: MenuBarConfig): Promise<MenuBarConfig> => {
+    await dbSet(MENUBAR_CONFIG_KEY, config);
     return config;
 };
 
 // Sidebar Configuration
-export const getSidebarConfig = (): SidebarConfig => {
-    return safeParse<SidebarConfig>(SIDEBAR_CONFIG_KEY, { showWeeklyGoalWidget: true });
+export const getSidebarConfig = async (): Promise<SidebarConfig> => {
+    return dbGet<SidebarConfig>(SIDEBAR_CONFIG_KEY, { showWeeklyGoalWidget: true });
 };
 
-export const saveSidebarConfig = (config: SidebarConfig): SidebarConfig => {
-    localStorage.setItem(SIDEBAR_CONFIG_KEY, JSON.stringify(config));
+export const saveSidebarConfig = async (config: SidebarConfig): Promise<SidebarConfig> => {
+    await dbSet(SIDEBAR_CONFIG_KEY, config);
     return config;
 };
 
 // Custom Events (Calendar)
-export const getCustomEvents = (): CustomEvent[] => {
-    return safeParse<CustomEvent[]>(CUSTOM_EVENTS_KEY, []);
+export const getCustomEvents = async (): Promise<CustomEvent[]> => {
+    return dbGet<CustomEvent[]>(CUSTOM_EVENTS_KEY, []);
 };
 
-export const saveCustomEvent = (event: CustomEvent): CustomEvent[] => {
-    const events = getCustomEvents();
+export const saveCustomEvent = async (event: CustomEvent): Promise<CustomEvent[]> => {
+    const events = await getCustomEvents();
     // Check if updating
     const idx = events.findIndex(e => e.id === event.id);
     let newEvents;
@@ -482,25 +581,31 @@ export const saveCustomEvent = (event: CustomEvent): CustomEvent[] => {
     } else {
         newEvents = [...events, event];
     }
-    localStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(newEvents));
+    await dbSet(CUSTOM_EVENTS_KEY, newEvents);
     return newEvents;
 };
 
-export const deleteCustomEvent = (id: string): CustomEvent[] => {
-    const events = getCustomEvents();
+export const deleteCustomEvent = async (id: string): Promise<CustomEvent[]> => {
+    const events = await getCustomEvents();
     const newEvents = events.filter(e => e.id !== id);
-    localStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(newEvents));
+    await dbSet(CUSTOM_EVENTS_KEY, newEvents);
     return newEvents;
 };
 
 
 // Seed some data for visualization purposes if empty
-export const seedData = (): StudyLog[] => {
+export const seedData = async (): Promise<StudyLog[]> => {
+  await migrateFromLocalStorage(); // Ensure migration happens before seeding check
+
+  // Check if migration populated data
+  const existingLogs = await getLogs();
+  if (existingLogs.length > 0) return existingLogs;
+
   const logs: StudyLog[] = [];
   const sessions: SessionRecord[] = [];
   const today = new Date();
   
-  const projects = getProjects();
+  const projects = await getProjects();
   const pid = projects[0]?.id || DEFAULT_PROJECT_ID;
 
   for (let i = 0; i < 365; i++) {
@@ -538,8 +643,8 @@ export const seedData = (): StudyLog[] => {
       });
   }
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
-  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+  await dbSet(STORAGE_KEY, logs);
+  await dbSet(SESSIONS_KEY, sessions);
   
   return logs;
 };

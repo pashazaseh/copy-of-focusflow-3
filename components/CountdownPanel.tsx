@@ -53,6 +53,7 @@ export const CountdownPanel: React.FC = () => {
     // Google Calendar State
     const [googleClientId, setGoogleClientId] = useState('');
     const [isSyncingGoogle, setIsSyncingGoogle] = useState(false);
+    const [, setTick] = useState(0); // Force re-render for timer
 
     // Refs
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -60,15 +61,15 @@ export const CountdownPanel: React.FC = () => {
     const importMenuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        setCountdowns(storage.getCountdowns());
-        setGroups(storage.getCountdownGroups());
-        setProjects(storage.getProjects());
+        storage.getCountdowns().then(setCountdowns);
+        storage.getCountdownGroups().then(setGroups);
+        storage.getProjects().then(setProjects);
         
         const storedClientId = localStorage.getItem('google_client_id');
         if (storedClientId) setGoogleClientId(storedClientId);
 
         const interval = setInterval(() => {
-            setCountdowns(prev => [...prev]); // Force re-render for timer calculation
+            setTick(t => t + 1); // Efficient re-render
         }, 60000);
 
         const handleClickOutside = (event: MouseEvent) => {
@@ -115,7 +116,7 @@ export const CountdownPanel: React.FC = () => {
         return { days: Math.abs(days), isFuture: days >= 0, displayDate: target };
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!title || !date) return;
         
         let color = 'blue';
@@ -135,23 +136,23 @@ export const CountdownPanel: React.FC = () => {
             projectId: selectedProjectId
         };
         
-        const newItems = storage.saveCountdown(item);
+        const newItems = await storage.saveCountdown(item);
         setCountdowns(newItems);
         closeModal();
     };
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (confirm('Permanently delete this countdown?')) {
-            const newItems = storage.deleteCountdown(id);
+            const newItems = await storage.deleteCountdown(id);
             setCountdowns(newItems);
         }
     };
 
-    const toggleArchive = (id: string, archive: boolean) => {
+    const toggleArchive = async (id: string, archive: boolean) => {
         const item = countdowns.find(c => c.id === id);
         if (item) {
             const updatedItem = { ...item, isArchived: archive };
-            const newItems = storage.saveCountdown(updatedItem);
+            const newItems = await storage.saveCountdown(updatedItem);
             setCountdowns(newItems);
         }
     };
@@ -167,13 +168,13 @@ export const CountdownPanel: React.FC = () => {
         if (!file) return;
 
         const reader = new FileReader();
-        reader.onload = (event) => {
+        reader.onload = async (event) => {
             const content = event.target?.result as string;
             if (content) {
-                const result = storage.importCountdownsFromCSV(content);
+                const result = await storage.importCountdownsFromCSV(content);
                 if (result.success) {
                     alert(result.message);
-                    setCountdowns(storage.getCountdowns());
+                    setCountdowns(await storage.getCountdowns());
                 } else {
                     alert(`Import Failed: ${result.message}`);
                 }
@@ -229,21 +230,22 @@ export const CountdownPanel: React.FC = () => {
             const data = await res.json();
             let count = 0;
             if (data.items) {
-                data.items.forEach((evt: any) => {
-                    if (evt.start?.date) { // All day event usually
-                        storage.saveCountdown({
-                            id: Date.now().toString() + Math.random().toString().slice(2,5),
+                for (const evt of data.items) {
+                    if (evt.start?.date) {
+                        const item = {
+                            id: Date.now().toString() + Math.random().toString().slice(2,6),
                             title: evt.summary,
                             date: evt.start.date,
                             type: 'countdown', // Default
                             color: 'blue',
                             groupId: 'general'
-                        });
+                        };
                         count++;
+                        await storage.saveCountdown(item as any);
                     }
-                });
-                setCountdowns(storage.getCountdowns());
-                alert(`Imported ${count} events from primary calendar.`);
+                }
+                setCountdowns(await storage.getCountdowns());
+                alert(`Imported ${count} events.`);
             }
         } catch (e) {
             console.error(e);
@@ -254,44 +256,44 @@ export const CountdownPanel: React.FC = () => {
     };
 
     // --- Group Management (Enhanced) ---
-    const handleAddGroup = () => {
+    const handleAddGroup = async () => {
         if (!newGroupName.trim()) return;
         const newGroup: CountdownGroup = {
             id: Date.now().toString(),
             name: newGroupName.trim(),
             color: 'blue'
         };
-        const updated = storage.saveCountdownGroup(newGroup);
+        const updated = await storage.saveCountdownGroup(newGroup);
         setGroups(updated);
         setNewGroupName('');
     };
 
-    const handleDeleteGroup = (id: string) => {
+    const handleDeleteGroup = async (id: string) => {
         if (id === 'general') return; 
         if (confirm('Delete this group? Items will be moved to General.')) {
             const affectedItems = countdowns.filter(c => c.groupId === id);
-            affectedItems.forEach(item => {
-                storage.saveCountdown({ ...item, groupId: 'general' });
-            });
-            setCountdowns(storage.getCountdowns());
+            for (const item of affectedItems) {
+                await storage.saveCountdown({ ...item, groupId: 'general' });
+            }
+            setCountdowns(await storage.getCountdowns());
             
-            const updated = storage.deleteCountdownGroup(id);
+            const updated = await storage.deleteCountdownGroup(id);
             setGroups(updated);
             if (activeGroupFilter === id) setActiveGroupFilter('all');
         }
     };
 
-    const startEditingGroup = (group: CountdownGroup) => {
+    const startEditingGroup = async (group: CountdownGroup) => {
         setEditingGroupId(group.id);
         setEditingGroupName(group.name);
     };
 
-    const saveGroupEdit = () => {
+    const saveGroupEdit = async () => {
         if (editingGroupId && editingGroupName.trim()) {
             const group = groups.find(g => g.id === editingGroupId);
             if (group) {
-                storage.saveCountdownGroup({ ...group, name: editingGroupName.trim() });
-                setGroups(storage.getCountdownGroups());
+                await storage.saveCountdownGroup({ ...group, name: editingGroupName.trim() });
+                setGroups(await storage.getCountdownGroups());
             }
         }
         setEditingGroupId(null);
@@ -316,8 +318,8 @@ export const CountdownPanel: React.FC = () => {
         setDraggingGroupIndex(index);
     };
 
-    const handleGroupDragEnd = () => {
-        storage.saveCountdownGroups(groups);
+    const handleGroupDragEnd = async () => {
+        await storage.saveCountdownGroups(groups);
         setDraggingGroupIndex(null);
     };
 
