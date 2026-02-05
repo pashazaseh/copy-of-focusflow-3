@@ -10,7 +10,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run build && electron-builder"
+    "electron:build": "npm run build && electron-builder",
+    "dist:mac": "electron-builder --mac --arm64",
+    "dist:mac:universal": "electron-builder --mac --universal"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -32,7 +34,7 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.focusflow.app",
+    "appId": "com.yourname.focusflow",
     "productName": "FocusFlow",
     "files": [
       "dist/**/*",
@@ -50,9 +52,15 @@
             "arm64",
             "x64"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": ["arm64", "x64"]
         }
       ],
-      "icon": "electron/icon.icns"
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
     }
   }
 }

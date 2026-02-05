@@ -171,15 +171,6 @@ function FocusFlowContent() {
       const existing = logs.find(l => l.date === today && l.projectId === targetProject);
       const totalHours = (existing ? existing.hours : 0) + sessionHours;
       const mergedNotes = existing ? (existing.notes ? existing.notes + '; ' + sessionNote : sessionNote) : sessionNote;
-      
-      // Check for Double XP Potion
-      const inventory = JSON.parse(localStorage.getItem('focusflow_inventory') || '{}');
-      if (inventory.doubleGemExpiry && inventory.doubleGemExpiry > Date.now()) {
-          // Award bonus gems (10 gems per hour is base, so add another 10 per hour)
-          const bonus = Math.floor(sessionHours * 10);
-          const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0');
-          localStorage.setItem('focusflow_bonus_gems', (currentBonus + bonus).toString());
-      }
 
       saveLog(today, totalHours, mergedNotes, targetProject);
   };

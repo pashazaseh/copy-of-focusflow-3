@@ -187,7 +187,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
       quests.filter(q => q.current >= q.target).reduce((acc, curr) => acc + curr.reward, 0)
   , [quests]);
 
-  const currentGems = Math.floor(totalHours * 10) + achievementGems + questGems + bonusGems - spentGems;
+  const currentGems = Math.max(0, Math.floor(totalHours * 10) + achievementGems + questGems + bonusGems - spentGems);
 
   // --- Streak Calendar Logic ---
   const streakCalendar = useMemo(() => {
@@ -209,9 +209,9 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
   // --- Shop Items ---
   const shopItems = [
       { id: 'freeze', name: 'Streak Freeze', icon: '❄️', cost: 50, desc: 'Auto-used if you miss a day.', type: 'consumable' },
-      { id: 'potion', name: 'Double XP Potion', icon: '🧪', cost: 100, desc: 'Earn 2x Gems for 24 hours.', type: 'consumable' },
-      { id: 'theme_cyber', name: 'Theme: Cyberpunk', icon: '🎨', cost: 500, desc: 'Unlock a futuristic color theme.', type: 'unlock' },
-      { id: 'frame_gold', name: 'Profile Frame: Gold', icon: '🖼️', cost: 200, desc: 'Add a golden glow to your avatar.', type: 'unlock' },
+      { id: 'dessert', name: 'Cheat Dessert', icon: '🍰', cost: 150, desc: 'A guilt-free reward for your hard work.', type: 'consumable' },
+      { id: 'vacation', name: 'Vacation Ticket', icon: '✈️', cost: 1000, desc: 'Take a break! Adds 7 streak freezes.', type: 'consumable' },
+      { id: 'restaurant', name: 'Fine Dining', icon: '🍽️', cost: 300, desc: 'A well-deserved treat for your hard work.', type: 'unlock' },
   ];
 
   const handleBuy = (item: typeof shopItems[0]) => {
@@ -223,10 +223,10 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
           const newInventory = { ...inventory };
           if (item.id === 'freeze') {
                newInventory.streakFreeze = (newInventory.streakFreeze || 0) + 1;
-          } else if (item.id === 'potion') {
-               const now = Date.now();
-               const currentExpiry = newInventory.doubleGemExpiry || now;
-               newInventory.doubleGemExpiry = Math.max(now, currentExpiry) + (24 * 60 * 60 * 1000);
+          } else if (item.id === 'vacation') {
+               newInventory.streakFreeze = (newInventory.streakFreeze || 0) + 7;
+          } else if (item.id === 'dessert') {
+               newInventory.cheatDessert = (newInventory.cheatDessert || 0) + 1;
           } else {
                newInventory[item.id] = true;
           }
@@ -369,8 +369,8 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
                                     {item.id === 'freeze' && inventory.streakFreeze > 0 && (
                                         <p className="text-[10px] text-blue-400 font-bold mt-2">In Inventory: {inventory.streakFreeze}</p>
                                     )}
-                                    {item.id === 'potion' && inventory.doubleGemExpiry > Date.now() && (
-                                        <p className="text-[10px] text-purple-400 font-bold mt-2">Active for {Math.ceil((inventory.doubleGemExpiry - Date.now()) / (1000 * 60 * 60))}h</p>
+                                    {item.id === 'dessert' && inventory.cheatDessert > 0 && (
+                                        <p className="text-[10px] text-pink-400 font-bold mt-2">In Inventory: {inventory.cheatDessert}</p>
                                     )}
                                 </div>
                                 

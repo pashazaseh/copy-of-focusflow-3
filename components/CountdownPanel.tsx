@@ -410,14 +410,14 @@ export const CountdownPanel: React.FC = () => {
                                 {/* Hide Group Button */}
                                 <button 
                                     onClick={() => setIsGroupsVisible(!isGroupsVisible)}
-                                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm h-9 min-w-[110px] ${
+                                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm h-9 min-w-[80px] ${
                                         !isGroupsVisible 
                                         ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700' 
                                         : 'bg-white dark:bg-[#1c1c1e] text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
                                     }`}
                                 >
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
-                                    {isGroupsVisible ? 'Hide Group' : 'Show Group'}
+                                    {isGroupsVisible ? 'Hide' : 'Show'}
                                 </button>
 
                                 {/* Add Button */}
@@ -435,21 +435,23 @@ export const CountdownPanel: React.FC = () => {
                         <div className="flex justify-center w-full animate-fade-in-down origin-top">
                             <div className="flex flex-col items-center gap-2">
                                 {/* Type Filters */}
-                                <div className="flex items-center p-1 bg-white dark:bg-[#151516] rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-x-auto no-scrollbar">
-                                    {['all', 'countdown', 'anniversary', 'birthday', 'holiday'].map(t => (
-                                        <button
-                                            key={t}
-                                            onClick={() => setActiveTypeFilter(t)}
-                                            className={`px-4 py-1.5 rounded-lg text-xs font-bold capitalize transition-all duration-200 whitespace-nowrap ${
-                                                activeTypeFilter === t 
-                                                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
-                                                : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5'
-                                            }`}
-                                        >
-                                            {t}
-                                        </button>
-                                    ))}
-                                </div>
+                                {isGroupsVisible && (
+                                    <div className="flex items-center p-1 bg-white dark:bg-[#151516] rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-x-auto no-scrollbar">
+                                        {['all', 'countdown', 'anniversary', 'birthday', 'holiday'].map(t => (
+                                            <button
+                                                key={t}
+                                                onClick={() => setActiveTypeFilter(t)}
+                                                className={`px-4 py-1.5 rounded-lg text-xs font-bold capitalize transition-all duration-200 whitespace-nowrap ${
+                                                    activeTypeFilter === t 
+                                                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
+                                                    : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5'
+                                                }`}
+                                            >
+                                                {t}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
 
                                 {/* Group Filters (Stacked Below) */}
                                 {isGroupsVisible && (

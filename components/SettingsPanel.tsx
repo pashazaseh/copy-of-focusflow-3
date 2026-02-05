@@ -99,6 +99,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const [accessToken, setAccessToken] = useState<string | null>(null);
     const [restoreFileCandidate, setRestoreFileCandidate] = useState<{id: string, name: string} | null>(null);
     const [driveSearchQuery, setDriveSearchQuery] = useState('');
+    const [driveSortOrder, setDriveSortOrder] = useState<'newest' | 'oldest' | 'name'>('newest');
 
     const googleActionRef = useRef<'calendar' | 'drive' | 'login' | 'restore'>('none');
     const [tokenClient, setTokenClient] = useState<any>(null);
@@ -260,6 +261,37 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             setRestoreFileCandidate(null);
         }
     };
+
+    const handleDeleteDriveFile = async (fileId: string) => {
+        if (!accessToken) return;
+        if (!confirm("Are you sure you want to delete this backup permanently from Google Drive?")) return;
+
+        try {
+            const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+
+            if (!response.ok) throw new Error('Failed to delete file');
+
+            setDriveFiles(prev => prev.filter(f => f.id !== fileId));
+        } catch (e: any) {
+            console.error(e);
+            alert(`Delete Failed: ${e.message}`);
+        }
+    };
+
+    const sortedDriveFiles = useMemo(() => {
+        let sorted = [...driveFiles];
+        if (driveSortOrder === 'newest') {
+            sorted.sort((a, b) => new Date(b.createdTime).getTime() - new Date(a.createdTime).getTime());
+        } else if (driveSortOrder === 'oldest') {
+            sorted.sort((a, b) => new Date(a.createdTime).getTime() - new Date(b.createdTime).getTime());
+        } else if (driveSortOrder === 'name') {
+            sorted.sort((a, b) => a.name.localeCompare(b.name));
+        }
+        return sorted.filter(f => f.name.toLowerCase().includes(driveSearchQuery.toLowerCase()));
+    }, [driveFiles, driveSortOrder, driveSearchQuery]);
 
     // --- Export Handlers ---
 
@@ -1465,8 +1497,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                         </div>
-                        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-[#1c1c1e]">
-                            <div className="relative">
+                        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-[#1c1c1e] flex gap-2">
+                            <div className="relative flex-1">
                                 <svg className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                 <input 
                                     type="text" 
@@ -1476,6 +1508,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                     className="w-full pl-9 pr-4 py-2 bg-gray-100 dark:bg-gray-800 border-none rounded-lg text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none placeholder-gray-500"
                                 />
                             </div>
+                            <select
+                                value={driveSortOrder}
+                                onChange={(e) => setDriveSortOrder(e.target.value as any)}
+                                className="bg-gray-100 dark:bg-gray-800 border-none rounded-lg text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none px-3 py-2 cursor-pointer"
+                            >
+                                <option value="newest">Newest</option>
+                                <option value="oldest">Oldest</option>
+                                <option value="name">Name</option>
+                            </select>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
                             {isLoadingDriveFiles ? (
@@ -1487,20 +1528,27 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                 <div className="text-center py-10 text-gray-500">No backup files found.</div>
                             ) : (
                                 <div className="space-y-2">
-                                    {driveFiles.filter(f => f.name.toLowerCase().includes(driveSearchQuery.toLowerCase())).map((file) => (
-                                        <button 
-                                            key={file.id}
-                                            onClick={() => onSelectRestoreFile(file.id, file.name)}
-                                            className="w-full flex items-center justify-between p-3 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-left group border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
-                                        >
-                                            <div>
-                                                <p className="font-bold text-sm text-gray-900 dark:text-white">{file.name}</p>
-                                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                    {new Date(file.createdTime).toLocaleString()} • {(parseInt(file.size)/1024).toFixed(1)} KB
-                                                </p>
-                                            </div>
-                                            <svg className="w-5 h-5 text-gray-400 group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                        </button>
+                                    {sortedDriveFiles.map((file) => (
+                                        <div key={file.id} className="flex items-center gap-2 p-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-xl transition-colors group border border-transparent hover:border-gray-200 dark:hover:border-gray-700">
+                                            <button 
+                                                onClick={() => onSelectRestoreFile(file.id, file.name)}
+                                                className="flex-1 flex items-center justify-between p-2 text-left"
+                                            >
+                                                <div>
+                                                    <p className="font-bold text-sm text-gray-900 dark:text-white">{file.name}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                        {new Date(file.createdTime).toLocaleString()} • {(parseInt(file.size)/1024).toFixed(1)} KB
+                                                    </p>
+                                                </div>
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDeleteDriveFile(file.id)}
+                                                className="p-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                title="Delete Backup"
+                                            >
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                            </button>
+                                        </div>
                                     ))}
                                 </div>
                             )}
