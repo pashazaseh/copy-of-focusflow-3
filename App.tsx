@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, lazy, Suspense, useCallback } from 'react';
+import React, { Component, useState, useEffect, useMemo, useRef, lazy, Suspense, useCallback } from 'react';
 import { MacWindow } from './components/MacWindow';
 import { Sidebar } from './components/Sidebar';
 import { QuickTimerOverlay } from './components/QuickTimerOverlay';
@@ -34,8 +34,16 @@ const parseDate = (dateStr: string) => {
 };
 
 // Error Boundary for App Stability
-class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean}> {
-  constructor(props: {children: React.ReactNode}) {
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false };
   }

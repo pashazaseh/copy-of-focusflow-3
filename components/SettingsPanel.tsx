@@ -3,6 +3,7 @@ import * as storage from '../services/storageService';
 import { StoredNavConfig, NAV_ITEMS_DEF } from './Sidebar';
 import { TimerSettings, CountdownItem, MenuBarConfig, MenuBarMode, Project, HeatmapTheme, SidebarConfig, SettingsTab, AppTheme } from '../types';
 import { useCountdowns } from '../AppContext';
+// @ts-ignore
 import alarmSound from '../assets/alarm.mp3';
 
 interface SettingsPanelProps {

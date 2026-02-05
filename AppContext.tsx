@@ -103,9 +103,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // --- Initialization & Global Effects ---
     const notifiedEventsRef = useRef<Set<string>>(new Set());
 
-    const checkReminders = useCallback(() => {
+    const checkReminders = useCallback(async () => {
         if (Notification.permission !== "granted") return;
-        const events = storage.getCustomEvents();
+        const events = await storage.getCustomEvents();
         const now = new Date();
         const todayStr = now.toISOString().split('T')[0];
 

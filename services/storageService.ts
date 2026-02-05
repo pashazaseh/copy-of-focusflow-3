@@ -405,9 +405,10 @@ export const deleteLog = async (date: string, projectId: string): Promise<StudyL
 };
 
 export const getGoals = async (): Promise<UserGoals> => {
-    const defaultGoals = { weekly: 40, monthly: 160, yearly: 2000 };
+    const defaultGoals = { daily: 4, weekly: 40, monthly: 160, yearly: 2000 };
     const saved = await dbGet<any>(GOALS_KEY, {});
     return {
+        daily: saved.daily || defaultGoals.daily,
         weekly: saved.weekly || defaultGoals.weekly,
         monthly: saved.monthly || defaultGoals.monthly,
         yearly: saved.yearly || defaultGoals.yearly
