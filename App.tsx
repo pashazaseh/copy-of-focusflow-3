@@ -2,10 +2,10 @@ import React, { Component, useState, useEffect, useMemo, useRef, lazy, Suspense,
 import { MacWindow } from './components/MacWindow';
 import { Sidebar } from './components/Sidebar';
 import { QuickTimerOverlay } from './components/QuickTimerOverlay';
-import { ViewMode, HeatmapTheme, UserGoals, CountdownItem, Achievement } from './types';
+import { ViewMode, HeatmapTheme, UserGoals, CountdownItem, Achievement, Transaction, StudyLog } from './types';
 import { AppProvider, useTheme, useProjects, useLogs, useUI, useTimerContext, useCountdowns } from './AppContext';
 import { TimerPanel } from './components/TimerPanel';
-import { getUnlockedAchievements } from './services/gamificationService';
+import { getUnlockedAchievements, calculateTotalGems } from './services/gamificationService';
 import { playWin } from './services/audioService';
 
 // Lazy load heavy components
@@ -82,11 +82,181 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError:
   }
 }
 
+// --- Extracted Memoized Components to prevent re-renders on input change ---
+
+const DashboardHeader = React.memo(({ activeProjectName, currentYear, activeProject, streaks }: { activeProjectName: string, currentYear: number, activeProject: any, streaks: any }) => (
+    <header className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white dark:bg-[#1c1c1e] rounded-3xl p-6 border border-gray-200 dark:border-gray-700/50 shadow-sm flex flex-col justify-center h-32">
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
+            {activeProjectName} 
+            <span className="mx-3 text-gray-300 dark:text-gray-700 font-light text-2xl">|</span>
+            <span className="text-gray-400 dark:text-gray-500 font-normal">{currentYear}</span>
+        </h2>
+        <div className="flex items-center gap-2 mt-1">
+            <p className="text-gray-500 dark:text-gray-400">Dashboard Overview</p>
+            {activeProject?.weeklyGoal && (
+                <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full font-bold">Goal: {activeProject.weeklyGoal}h/wk</span>
+            )}
+        </div>
+        </div>
+        
+        <div className="relative group overflow-hidden bg-gradient-to-r from-orange-500 to-rose-500 rounded-3xl shadow-xl h-32 transform transition-transform hover:scale-[1.02]">
+            <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white opacity-10 rounded-full blur-2xl"></div>
+            <div className="absolute bottom-0 left-0 -mb-4 -ml-4 w-20 h-20 bg-yellow-400 opacity-20 rounded-full blur-2xl"></div>
+            <div className="relative p-6 h-full flex items-center justify-between">
+                <div className="flex-1 border-r border-white/20 pr-6">
+                    <p className="text-orange-100 text-[10px] font-bold uppercase tracking-widest opacity-90 mb-1">Current Streak</p>
+                    <div className="flex items-baseline">
+                        <span className="text-4xl font-black text-white tracking-tighter drop-shadow-sm leading-none">{streaks.current}</span>
+                        <span className="ml-1.5 text-sm font-bold text-orange-50/90">Days</span>
+                    </div>
+                </div>
+                <div className="flex-1 pl-6">
+                        <p className="text-orange-100 text-[10px] font-bold uppercase tracking-widest opacity-90 mb-1">Longest Streak</p>
+                    <div className="flex items-baseline">
+                        <span className="text-4xl font-black text-white tracking-tighter drop-shadow-sm leading-none">{streaks.longest}</span>
+                        <span className="ml-1.5 text-sm font-bold text-orange-50/90">Days</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+));
+
+const LogHistoryTable = React.memo(({ 
+    paginatedHistory, 
+    historySortField, 
+    historySortDesc, 
+    setHistorySortField, 
+    setHistorySortDesc, 
+    handleDayClick, 
+    historyScope, 
+    projects,
+    unifiedHistoryLength,
+    ITEMS_PER_PAGE,
+    historyPage,
+    setHistoryPage
+}: any) => (
+    <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl border border-gray-200 dark:border-gray-700/50 shadow-sm overflow-hidden">
+        <table className="w-full text-left border-collapse">
+            <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
+                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                        onClick={() => {
+                            if (historySortField === 'date') setHistorySortDesc(!historySortDesc);
+                            else { setHistorySortField('date'); setHistorySortDesc(true); }
+                        }}
+                    >
+                        <div className="flex items-center space-x-1">
+                            <span>Date</span>
+                            {historySortField === 'date' && <span>{historySortDesc ? '↓' : '↑'}</span>}
+                        </div>
+                    </th>
+                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                        onClick={() => {
+                            if (historySortField === 'hours') setHistorySortDesc(!historySortDesc);
+                            else { setHistorySortField('hours'); setHistorySortDesc(true); }
+                        }}
+                    >
+                        <div className="flex items-center space-x-1">
+                            <span>Value</span>
+                            {historySortField === 'hours' && <span>{historySortDesc ? '↓' : '↑'}</span>}
+                        </div>
+                    </th>
+                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Details</th>
+                    <th className="p-4 w-10"></th>
+                </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {paginatedHistory.length === 0 ? (
+                    <tr><td colSpan={4} className="p-8 text-center text-gray-500 dark:text-gray-400">No logs found for this period.</td></tr>
+                ) : (
+                    paginatedHistory.map((item: any) => (
+                        <tr key={item.kind === 'log' ? `log-${item.data.date}-${item.data.projectId}` : item.data.id} className="group hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                            <td className="p-4 text-sm text-gray-900 dark:text-gray-200 font-medium">
+                                {item.kind === 'log' ? item.data.date : new Date(item.data.date).toLocaleDateString()}
+                                <div className="text-[10px] text-gray-400 font-normal mt-0.5">
+                                    {item.kind === 'log' 
+                                        ? new Date(item.data.date).toLocaleDateString('en-US', { weekday: 'long' })
+                                        : new Date(item.data.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                                    }
+                                </div>
+                            </td>
+                            <td className="p-4 text-sm text-gray-900 dark:text-gray-200">
+                                {item.kind === 'log' ? (
+                                    <div className="flex flex-col items-start gap-1">
+                                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${item.data.hours >= 4 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : item.data.hours >= 1 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>
+                                            {item.data.hours} hrs
+                                        </span>
+                                        <span className="text-[10px] font-bold text-yellow-600 dark:text-yellow-500 ml-0.5">
+                                            +{Math.floor(item.data.hours * 20)} 💎
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                                        item.data.type === 'SPEND' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' :
+                                        item.data.type === 'UNLOCK' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300' :
+                                        'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
+                                    }`}>
+                                        {item.data.amount > 0 ? '+' : ''}{item.data.amount} 💎
+                                    </span>
+                                )}
+                            </td>
+                            <td className="p-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
+                                {item.kind === 'log' ? (
+                                    <>
+                                        {item.data.notes || <span className="text-gray-300 dark:text-gray-600 italic">-</span>}
+                                        {historyScope === 'global' && (
+                                            <span className="ml-2 text-[10px] text-gray-400 border border-gray-200 dark:border-gray-700 px-1 rounded">{projects.find((p: any) => p.id === item.data.projectId)?.name}</span>
+                                        )}
+                                    </>
+                                ) : (
+                                    <span>{item.data.description}</span>
+                                )}
+                            </td>
+                            <td className="p-4 text-right">
+                                {item.kind === 'log' && (
+                                    <button onClick={() => handleDayClick(item.data.date)} className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all" title="Edit">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                    </button>
+                                )}
+                            </td>
+                        </tr>
+                    ))
+                )}
+            </tbody>
+        </table>
+        
+        {/* Pagination Controls */}
+        {unifiedHistoryLength > ITEMS_PER_PAGE && (
+            <div className="flex justify-between items-center p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
+                <button 
+                    onClick={() => setHistoryPage((p: number) => Math.max(1, p - 1))}
+                    disabled={historyPage === 1}
+                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                    Previous
+                </button>
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Page {historyPage} of {Math.ceil(unifiedHistoryLength / ITEMS_PER_PAGE)}
+                </span>
+                <button 
+                    onClick={() => setHistoryPage((p: number) => Math.min(Math.ceil(unifiedHistoryLength / ITEMS_PER_PAGE), p + 1))}
+                    disabled={historyPage >= Math.ceil(unifiedHistoryLength / ITEMS_PER_PAGE)}
+                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                    Next
+                </button>
+            </div>
+        )}
+    </div>
+));
+
 function FocusFlowContent() {
   // --- Context Hooks ---
   const { isDarkMode, toggleTheme, appTheme, setAppTheme } = useTheme();
   const { projects, currentProjectId, setCurrentProjectId, createProject, deleteProject, updateProjects } = useProjects();
-  const { logs, goals, saveLog, deleteLog, updateGoals } = useLogs();
+  const { logs, goals, saveLog, deleteLog, updateGoals, transactions, addTransaction } = useLogs();
   const { currentView, setCurrentView, settingsTab, setSettingsTab, navConfig, setNavConfig, sidebarConfig, setSidebarConfig, menuBarConfig, setMenuBarConfig } = useUI();
   const { pendingQuickTimer, setPendingQuickTimer } = useTimerContext();
   const { countdowns } = useCountdowns();
@@ -133,6 +303,7 @@ function FocusFlowContent() {
   // Log History State (Moved from StatisticsPanel)
   const [historyScope, setHistoryScope] = useState<'project' | 'global'>('project');
   const [historyFilter, setHistoryFilter] = useState<'all' | '7days' | '30days' | 'year'>('30days');
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<'all' | 'study' | 'economy'>('all');
   const [historySortField, setHistorySortField] = useState<'date' | 'hours'>('date');
   const [historySortDesc, setHistorySortDesc] = useState(true);
 
@@ -143,9 +314,62 @@ function FocusFlowContent() {
   // Toast State
   const [toast, setToast] = useState<{title: string, icon: string} | null>(null);
   const prevBadgeCount = useRef<number>(-1);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  
+  // Economy State for TimerPanel
+  const [economyState, setEconomyState] = useState({ bonus: 0, spent: 0 });
+
+  // Poll for economy changes (since they happen in localStorage)
+  useEffect(() => {
+      const checkEconomy = () => {
+          const bonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
+          const spent = parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0;
+          if (bonus !== economyState.bonus || spent !== economyState.spent) {
+              setEconomyState({ bonus, spent });
+          }
+      };
+      const interval = setInterval(checkEconomy, 2000);
+      return () => clearInterval(interval);
+  }, [economyState]);
+
+  // --- Daily Login Bonus ---
+  useEffect(() => {
+      const checkDailyBonus = () => {
+          const today = new Date().toISOString().split('T')[0];
+          const lastLogin = localStorage.getItem('focusflow_last_login_date');
+
+          if (lastLogin !== today) {
+              const bonusAmount = 50;
+              
+              // Update Bonus Gems (Direct localStorage manipulation to sync with GamificationPanel)
+              const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
+              localStorage.setItem('focusflow_bonus_gems', (currentBonus + bonusAmount).toString());
+              
+              // Add Transaction
+              addTransaction({
+                  id: `daily-bonus-${Date.now()}`,
+                  date: new Date().toISOString(),
+                  type: 'EARN',
+                  amount: bonusAmount,
+                  description: 'Daily Login Bonus'
+              });
+
+              localStorage.setItem('focusflow_last_login_date', today);
+              
+              setToast({ title: `Daily Bonus: +${bonusAmount} Gems`, icon: '🎁' });
+              
+              const savedVol = localStorage.getItem('focusflow_timer_volume');
+              const vol = savedVol ? parseFloat(savedVol) : 0.5;
+              playWin(vol);
+              setTimeout(() => setToast(null), 5000);
+          }
+      };
+      const timer = setTimeout(checkDailyBonus, 1500);
+      return () => clearTimeout(timer);
+  }, [addTransaction]);
 
   // Reset page when filters change
-  useEffect(() => setHistoryPage(1), [historyFilter, historyScope, historySortField, historySortDesc]);
+  useEffect(() => setHistoryPage(1), [historyFilter, historyScope, historySortField, historySortDesc, historyTypeFilter]);
 
   const formRef = useRef<HTMLDivElement>(null); 
 
@@ -246,38 +470,71 @@ function FocusFlowContent() {
   const projectLogs = useMemo(() => logs.filter(l => l.projectId === currentProjectId), [logs, currentProjectId]);
   const activeLog = useMemo(() => projectLogs.find(l => l.date === selectedDate), [projectLogs, selectedDate]);
 
-  const historyLogs = useMemo(() => {
-      let target = historyScope === 'global' ? logs : projectLogs;
-      let filtered = [...target];
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      
-      if (historyFilter === '7days') {
-          const cutoff = new Date(now);
-          cutoff.setDate(now.getDate() - 7);
-          filtered = filtered.filter(l => parseDate(l.date) >= cutoff);
-      } else if (historyFilter === '30days') {
-          const cutoff = new Date(now);
-          cutoff.setDate(now.getDate() - 30);
-          filtered = filtered.filter(l => parseDate(l.date) >= cutoff);
-      } else if (historyFilter === 'year') {
-          const startOfYear = new Date(now.getFullYear(), 0, 1);
-          filtered = filtered.filter(l => parseDate(l.date) >= startOfYear);
+  // Unified History Item Type
+  type HistoryItem = 
+    | { kind: 'log', date: string, data: StudyLog }
+    | { kind: 'tx', date: string, data: Transaction };
+
+  const unifiedHistory = useMemo(() => {
+      let items: HistoryItem[] = [];
+
+      // 1. Add Study Logs
+      if (historyTypeFilter === 'all' || historyTypeFilter === 'study') {
+          const targetLogs = historyScope === 'global' ? logs : projectLogs;
+          items = items.concat(targetLogs.map(l => ({ kind: 'log', date: l.date, data: l })));
       }
 
-      filtered.sort((a, b) => {
-          let valA = historySortField === 'date' ? parseDate(a.date).getTime() : a.hours;
-          let valB = historySortField === 'date' ? parseDate(b.date).getTime() : b.hours;
+      // 2. Add Transactions (Only in Global Scope or if explicitly requested, usually global)
+      if (historyScope === 'global' && (historyTypeFilter === 'all' || historyTypeFilter === 'economy')) {
+          items = items.concat((transactions || []).map(t => ({ kind: 'tx', date: t.date, data: t })));
+      }
+
+      // 3. Filter by Date Range
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      let cutoff = new Date(0);
+      
+      if (historyFilter === '7days') {
+          cutoff.setDate(now.getDate() - 7);
+      } else if (historyFilter === '30days') {
+          cutoff.setDate(now.getDate() - 30);
+      } else if (historyFilter === 'year') {
+          cutoff = new Date(now.getFullYear(), 0, 1);
+      }
+
+      if (cutoff.getTime() > 0) {
+          // Optimization: Pre-calculate timestamps for filtering to avoid repeated new Date()
+          items = items.filter(item => {
+              const ts = item.kind === 'log' ? parseDate(item.date).getTime() : new Date(item.date).getTime();
+              return ts >= cutoff.getTime();
+          });
+      }
+
+      // Pre-calculate timestamps for sorting to avoid O(N log N) Date creations
+      const itemsWithTs = items.map(item => ({
+          ...item,
+          timestamp: item.kind === 'log' ? parseDate(item.date).getTime() : new Date(item.date).getTime()
+      }));
+
+      // 4. Sort
+      itemsWithTs.sort((a, b) => {
+          if (historySortField === 'date') {
+              return historySortDesc ? b.timestamp - a.timestamp : a.timestamp - b.timestamp;
+          }
+          
+          // Sort by Value (Hours or Amount)
+          const valA = a.kind === 'log' ? a.data.hours : Math.abs(a.data.amount);
+          const valB = b.kind === 'log' ? b.data.hours : Math.abs(b.data.amount);
           return historySortDesc ? valB - valA : valA - valB;
       });
 
-      return filtered;
-  }, [logs, projectLogs, historyScope, historyFilter, historySortField, historySortDesc]);
+      return itemsWithTs;
+  }, [logs, projectLogs, transactions, historyScope, historyFilter, historyTypeFilter, historySortField, historySortDesc]);
 
-  const paginatedHistoryLogs = useMemo(() => {
+  const paginatedHistory = useMemo(() => {
       const start = (historyPage - 1) * ITEMS_PER_PAGE;
-      return historyLogs.slice(start, start + ITEMS_PER_PAGE);
-  }, [historyLogs, historyPage]);
+      return unifiedHistory.slice(start, start + ITEMS_PER_PAGE);
+  }, [unifiedHistory, historyPage]);
 
   const totalHours = useMemo(() => logs.reduce((acc, curr) => acc + curr.hours, 0), [logs]); 
   
@@ -348,6 +605,8 @@ function FocusFlowContent() {
       }
       return { current, longest };
   }, [logs, freezeDates]);
+
+  const currentGems = useMemo(() => calculateTotalGems(logs, totalHours, streaks.current, economyState.bonus, economyState.spent), [logs, totalHours, streaks.current, economyState]);
 
   const latestBadge = useMemo<Achievement | null>(() => {
       const all = getUnlockedAchievements(logs, totalHours, streaks.current);
@@ -509,6 +768,9 @@ function FocusFlowContent() {
             onChangeView={setCurrentView} 
             weeklyGoal={effectiveWeeklyGoal}
             currentWeeklyHours={currentWeeklyHours}
+            currentDailyHours={currentDailyHours}
+            currentMonthlyHours={currentMonthlyHours}
+            goals={goals}
             projects={projects}
             currentProjectId={currentProjectId}
             onSelectProject={setCurrentProjectId}
@@ -519,6 +781,7 @@ function FocusFlowContent() {
             sidebarConfig={sidebarConfig}
             appTheme={appTheme}
             latestBadge={latestBadge}
+            logs={logs}
         />
         
         <div className={`flex-1 relative overflow-hidden flex flex-col transition-colors duration-300 ${contentBgClass}`}>
@@ -533,6 +796,8 @@ function FocusFlowContent() {
                   menuBarConfig={menuBarConfig}
                   externalStart={pendingQuickTimer}
                   onConsumeExternalStart={handleConsumeQuickTimer}
+                  currentGems={currentGems}
+                  addTransaction={addTransaction}
               />
             </div>
           )}
@@ -541,42 +806,12 @@ function FocusFlowContent() {
             {currentView === ViewMode.DASHBOARD && (
               <div className="flex-1 flex flex-col min-h-0 overflow-y-auto bg-gray-50/50 dark:bg-black/20">
               <div className="p-8 pb-0">
-                <header className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                  <div className="bg-white dark:bg-[#1c1c1e] rounded-3xl p-6 border border-gray-200 dark:border-gray-700/50 shadow-sm flex flex-col justify-center h-32">
-                    <h2 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-                        {activeProjectName} 
-                        <span className="mx-3 text-gray-300 dark:text-gray-700 font-light text-2xl">|</span>
-                        <span className="text-gray-400 dark:text-gray-500 font-normal">{currentYear}</span>
-                    </h2>
-                    <div className="flex items-center gap-2 mt-1">
-                        <p className="text-gray-500 dark:text-gray-400">Dashboard Overview</p>
-                        {activeProject?.weeklyGoal && (
-                            <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full font-bold">Goal: {activeProject.weeklyGoal}h/wk</span>
-                        )}
-                    </div>
-                  </div>
-                  
-                  <div className="relative group overflow-hidden bg-gradient-to-r from-orange-500 to-rose-500 rounded-3xl shadow-xl h-32 transform transition-transform hover:scale-[1.02]">
-                      <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white opacity-10 rounded-full blur-2xl"></div>
-                      <div className="absolute bottom-0 left-0 -mb-4 -ml-4 w-20 h-20 bg-yellow-400 opacity-20 rounded-full blur-2xl"></div>
-                      <div className="relative p-6 h-full flex items-center justify-between">
-                          <div className="flex-1 border-r border-white/20 pr-6">
-                              <p className="text-orange-100 text-[10px] font-bold uppercase tracking-widest opacity-90 mb-1">Current Streak</p>
-                              <div className="flex items-baseline">
-                                  <span className="text-4xl font-black text-white tracking-tighter drop-shadow-sm leading-none">{streaks.current}</span>
-                                  <span className="ml-1.5 text-sm font-bold text-orange-50/90">Days</span>
-                              </div>
-                          </div>
-                          <div className="flex-1 pl-6">
-                               <p className="text-orange-100 text-[10px] font-bold uppercase tracking-widest opacity-90 mb-1">Longest Streak</p>
-                              <div className="flex items-baseline">
-                                  <span className="text-4xl font-black text-white tracking-tighter drop-shadow-sm leading-none">{streaks.longest}</span>
-                                  <span className="ml-1.5 text-sm font-bold text-orange-50/90">Days</span>
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-                </header>
+                <DashboardHeader 
+                    activeProjectName={activeProjectName} 
+                    currentYear={currentYear} 
+                    activeProject={activeProject} 
+                    streaks={streaks} 
+                />
 
                 <div ref={formRef} className="w-full bg-white dark:bg-[#1c1c1e] rounded-2xl p-6 border border-gray-200 dark:border-gray-700/50 shadow-lg mb-4 relative overflow-hidden group transition-colors">
                     <form onSubmit={handleSaveLog} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
@@ -637,12 +872,19 @@ function FocusFlowContent() {
                 
                 {/* Log History Table */}
                 <div className="mb-8 w-full">
-                    <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
+                    <div className="flex flex-col lg:flex-row justify-between items-center mb-4 gap-4">
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white">Log History</h3>
                         <div className="flex gap-2">
                              <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-lg">
                                 <button onClick={() => setHistoryScope('project')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyScope === 'project' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Project</button>
                                 <button onClick={() => setHistoryScope('global')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyScope === 'global' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Global</button>
+                             </div>
+                             <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-lg">
+                                <button onClick={() => setHistoryTypeFilter('all')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'all' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>All</button>
+                                <button onClick={() => setHistoryTypeFilter('study')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'study' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Study</button>
+                                {historyScope === 'global' && (
+                                    <button onClick={() => setHistoryTypeFilter('economy')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'economy' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Economy</button>
+                                )}
                              </div>
                              <select 
                                 value={historyFilter} 
@@ -656,90 +898,21 @@ function FocusFlowContent() {
                              </select>
                         </div>
                     </div>
-
-                    <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl border border-gray-200 dark:border-gray-700/50 shadow-sm overflow-hidden">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
-                                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                                        onClick={() => {
-                                            if (historySortField === 'date') setHistorySortDesc(!historySortDesc);
-                                            else { setHistorySortField('date'); setHistorySortDesc(true); }
-                                        }}
-                                    >
-                                        <div className="flex items-center space-x-1">
-                                            <span>Date</span>
-                                            {historySortField === 'date' && <span>{historySortDesc ? '↓' : '↑'}</span>}
-                                        </div>
-                                    </th>
-                                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                                        onClick={() => {
-                                            if (historySortField === 'hours') setHistorySortDesc(!historySortDesc);
-                                            else { setHistorySortField('hours'); setHistorySortDesc(true); }
-                                        }}
-                                    >
-                                        <div className="flex items-center space-x-1">
-                                            <span>Hours</span>
-                                            {historySortField === 'hours' && <span>{historySortDesc ? '↓' : '↑'}</span>}
-                                        </div>
-                                    </th>
-                                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Notes</th>
-                                    <th className="p-4 w-10"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                                {historyLogs.length === 0 ? (
-                                    <tr><td colSpan={4} className="p-8 text-center text-gray-500 dark:text-gray-400">No logs found for this period.</td></tr>
-                                ) : (
-                                    paginatedHistoryLogs.map((log) => (
-                                        <tr key={`${log.date}-${log.projectId}`} className="group hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                            <td className="p-4 text-sm text-gray-900 dark:text-gray-200 font-medium">
-                                                {log.date}
-                                                <div className="text-xs text-gray-400 font-normal">{new Date(log.date).toLocaleDateString('en-US', { weekday: 'long' })}</div>
-                                            </td>
-                                            <td className="p-4 text-sm text-gray-900 dark:text-gray-200">
-                                                <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${log.hours >= 4 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : log.hours >= 1 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>{log.hours} hrs</span>
-                                            </td>
-                                            <td className="p-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
-                                                {log.notes || <span className="text-gray-300 dark:text-gray-600 italic">-</span>}
-                                                {historyScope === 'global' && (
-                                                    <span className="ml-2 text-[10px] text-gray-400 border border-gray-200 dark:border-gray-700 px-1 rounded">{projects.find(p => p.id === log.projectId)?.name}</span>
-                                                )}
-                                            </td>
-                                            <td className="p-4 text-right">
-                                                <button onClick={() => handleDayClick(log.date)} className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all" title="Edit">
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                        
-                        {/* Pagination Controls */}
-                        {historyLogs.length > ITEMS_PER_PAGE && (
-                            <div className="flex justify-between items-center p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
-                                <button 
-                                    onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
-                                    disabled={historyPage === 1}
-                                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                                >
-                                    Previous
-                                </button>
-                                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                                    Page {historyPage} of {Math.ceil(historyLogs.length / ITEMS_PER_PAGE)}
-                                </span>
-                                <button 
-                                    onClick={() => setHistoryPage(p => Math.min(Math.ceil(historyLogs.length / ITEMS_PER_PAGE), p + 1))}
-                                    disabled={historyPage >= Math.ceil(historyLogs.length / ITEMS_PER_PAGE)}
-                                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                                >
-                                    Next
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                    
+                    <LogHistoryTable 
+                        paginatedHistory={paginatedHistory}
+                        historySortField={historySortField}
+                        historySortDesc={historySortDesc}
+                        setHistorySortField={setHistorySortField}
+                        setHistorySortDesc={setHistorySortDesc}
+                        handleDayClick={handleDayClick}
+                        historyScope={historyScope}
+                        projects={projects}
+                        unifiedHistoryLength={unifiedHistory.length}
+                        ITEMS_PER_PAGE={ITEMS_PER_PAGE}
+                        historyPage={historyPage}
+                        setHistoryPage={setHistoryPage}
+                    />
                 </div>
               </div>
               </div>
@@ -790,6 +963,7 @@ function FocusFlowContent() {
                   allLogs={logs}
                   totalHours={totalHours}
                   streak={streaks.current}
+                  isDataLoaded={isDataLoaded}
               />
             )}
 

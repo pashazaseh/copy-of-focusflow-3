@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as storage from '../services/storageService';
-import { TimerSettings, SessionRecord, Project, MenuBarConfig } from '../types';
+import { TimerSettings, SessionRecord, Project, MenuBarConfig, Transaction } from '../types';
 import { playAlarm } from '../services/audioService';
 import { useTheme } from '../AppContext';
 
@@ -31,6 +31,10 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   const [settings, setSettings] = useState<TimerSettings>({ pomoDuration: 25, shortBreakDuration: 5, longBreakDuration: 15, pomosPerLongBreak: 4, autoStartNextPomo: false, autoStartBreak: false, quickDurations: [25, 45, 60], shortBreakPresets: [5, 10, 15] });
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [pomosCompleted, setPomosCompleted] = useState(0); 
+
+  // Wager State
+  const [wager, setWager] = useState(0);
+  const [isWagerActive, setIsWagerActive] = useState(false);
 
   // --- UI State ---
   const [showSidebar, setShowSidebar] = useState(true);
@@ -170,6 +174,24 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       endTimeRef.current = null;
       triggerAlarm();
 
+      // Handle Wager Win
+      if (isWagerActive && wager > 0) {
+          const reward = wager * 2; // 2x Multiplier
+          const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
+          localStorage.setItem('focusflow_bonus_gems', (currentBonus + reward).toString());
+          
+          addTransaction({
+              id: `wager-win-${Date.now()}`,
+              date: new Date().toISOString(),
+              type: 'WIN',
+              amount: reward,
+              description: `Focus Wager Won (2x)`
+          });
+          setIsWagerActive(false);
+          setWager(0);
+          alert(`WAGER WON! You earned ${reward} Gems!`);
+      }
+
       const now = new Date();
       const endTime = now.toISOString();
       const durationSecs = initialTime; 
@@ -222,6 +244,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       setMode(newMode);
       endTimeRef.current = null;
       startTimeRef.current = null;
+      setWager(0); // Reset wager on mode switch
       
       if (newMode === 'POMO') {
           setPhase('FOCUS');
@@ -271,6 +294,13 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       setIsActive(false);
       endTimeRef.current = null;
       startTimeRef.current = null;
+      
+      if (isWagerActive) {
+          alert("Wager Lost! You stopped the timer early.");
+          setIsWagerActive(false);
+          setWager(0);
+      }
+
       if (mode === 'POMO') {
           let duration = settings.pomoDuration * 60;
           if (phase === 'SHORT_BREAK') duration = settings.shortBreakDuration * 60;
@@ -283,7 +313,24 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       }
   };
 
-  const toggleTimer = () => setIsActive(!isActive);
+  const toggleTimer = () => {
+      if (!isActive) {
+          // Starting
+          if (wager > 0) {
+              const currentSpent = parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0;
+              localStorage.setItem('focusflow_spent_gems', (currentSpent + wager).toString());
+              addTransaction({
+                  id: `wager-start-${Date.now()}`,
+                  date: new Date().toISOString(),
+                  type: 'SPEND',
+                  amount: -wager,
+                  description: `Focus Wager Placed`
+              });
+              setIsWagerActive(true);
+          }
+      }
+      setIsActive(!isActive);
+  };
 
   const triggerAlarm = () => { 
       const savedVol = localStorage.getItem('focusflow_timer_volume');
@@ -716,6 +763,29 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
                      </button>
                  </div>
 
+                 {/* Wager Controls (Only in POMO Focus) */}
+                 {mode === 'POMO' && phase === 'FOCUS' && !isActive && (
+                     <div className={`mb-6 flex flex-col items-center animate-fade-in ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-600 dark:text-gray-300'}`}>
+                         <div className="flex items-center gap-2 mb-2">
+                             <span className="text-xs font-bold uppercase tracking-wider">Wager Gems</span>
+                             <span className="text-xs opacity-60">(Win 2x)</span>
+                         </div>
+                         <div className="flex items-center gap-2">
+                             {[0, 10, 50, 100].map(amount => (
+                                 <button
+                                     key={amount}
+                                     onClick={() => setWager(amount)}
+                                     disabled={currentGems < amount}
+                                     className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all ${wager === amount ? (isCyberpunk ? 'bg-[#00f0ff] text-black border-[#00f0ff]' : 'bg-blue-600 text-white border-blue-600') : (isCyberpunk ? 'bg-black border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-blue-400')} ${currentGems < amount ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                 >
+                                     {amount === 0 ? 'None' : amount} 💎
+                                 </button>
+                             ))}
+                         </div>
+                         {wager > 0 && <p className="text-[10px] mt-1 text-orange-500 font-bold">Risk: Lose {wager} if stopped early!</p>}
+                     </div>
+                 )}
+
                  {/* Mode/Phase Pill */}
                  <div className={`text-[10px] font-bold uppercase tracking-[0.2em] mb-6 py-2 px-5 rounded-full border ${isCyberpunk ? 'bg-black border-[#00f0ff]/50 text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.2)]' : `bg-white/50 dark:bg-black/20 ${mode === 'POMO' ? (phase === 'FOCUS' ? 'text-blue-500 border-blue-200 dark:border-blue-900/50' : 'text-green-500 border-green-200 dark:border-green-900/50') : 'text-orange-500 border-orange-200 dark:border-orange-900/50'}`}`}>
                      {mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus Time' : 'Break Time') : 'Stopwatch Mode'}
@@ -747,7 +817,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
                              <linearGradient id="stopwatchGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#FBBF24" /><stop offset="100%" stopColor="#F59E0B" /></linearGradient>
                          </defs>
                          <circle cx="50" cy="50" r={radius} className={`${isCyberpunk ? 'stroke-[#00f0ff]/10' : 'stroke-gray-100 dark:stroke-[#252527]'} transition-colors duration-300`} strokeWidth="4" fill="transparent" />
-                         <circle cx="50" cy="50" r={radius} stroke={`url(#${mode === 'POMO' ? (phase === 'FOCUS' ? 'focusGradient' : 'breakGradient') : 'stopwatchGradient'})`} strokeWidth="4" fill="transparent" strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" className={`transition-all duration-1000 ease-linear ${isActive && (isCyberpunk ? 'drop-shadow-[0_0_20px_rgba(0,240,255,0.6)]' : 'drop-shadow-[0_0_15px_rgba(59,130,246,0.4)]')}`}/>
+                         <circle cx="50" cy="50" r={radius} stroke={`url(#${mode === 'POMO' ? (phase === 'FOCUS' ? 'focusGradient' : 'breakGradient') : 'stopwatchGradient'})`} strokeWidth="4" fill="transparent" strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" className={`transition-all duration-1000 ease-linear ${isActive && (isCyberpunk ? 'drop-shadow-[0_0_20px_rgba(0,240,255,0.6)]' : 'drop-shadow-[0_0_15px_rgba(59,130,246,0.4)]')} ${isWagerActive ? 'stroke-orange-500 drop-shadow-[0_0_15px_rgba(249,115,22,0.6)]' : ''}`}/>
                      </svg>
                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                          <div className={`text-7xl md:text-8xl font-bold tracking-tight tabular-nums select-none transition-colors duration-300 ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_10px_rgba(0,240,255,0.8)]' : themeColor} drop-shadow-md`}>{formatTime(timeLeft)}</div>

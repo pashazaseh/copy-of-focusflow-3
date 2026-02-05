@@ -2,7 +2,10 @@ let audioContext: AudioContext | null = null;
 
 const getAudioContext = () => {
     if (!audioContext) {
-        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtor) {
+            audioContext = new AudioCtor();
+        }
     }
     return audioContext;
 };
@@ -10,6 +13,7 @@ const getAudioContext = () => {
 export const playTone = (freq: number, duration: number, volume: number = 0.5, type: OscillatorType = 'sine') => {
     try {
         const ctx = getAudioContext();
+        if (!ctx) return;
         if (ctx.state === 'suspended') ctx.resume();
 
         const osc = ctx.createOscillator();

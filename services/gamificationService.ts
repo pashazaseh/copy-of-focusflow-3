@@ -168,3 +168,77 @@ export const getUnlockedAchievements = (logs: StudyLog[], totalHours: number, cu
         isUnlocked: achievement.condition(logs, totalHours, currentStreak)
     }));
 };
+
+export const getDailyQuests = (logs: StudyLog[]) => {
+    const today = new Date().toISOString().split('T')[0];
+    const todaysLogs = logs.filter(l => l.date === today);
+    const todayHours = todaysLogs.reduce((acc, curr) => acc + curr.hours, 0);
+    
+    return [
+        { 
+            id: 1, 
+            title: "Focus Scholar", 
+            desc: "Study for 1 hour", 
+            target: 1, 
+            current: todayHours, 
+            icon: "📚",
+            color: "bg-blue-500",
+            reward: 25
+        },
+        { 
+            id: 2, 
+            title: "Session Master", 
+            desc: "Complete 2 sessions", 
+            target: 2, 
+            current: todaysLogs.length, 
+            icon: "⏱️",
+            color: "bg-purple-500",
+            reward: 40
+        },
+        { 
+            id: 3, 
+            title: "Streak Keeper", 
+            desc: "Extend your streak", 
+            target: 1, 
+            current: todayHours > 0 ? 1 : 0, 
+            icon: "🔥",
+            color: "bg-orange-500",
+            reward: 15
+        }
+    ];
+};
+
+export const getAchievementReward = (achievement: { id: string, title: string, description: string }) => {
+    const title = achievement.title.toLowerCase();
+    const desc = achievement.description.toLowerCase();
+    const id = achievement.id.toLowerCase();
+
+    if (title.includes('legend') || desc.includes('365-day') || id === 'rank_legend') {
+        return { gems: 5000, rarity: 'legendary', label: 'Legendary' };
+    }
+    if (title.includes('grandmaster') || title.includes('master') || desc.includes('100-day')) {
+        return { gems: 2500, rarity: 'mythic', label: 'Mythic' };
+    }
+    if (title.includes('expert') || desc.includes('30-day') || id === 'iron_mind') {
+        return { gems: 1000, rarity: 'epic', label: 'Epic' };
+    }
+    if (title.includes('journeyman') || desc.includes('14-day') || id === 'marathoner') {
+        return { gems: 500, rarity: 'rare', label: 'Rare' };
+    }
+    if (title.includes('apprentice') || desc.includes('7-day')) {
+        return { gems: 250, rarity: 'uncommon', label: 'Uncommon' };
+    }
+    return { gems: 50, rarity: 'common', label: 'Common' };
+};
+
+export const calculateTotalGems = (logs: StudyLog[], totalHours: number, streak: number, bonusGems: number, spentGems: number): number => {
+    const earningRate = 10;
+    const achievements = getUnlockedAchievements(logs, totalHours, streak);
+    const achievementGems = achievements.filter(a => a.isUnlocked).reduce((acc, curr) => acc + getAchievementReward(curr).gems, 0);
+    
+    const quests = getDailyQuests(logs);
+    const questGems = quests.filter(q => q.current >= q.target).reduce((acc, curr) => acc + curr.reward, 0);
+
+    const rawBalance = Math.floor(totalHours * earningRate) + achievementGems + questGems + bonusGems - spentGems;
+    return Math.max(0, rawBalance);
+};

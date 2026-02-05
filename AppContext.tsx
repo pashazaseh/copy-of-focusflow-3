@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Project, StudyLog, UserGoals, ViewMode, SettingsTab, SidebarConfig, MenuBarConfig, HeatmapTheme, AppTheme, CountdownItem } from './types';
+import { Project, StudyLog, UserGoals, ViewMode, SettingsTab, SidebarConfig, MenuBarConfig, HeatmapTheme, AppTheme, CountdownItem, Transaction } from './types';
 import { NAV_ITEMS_DEF } from './components/Sidebar';
 import * as storage from './services/storageService';
 
@@ -40,6 +40,9 @@ interface LogContextType {
     saveLog: (date: string, hours: number, notes?: string, projectId?: string) => void;
     deleteLog: (date: string, projectId: string) => void;
     updateGoals: (goals: UserGoals) => void;
+    transactions: Transaction[];
+    addTransaction: (transaction: Transaction) => void;
+    clearTransactions: () => void;
 }
 const LogContext = createContext<LogContextType | null>(null);
 export const useLogs = () => {
@@ -235,6 +238,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // --- Log State ---
     const [logs, setLogs] = useState<StudyLog[]>([]);
     const [goals, setGoals] = useState<UserGoals>({ daily: 4, weekly: 40, monthly: 160, yearly: 2000 });
+
+    // --- Transaction State ---
+    const [transactions, setTransactions] = useState<Transaction[]>(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const parsed = JSON.parse(localStorage.getItem('focusflow_transactions') || '[]');
+                return Array.isArray(parsed) ? parsed : [];
+            } catch { return []; }
+        }
+        return [];
+    });
+
+    const addTransaction = useCallback((t: Transaction) => {
+        setTransactions(prev => {
+            const updated = [t, ...prev];
+            localStorage.setItem('focusflow_transactions', JSON.stringify(updated));
+            return updated;
+        });
+    }, []);
+
+    const clearTransactions = useCallback(() => {
+        setTransactions([]);
+        localStorage.removeItem('focusflow_transactions');
+    }, []);
 
     const saveLog = useCallback(async (date: string, hours: number, notes?: string, projectId?: string) => {
         try {
@@ -450,7 +477,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // --- Memoized Values ---
     const themeValue = useMemo(() => ({ isDarkMode, toggleTheme, appTheme, setAppTheme: handleSetAppTheme }), [isDarkMode, toggleTheme, appTheme, handleSetAppTheme]);
     const projectValue = useMemo(() => ({ projects, currentProjectId, setCurrentProjectId, createProject, deleteProject, updateProjects }), [projects, currentProjectId, createProject, deleteProject, updateProjects]);
-    const logValue = useMemo(() => ({ logs, goals, saveLog, deleteLog, updateGoals }), [logs, goals, saveLog, deleteLog, updateGoals]);
+    const logValue = useMemo(() => ({ logs, goals, saveLog, deleteLog, updateGoals, transactions, addTransaction, clearTransactions }), [logs, goals, saveLog, deleteLog, updateGoals, transactions, addTransaction, clearTransactions]);
     const uiValue = useMemo(() => ({ currentView, setCurrentView, settingsTab, setSettingsTab, navConfig, setNavConfig, sidebarConfig, setSidebarConfig, menuBarConfig, setMenuBarConfig }), [currentView, settingsTab, navConfig, sidebarConfig, menuBarConfig, setNavConfig, setSidebarConfig, setMenuBarConfig]);
     const timerValue = useMemo(() => ({ pendingQuickTimer, setPendingQuickTimer }), [pendingQuickTimer]);
     const countdownValue = useMemo(() => ({ countdowns, saveCountdown, deleteCountdown, importCountdowns }), [countdowns, saveCountdown, deleteCountdown, importCountdowns]);

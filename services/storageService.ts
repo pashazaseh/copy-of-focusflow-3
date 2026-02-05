@@ -1,4 +1,4 @@
-import { StudyLog, UserGoals, CountdownItem, SessionRecord, TimerSettings, Project, CustomEvent, MenuBarConfig, CountdownGroup, CountdownType, SidebarConfig } from '../types';
+import { StudyLog, UserGoals, CountdownItem, SessionRecord, TimerSettings, Project, CustomEvent, MenuBarConfig, CountdownGroup, CountdownType, SidebarConfig, ShopItem } from '../types';
 
 const STORAGE_KEY = 'focusflow_logs_v1';
 const GOALS_KEY = 'focusflow_goals_v1';
@@ -11,6 +11,7 @@ const SIDEBAR_CONFIG_KEY = 'focusflow_sidebar_config_v1';
 const PROJECTS_KEY = 'focusflow_projects_v1';
 const CUSTOM_EVENTS_KEY = 'focusflow_custom_events_v1';
 const INIT_KEY = 'focusflow_initialized_v1';
+const CUSTOM_SHOP_ITEMS_KEY = 'focusflow_custom_shop_items_v1';
 const DEFAULT_PROJECT_ID = 'default-project';
 
 // --- IndexedDB Infrastructure ---
@@ -96,7 +97,7 @@ const migrateFromLocalStorage = async () => {
     console.log("Migrating from localStorage to IndexedDB...");
     const keys = [
         STORAGE_KEY, GOALS_KEY, COUNTDOWNS_KEY, COUNTDOWN_GROUPS_KEY,
-        SESSIONS_KEY, TIMER_SETTINGS_KEY, MENUBAR_CONFIG_KEY,
+        SESSIONS_KEY, TIMER_SETTINGS_KEY, MENUBAR_CONFIG_KEY, CUSTOM_SHOP_ITEMS_KEY,
         SIDEBAR_CONFIG_KEY, PROJECTS_KEY, CUSTOM_EVENTS_KEY, INIT_KEY
     ];
 
@@ -558,7 +559,23 @@ export const saveMenuBarConfig = async (config: MenuBarConfig): Promise<MenuBarC
 
 // Sidebar Configuration
 export const getSidebarConfig = async (): Promise<SidebarConfig> => {
-    return dbGet<SidebarConfig>(SIDEBAR_CONFIG_KEY, { showWeeklyGoalWidget: true });
+    return dbGet<SidebarConfig>(SIDEBAR_CONFIG_KEY, { 
+        showWeeklyGoalWidget: true,
+        showDailyGoalWidget: false,
+        showMonthlyGoalWidget: false,
+        showTimerWidget: false,
+        showCountdownWidget: false,
+        showQuestsWidget: true,
+        questsWidgetSize: 'standard',
+        widgetOrder: [
+            'showTimerWidget',
+            'showQuestsWidget',
+            'showCountdownWidget',
+            'showDailyGoalWidget',
+            'showWeeklyGoalWidget',
+            'showMonthlyGoalWidget'
+        ]
+    });
 };
 
 export const saveSidebarConfig = async (config: SidebarConfig): Promise<SidebarConfig> => {
@@ -593,6 +610,31 @@ export const deleteCustomEvent = async (id: string): Promise<CustomEvent[]> => {
     return newEvents;
 };
 
+// --- Custom Shop Items ---
+export const getCustomShopItems = async (): Promise<ShopItem[]> => {
+    return dbGet<ShopItem[]>(CUSTOM_SHOP_ITEMS_KEY, []);
+};
+
+export const saveCustomShopItem = async (item: ShopItem): Promise<ShopItem[]> => {
+    const items = await getCustomShopItems();
+    const idx = items.findIndex(i => i.id === item.id);
+    let newItems;
+    if (idx >= 0) {
+        newItems = [...items];
+        newItems[idx] = item;
+    } else {
+        newItems = [...items, item];
+    }
+    await dbSet(CUSTOM_SHOP_ITEMS_KEY, newItems);
+    return newItems;
+};
+
+export const deleteCustomShopItem = async (id: string): Promise<ShopItem[]> => {
+    const items = await getCustomShopItems();
+    const newItems = items.filter(i => i.id !== id);
+    await dbSet(CUSTOM_SHOP_ITEMS_KEY, newItems);
+    return newItems;
+};
 
 // Seed some data for visualization purposes if empty
 export const seedData = async (): Promise<StudyLog[]> => {

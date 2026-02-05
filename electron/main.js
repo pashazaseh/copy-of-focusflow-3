@@ -173,18 +173,42 @@ function showQuickTimer() {
   
   quickWin.setBounds(display.bounds);
   
-  // Send tray position to renderer for drag line origin
-  if (tray) {
+  // Calculate start point: Try tray bounds first for centering (the "ribbon" location), fallback to cursor
+  let startX = cursorPoint.x;
+  let startY = cursorPoint.y;
+
+  try {
     const bounds = tray.getBounds();
-    const x = Math.round(bounds.x + bounds.width / 2);
-    const y = Math.round(bounds.y + bounds.height / 2);
-    const localX = x - display.bounds.x;
-    const localY = y - display.bounds.y;
+    // Ensure bounds are valid and reasonably close to the cursor (to avoid phantom coordinates)
+    if (bounds && bounds.width > 0 && bounds.x > 0 && Math.abs(bounds.x - cursorPoint.x) < 300) {
+      startX = Math.round(bounds.x + bounds.width / 2);
+      startY = Math.round(bounds.y + bounds.height / 2);
+    }
+  } catch (e) { /* Ignore and use cursor */ }
+
+  const localX = startX - display.bounds.x;
+  const localY = startY - display.bounds.y;
     
-    quickWin.webContents.executeJavaScript(`
-      window.dispatchEvent(new CustomEvent('tray-position', { detail: { x: ${localX}, y: ${localY} } }));
-    `).catch(() => {});
-  }
+  quickWin.webContents.executeJavaScript(`
+    window.dispatchEvent(new CustomEvent('tray-position', { detail: { x: ${localX}, y: ${localY} } }));
+
+    if (window.quickTimerAutoClose) clearTimeout(window.quickTimerAutoClose);
+    if (window.clearAutoCloseTimer) {
+        window.removeEventListener('mousedown', window.clearAutoCloseTimer);
+        window.removeEventListener('touchstart', window.clearAutoCloseTimer);
+    }
+
+    window.clearAutoCloseTimer = () => {
+        if (window.quickTimerAutoClose) clearTimeout(window.quickTimerAutoClose);
+    };
+
+    window.quickTimerAutoClose = setTimeout(() => {
+        if (window.electronAPI) window.electronAPI.cancelQuickTimer();
+    }, 4000);
+
+    window.addEventListener('mousedown', window.clearAutoCloseTimer, { once: true });
+    window.addEventListener('touchstart', window.clearAutoCloseTimer, { once: true });
+  `).catch(() => {});
 
   quickWin.show();
   quickWin.focus();

@@ -1,8 +1,8 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import * as storage from '../services/storageService';
 import { StoredNavConfig, NAV_ITEMS_DEF } from './Sidebar';
-import { TimerSettings, CountdownItem, MenuBarConfig, MenuBarMode, Project, HeatmapTheme, SidebarConfig, SettingsTab, AppTheme } from '../types';
-import { useCountdowns } from '../AppContext';
+import { TimerSettings, CountdownItem, MenuBarConfig, MenuBarMode, Project, HeatmapTheme, SidebarConfig, SettingsTab, AppTheme, WidgetSize } from '../types';
+import { useCountdowns, useLogs } from '../AppContext';
 import { playAlarm } from '../services/audioService';
 
 interface SettingsPanelProps {
@@ -43,8 +43,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setAppTheme
 }) => {
     const { countdowns, importCountdowns } = useCountdowns();
+    const { clearTransactions } = useLogs();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+    const [draggingWidgetIndex, setDraggingWidgetIndex] = useState<number | null>(null);
     const [copyStatus, setCopyStatus] = useState<string>('');
     const [isSafetyLocked, setIsSafetyLocked] = useState(true);
     const isCyberpunk = appTheme === 'cyberpunk';
@@ -517,6 +519,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         }
     };
 
+    const handleClearTransactions = () => {
+        if (confirm("Are you sure you want to clear your transaction history? Your current gem balance will remain, but the log of earnings and spending will be wiped.")) {
+            clearTransactions();
+            alert("Transaction history cleared.");
+        }
+    };
+
     const handleFactoryReset = async () => {
         if (confirm("DANGER: This will delete ALL your data, logs, projects, and settings. This action cannot be undone.\n\nType 'DELETE' to confirm.")) {
             const check = prompt("Type 'DELETE' to confirm factory reset:");
@@ -765,6 +774,30 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       setDraggingIndex(null);
     };
 
+    const handleWidgetDragStart = (e: React.DragEvent, index: number) => {
+        setDraggingWidgetIndex(index);
+        e.dataTransfer.effectAllowed = "move";
+    };
+
+    const handleWidgetDragOver = (e: React.DragEvent, index: number) => {
+        e.preventDefault();
+        if (draggingWidgetIndex === null || draggingWidgetIndex === index) return;
+
+        const currentOrder = sidebarConfig.widgetOrder || [
+            'showTimerWidget', 'showQuestsWidget', 'showCountdownWidget', 
+            'showDailyGoalWidget', 'showWeeklyGoalWidget', 'showMonthlyGoalWidget'
+        ];
+        const newOrder = [...currentOrder];
+        const draggedItem = newOrder[draggingWidgetIndex];
+        newOrder.splice(draggingWidgetIndex, 1);
+        newOrder.splice(index, 0, draggedItem);
+
+        onUpdateSidebarConfig({ ...sidebarConfig, widgetOrder: newOrder });
+        setDraggingWidgetIndex(index);
+    };
+
+    const handleWidgetDragEnd = () => setDraggingWidgetIndex(null);
+
     const toggleVisibility = (index: number) => {
       const newConfig = [...navConfig];
       newConfig[index].isVisible = !newConfig[index].isVisible;
@@ -858,16 +891,62 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                     <div className="space-y-4">
                                         {/* Sidebar Widgets */}
                                         <div className={`flex justify-between items-center p-3 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-700/50'}`}>
-                                            <div>
-                                                <p className={`font-semibold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Weekly Goal Widget</p>
-                                                <p className="text-xs text-gray-500 dark:text-gray-400">Show weekly progress at sidebar bottom</p>
+                                            <div className="w-full space-y-3">
+                                                <p className={`font-semibold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Sidebar Widgets</p>
+                                                
+                                                {/* Widget Toggles */}
+                                                <div className="space-y-2">
+                                                    {(sidebarConfig.widgetOrder || [
+                                                        'showTimerWidget', 'showQuestsWidget', 'showCountdownWidget', 
+                                                        'showDailyGoalWidget', 'showWeeklyGoalWidget', 'showMonthlyGoalWidget'
+                                                    ]).map((widgetKey, index) => {
+                                                        const labels: Record<string, string> = {
+                                                            showQuestsWidget: 'Daily Quests',
+                                                            showTimerWidget: 'Quick Timer',
+                                                            showCountdownWidget: 'Closest Countdown',
+                                                            showDailyGoalWidget: 'Daily Goal',
+                                                            showWeeklyGoalWidget: 'Weekly Goal',
+                                                            showMonthlyGoalWidget: 'Monthly Goal'
+                                                        };
+                                                        return (
+                                                            <div key={widgetKey} draggable onDragStart={(e) => handleWidgetDragStart(e, index)} onDragOver={(e) => handleWidgetDragOver(e, index)} onDragEnd={handleWidgetDragEnd} className={`flex justify-between items-center p-2 rounded-lg border cursor-move transition-all ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-[#252527] border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500'} ${draggingWidgetIndex === index ? 'opacity-50' : ''}`}>
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="text-gray-400 cursor-move"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></div>
+                                                                    <span className="text-sm text-gray-600 dark:text-gray-300">{labels[widgetKey]}</span>
+                                                                </div>
+                                                                <button 
+                                                                    onClick={() => onUpdateSidebarConfig({ ...sidebarConfig, [widgetKey]: !sidebarConfig[widgetKey as keyof SidebarConfig] })}
+                                                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${sidebarConfig[widgetKey as keyof SidebarConfig] ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                                                                >
+                                                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${sidebarConfig[widgetKey as keyof SidebarConfig] ? 'translate-x-4.5' : 'translate-x-1'}`} />
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                {/* Quest Widget Size */}
+                                                {sidebarConfig.showQuestsWidget && (
+                                                    <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Quest Widget Size</label>
+                                                        <div className="flex gap-2">
+                                                            {(['compact', 'standard', 'spacious'] as WidgetSize[]).map(size => (
+                                                                <button
+                                                                    key={size}
+                                                                    onClick={() => onUpdateSidebarConfig({ ...sidebarConfig, questsWidgetSize: size })}
+                                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all capitalize ${
+                                                                        sidebarConfig.questsWidgetSize === size
+                                                                        ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300')
+                                                                        : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800')
+                                                                    }`}
+                                                                >
+                                                                    {size}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <button 
-                                                onClick={() => onUpdateSidebarConfig({ ...sidebarConfig, showWeeklyGoalWidget: !sidebarConfig.showWeeklyGoalWidget })}
-                                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${sidebarConfig.showWeeklyGoalWidget ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'}`}
-                                            >
-                                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${sidebarConfig.showWeeklyGoalWidget ? 'translate-x-6' : 'translate-x-1'}`} />
-                                            </button>
                                         </div>
 
                                         <div className="w-full h-px bg-gray-100 dark:bg-gray-700"></div>
@@ -1463,6 +1542,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                             }`}
                                         >
                                             Clear Countdown
+                                        </button>
+                                        <button 
+                                            onClick={handleClearTransactions}
+                                            disabled={isSafetyLocked}
+                                            className={`px-4 py-3 rounded-lg text-xs font-bold shadow-sm transition-all text-center ${
+                                                isSafetyLocked 
+                                                ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-70' 
+                                                : 'bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-100 dark:border-red-800'
+                                            }`}
+                                        >
+                                            Reset History
                                         </button>
                                         <button 
                                             onClick={handleFactoryReset}

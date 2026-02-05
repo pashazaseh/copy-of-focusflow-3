@@ -1,12 +1,15 @@
-
-import React, { useState, useRef, useEffect } from 'react';
-import { ViewMode, Project, HeatmapTheme, SidebarConfig, AppTheme, Achievement } from '../types';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { ViewMode, Project, HeatmapTheme, SidebarConfig, AppTheme, Achievement, StudyLog, UserGoals } from '../types';
+import { getDailyQuests } from '../services/gamificationService';
+import { useTimerContext, useCountdowns } from '../AppContext';
 
 interface SidebarProps {
   currentView: ViewMode;
   onChangeView: (view: ViewMode) => void;
   weeklyGoal: number;
   currentWeeklyHours: number;
+  currentDailyHours: number;
+  currentMonthlyHours: number;
   projects: Project[];
   currentProjectId: string;
   onSelectProject: (id: string) => void;
@@ -17,6 +20,8 @@ interface SidebarProps {
   sidebarConfig: SidebarConfig;
   appTheme: AppTheme;
   latestBadge?: Achievement | null;
+  logs?: StudyLog[];
+  goals: UserGoals;
 }
 
 // Configuration structure for navigation items
@@ -137,12 +142,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onManageProjects,
     sidebarConfig,
     appTheme,
-    latestBadge
+    latestBadge,
+    logs = [],
+    goals,
+    currentDailyHours,
+    currentMonthlyHours
 }) => {
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectTheme, setNewProjectTheme] = useState<HeatmapTheme>('green');
+  const { setPendingQuickTimer } = useTimerContext();
+  const { countdowns } = useCountdowns();
   
   const menuRef = useRef<HTMLDivElement>(null);
   
@@ -154,7 +165,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     createdAt: ''
   };
 
-  const progressPercent = Math.min(100, (currentWeeklyHours / weeklyGoal) * 100);
+  const weeklyProgress = Math.min(100, (currentWeeklyHours / weeklyGoal) * 100);
+  const dailyProgress = Math.min(100, (currentDailyHours / (goals.daily || 4)) * 100);
+  const monthlyProgress = Math.min(100, (currentMonthlyHours / (goals.monthly || 160)) * 100);
+
+  // --- Daily Quests Logic (Mirrored from GamificationPanel) ---
+  const quests = useMemo(() => getDailyQuests(logs), [logs]);
 
   // Filter projects for dropdown
   const activeProjects = projects.filter(p => !p.isArchived);
@@ -177,6 +193,115 @@ export const Sidebar: React.FC<SidebarProps> = ({
           setNewProjectName('');
           setIsCreating(false);
           setIsProjectMenuOpen(false);
+      }
+  };
+
+  const getClosestCountdown = () => {
+      const now = new Date();
+      now.setHours(0,0,0,0);
+      const sorted = countdowns
+          .filter(c => !c.isArchived)
+          .map(c => {
+              const target = new Date(c.date);
+              return { ...c, diff: target.getTime() - now.getTime() };
+          })
+          .filter(c => c.diff >= 0)
+          .sort((a, b) => a.diff - b.diff);
+      return sorted[0];
+  };
+
+  const renderGoalWidget = (period: string, current: number, target: number, key: string) => {
+      const progress = Math.min(100, (current / target) * 100);
+      return (
+          <div key={key} className={`w-full mb-4 rounded-xl p-4 border shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-blue-50 dark:bg-gray-800 border-blue-100 dark:border-gray-700'}`}>
+              <div className="flex justify-between items-end mb-2">
+                  <p className={`text-xs font-semibold ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-blue-600 dark:text-blue-400'}`}>{period} Goal</p>
+                  <p className={`text-xs text-right ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/80' : 'text-blue-500 dark:text-blue-400'}`}>{current.toFixed(1)} / {target} hrs</p>
+              </div>
+              <div className={`w-full rounded-full h-2 mb-1 overflow-hidden ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/20' : 'bg-blue-200 dark:bg-gray-700'}`}>
+                <div 
+                    className={`h-2 rounded-full transition-all duration-500 ease-out ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff] shadow-[0_0_5px_rgba(0,240,255,0.5)]' : 'bg-blue-500 dark:bg-blue-400'}`} 
+                    style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+          </div>
+      );
+  };
+
+  const renderWidget = (key: string) => {
+      switch (key) {
+          case 'showQuestsWidget':
+              return (
+                <button 
+                    key="quests"
+                    onClick={() => onChangeView(ViewMode.GAMIFICATION)}
+                    className={`w-full mb-4 p-4 rounded-2xl border shadow-sm text-left transition-all group ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff] hover:shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'}`}
+                >
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                            <span className="text-lg">🎯</span>
+                            <p className={`text-xs font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-gray-200'}`}>Daily Quests</p>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'}`}>
+                            {quests.filter(q => q.current >= q.target).length}/{quests.length}
+                        </span>
+                    </div>
+                    
+                    <div className="space-y-3">
+                        {quests.map(quest => {
+                            const progress = Math.min(100, (quest.current / quest.target) * 100);
+                            const isCompleted = progress >= 100;
+                            
+                            return (
+                                <div key={quest.id} className="relative" title={`Reward: ${quest.reward} Gems`}>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className={`text-[10px] font-medium truncate max-w-[120px] ${isCompleted ? (appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-green-600 dark:text-green-400') : (appTheme === 'cyberpunk' ? 'text-[#00f0ff]/80' : 'text-gray-600 dark:text-gray-400')}`}>
+                                            {quest.title}
+                                        </span>
+                                        <span className={`text-[9px] font-mono ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-400'}`}>
+                                            {quest.current}/{quest.target}
+                                        </span>
+                                    </div>
+                                    <div className={`h-1.5 w-full rounded-full overflow-hidden ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10' : 'bg-gray-100 dark:bg-gray-700'}`}>
+                                        <div 
+                                            className={`h-full rounded-full transition-all duration-500 ${isCompleted ? (appTheme === 'cyberpunk' ? 'bg-[#00f0ff] shadow-[0_0_5px_rgba(0,240,255,0.8)]' : 'bg-green-500') : (appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/50' : 'bg-blue-500')}`} 
+                                            style={{ width: `${progress}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    
+                    <div className={`mt-3 text-[10px] text-center font-medium transition-colors ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/40 group-hover:text-[#00f0ff]/80' : 'text-gray-400 group-hover:text-blue-500'}`}>
+                        Click to view rewards
+                    </div>
+                </button>
+              );
+          case 'showWeeklyGoalWidget': return renderGoalWidget('Weekly', currentWeeklyHours, weeklyGoal, 'weekly');
+          case 'showDailyGoalWidget': return renderGoalWidget('Daily', currentDailyHours, goals.daily || 4, 'daily');
+          case 'showMonthlyGoalWidget': return renderGoalWidget('Monthly', currentMonthlyHours, goals.monthly || 160, 'monthly');
+          case 'showCountdownWidget':
+              const closest = getClosestCountdown();
+              if (!closest) return null;
+              const days = Math.ceil(closest.diff / (1000 * 60 * 60 * 24));
+              return (
+                  <button key="countdown" onClick={() => onChangeView(ViewMode.COUNTDOWN)} className={`w-full mb-4 p-4 rounded-xl border shadow-sm text-left transition-all group ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'}`}>
+                      <div className="flex justify-between items-center mb-1">
+                          <span className={`text-xs font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Upcoming</span>
+                          <span className={`text-xs font-bold ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-blue-600 dark:text-blue-400'}`}>{days} Days</span>
+                      </div>
+                      <div className={`font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{closest.title}</div>
+                  </button>
+              );
+          case 'showTimerWidget':
+              return (
+                  <div key="timer" className={`w-full mb-4 p-4 rounded-xl border shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                      <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Quick Focus</p>
+                      <div className="flex gap-2">{[25, 45, 60].map(min => (<button key={min} onClick={() => { setPendingQuickTimer({ duration: min, timestamp: Date.now() }); onChangeView(ViewMode.TIMER); }} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20 border border-[#00f0ff]/30' : 'bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40'}`}>{min}m</button>))}</div>
+                  </div>
+              );
+          default: return null;
       }
   };
 
@@ -341,22 +466,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
       )}
 
-      {sidebarConfig.showWeeklyGoalWidget && (
-          <div className={`pt-4 mt-4 border-t ${appTheme === 'cyberpunk' ? 'border-[#00f0ff]/20' : 'border-gray-200 dark:border-gray-700'}`}>
-            <div className={`rounded-xl p-4 border shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-blue-50 dark:bg-gray-800 border-blue-100 dark:border-gray-700'}`}>
-              <div className="flex justify-between items-end mb-2">
-                  <p className={`text-xs font-semibold ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-blue-600 dark:text-blue-400'}`}>Weekly Goal</p>
-                  <p className={`text-xs text-right ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/80' : 'text-blue-500 dark:text-blue-400'}`}>{currentWeeklyHours.toFixed(1)} / {weeklyGoal} hrs</p>
-              </div>
-              <div className={`w-full rounded-full h-2 mb-1 overflow-hidden ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/20' : 'bg-blue-200 dark:bg-gray-700'}`}>
-                <div 
-                    className={`h-2 rounded-full transition-all duration-500 ease-out ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff] shadow-[0_0_5px_rgba(0,240,255,0.5)]' : 'bg-blue-500 dark:bg-blue-400'}`} 
-                    style={{ width: `${progressPercent}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
-      )}
+      {/* Widget Area */}
+      <div className={`mt-4 px-1 pt-4 border-t ${appTheme === 'cyberpunk' ? 'border-[#00f0ff]/20' : 'border-gray-200 dark:border-gray-700'}`}>
+          {(sidebarConfig.widgetOrder || [
+              'showTimerWidget', 'showQuestsWidget', 'showCountdownWidget', 
+              'showDailyGoalWidget', 'showWeeklyGoalWidget', 'showMonthlyGoalWidget'
+          ]).map(key => {
+              if (!sidebarConfig[key as keyof SidebarConfig]) return null;
+              return renderWidget(key);
+          })}
+      </div>
     </div>
   );
 };

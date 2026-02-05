@@ -15,7 +15,7 @@ interface HeatmapProps {
 type Density = 'compact' | 'standard' | 'spacious';
 type LayoutType = 'vertical' | 'horizontal' | 'frequency';
 
-export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDarkMode, theme, onThemeChange }) => {
+export const Heatmap: React.FC<HeatmapProps> = React.memo(({ data, year, onDayClick, isDarkMode, theme, onThemeChange }) => {
   const { appTheme } = useTheme();
   const isCyberpunk = appTheme === 'cyberpunk';
   const [tooltip, setTooltip] = useState<{ x: number; y: number; content: React.ReactNode } | null>(null);
@@ -322,7 +322,6 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
 
           {cells.map((cell) => {
               const cellProps = {
-                  key: cell.dateStr,
                   className: "cursor-pointer transition-opacity duration-200 hover:opacity-80",
                   onClick: () => onDayClick(cell.dateStr),
                   onMouseEnter: (e: React.MouseEvent) => {
@@ -372,6 +371,7 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
               } else {
                   return (
                       <rect
+                          key={cell.dateStr}
                           x={cell.x}
                           y={cell.y}
                           width={cell.width}
@@ -511,4 +511,4 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, year, onDayClick, isDark
         </div>
     </div>
   );
-};
+});

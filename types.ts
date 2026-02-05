@@ -104,8 +104,17 @@ export interface MenuBarConfig {
     customCountdownId?: string;
 }
 
+export type WidgetSize = 'compact' | 'standard' | 'spacious';
+
 export interface SidebarConfig {
     showWeeklyGoalWidget: boolean;
+    showDailyGoalWidget: boolean;
+    showMonthlyGoalWidget: boolean;
+    showTimerWidget: boolean;
+    showCountdownWidget: boolean;
+    showQuestsWidget: boolean;
+    questsWidgetSize: WidgetSize;
+    widgetOrder: string[];
 }
 
 export type SettingsTab = 'general' | 'timer' | 'projects' | 'integrations' | 'data';
@@ -149,6 +158,27 @@ export interface UserRank {
   title: string;
   minHours: number;
   color: string;
+}
+
+export interface Transaction {
+    id: string;
+    date: string;
+    type: 'EARN' | 'SPEND' | 'UNLOCK' | 'WIN';
+    amount: number;
+    description: string;
+    relatedId?: string;
+}
+
+export interface ShopItem {
+    id: string;
+    name: string;
+    icon: string;
+    cost: number;
+    desc: string;
+    type: string;
+    category: string;
+    expiryDate?: string;
+    isCustom?: boolean;
 }
 
 // Electron Interface

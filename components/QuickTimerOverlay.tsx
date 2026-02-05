@@ -142,11 +142,27 @@ export const QuickTimerOverlay: React.FC = () => {
                 </svg>
             )}
 
+            {/* Ripple Effect around Tray Icon */}
+            {!isDragging && trayPos && (
+                <div 
+                    className="absolute pointer-events-none"
+                    style={{
+                        top: trayPos.y,
+                        left: trayPos.x,
+                        transform: 'translate(-50%, -50%)',
+                        zIndex: 40
+                    }}
+                >
+                    <div className="absolute inset-0 w-8 h-8 -ml-4 -mt-4 bg-blue-500/40 rounded-full animate-ping"></div>
+                    <div className="absolute inset-0 w-24 h-24 -ml-12 -mt-12 border-2 border-blue-400/30 rounded-full animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
+                </div>
+            )}
+
             {!isDragging && (
                 <div 
                     className="absolute pointer-events-none flex justify-center"
                     style={{
-                        top: trayPos ? (trayPos.y + 15) : 10,
+                        top: trayPos ? (trayPos.y + 25) : 10,
                         left: trayPos ? trayPos.x : '50%',
                         transform: 'translateX(-50%)',
                         zIndex: 50
