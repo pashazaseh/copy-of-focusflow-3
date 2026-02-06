@@ -7,6 +7,8 @@ export interface Project {
   isArchived?: boolean;
   sortOrder?: number;
   weeklyGoal?: number; // Overrides global weekly goal if set
+  goals?: UserGoals; // Project specific goals
+  goalHistory?: { date: string; goals: UserGoals }[]; // Project specific goal history
 }
 
 export interface StudyLog {

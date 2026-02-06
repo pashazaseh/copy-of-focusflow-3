@@ -103,11 +103,11 @@ export const QuickTimerOverlay: React.FC = () => {
                     </defs>
 
                     {/* Anchor Point */}
-                    <circle cx={startPoint.x} cy="0" r="4" fill="#2563EB" />
+                    <circle cx={startPoint.x} cy={startPoint.y} r="4" fill="#2563EB" />
 
                     {/* The Cord (Straight Line for tension) */}
                     <line 
-                        x1={startPoint.x} y1="0" 
+                        x1={startPoint.x} y1={startPoint.y} 
                         x2={cursor.x} y2={cursor.y}
                         stroke="url(#cordGradient)"
                         strokeWidth="3"

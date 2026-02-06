@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppTheme } from '../types';
 
 interface MacWindowProps {
@@ -11,7 +11,24 @@ interface MacWindowProps {
 }
 
 export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMode, onToggleTheme, appTheme = 'default' }) => {
-  const [isElectron] = useState(() => typeof window !== 'undefined' && !!window.electronAPI);
+  const [isElectron, setIsElectron] = useState(false);
+  const [platform, setPlatform] = useState('');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.electronAPI) {
+        setIsElectron(true);
+        setPlatform(window.electronAPI.platform || '');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isElectron && platform === 'win32') {
+        (window as any).electronAPI?.updateTitleBarOverlay({
+            symbolColor: isDarkMode ? '#9ca3af' : '#4b5563',
+            color: '#00000000'
+        });
+    }
+  }, [isDarkMode, isElectron, platform]);
 
   const handleClose = () => window.electronAPI?.close();
   const handleMinimize = () => window.electronAPI?.minimize();
@@ -39,7 +56,7 @@ export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMod
     <div className={containerClass}>
       {/* Window Title Bar */}
       <div 
-        className={`h-10 border-b flex items-center justify-between px-4 shrink-0 select-none transition-colors duration-300 ${headerClass}`}
+        className={`h-10 border-b flex items-center justify-between px-4 shrink-0 select-none transition-colors duration-300 ${headerClass} ${isElectron && platform === 'win32' ? 'pr-[140px]' : ''}`}
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <div 
@@ -48,7 +65,7 @@ export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMod
         >
           {/* Use Native Traffic Lights in Electron, Custom in Web */}
           {isElectron ? (
-             <div className="w-16 h-4" /> // Spacer for native controls
+             platform === 'darwin' ? <div className="w-16 h-4" /> : null
           ) : (
              <>
               <button onClick={handleClose} className="w-3 h-3 rounded-full bg-red-500 border border-red-600/20 group-hover:bg-red-600 transition-colors shadow-sm cursor-pointer flex items-center justify-center">

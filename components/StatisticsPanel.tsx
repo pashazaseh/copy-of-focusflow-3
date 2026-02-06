@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import { getSessions } from '../services/storageService';
 import { useTheme } from '../AppContext';
+import { Heatmap } from './Heatmap';
 
 interface StatisticsPanelProps {
   logs: StudyLog[];
@@ -29,7 +30,7 @@ const DEFAULT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '
 const CYBERPUNK_COLORS = ['#00f0ff', '#ff00ff', '#00ff00', '#ffff00', '#ff0099', '#9900ff', '#0099ff'];
 
 export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs, projects, goals, onUpdateGoals, onEditLog, projectId, goalHistory = [] }) => {
-  const { appTheme } = useTheme();
+  const { appTheme, isDarkMode } = useTheme();
   const isCyberpunk = appTheme === 'cyberpunk';
   const COLORS = isCyberpunk ? CYBERPUNK_COLORS : DEFAULT_COLORS;
 
@@ -53,6 +54,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
   const [sortDesc, setSortDesc] = useState(true);
   const [showChartSettings, setShowChartSettings] = useState(false);
   const [goalPeriod, setGoalPeriod] = useState<GoalPeriod>('daily');
+  const [showHeatmapComparison, setShowHeatmapComparison] = useState(false);
   
   // Session Data for Scatter Plot
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
@@ -248,6 +250,23 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
       return { totalHours, avgHours, avgWeekday, avgWeekend, trend };
   }, [filteredLogs, targetLogs, filterRange]);
 
+  // Productivity Pulse
+  const productivityPulse = useMemo(() => {
+      const buckets = { Morning: 0, Afternoon: 0, Evening: 0, Night: 0 };
+      sessions.forEach(s => {
+          const hour = new Date(s.startTime).getHours();
+          const duration = s.duration;
+          if (hour >= 5 && hour < 12) buckets.Morning += duration;
+          else if (hour >= 12 && hour < 17) buckets.Afternoon += duration;
+          else if (hour >= 17 && hour < 22) buckets.Evening += duration;
+          else buckets.Night += duration;
+      });
+      const total = Object.values(buckets).reduce((a, b) => a + b, 0);
+      if (total === 0) return null;
+      const maxKey = Object.keys(buckets).reduce((a, b) => buckets[a as keyof typeof buckets] > buckets[b as keyof typeof buckets] ? a : b);
+      return { timeOfDay: maxKey, percent: Math.round((buckets[maxKey as keyof typeof buckets] / total) * 100) };
+  }, [sessions]);
+
   // Helper to get goal for a specific date from history
   const getGoalForDate = (date: Date) => {
       if (!goalHistory || goalHistory.length === 0) return goals;
@@ -333,6 +352,60 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
   }, [targetLogs, goalPeriod, goals, goalHistory]);
 
   const weekDayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  const handleExportReport = () => {
+      const now = new Date();
+      const reportWindow = window.open('', '_blank');
+      if (!reportWindow) return;
+
+      const html = `
+        <html>
+          <head>
+            <title>FocusFlow Report</title>
+            <style>
+              body { font-family: system-ui, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; color: #1f2937; }
+              h1 { border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; margin-bottom: 20px; }
+              .meta { color: #6b7280; margin-bottom: 30px; }
+              .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 40px; }
+              .card { background: #f9fafb; padding: 20px; border-radius: 8px; border: 1px solid #e5e7eb; }
+              .val { font-size: 24px; font-weight: bold; color: #111827; }
+              .label { color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th { text-align: left; padding: 12px; background: #f3f4f6; border-bottom: 2px solid #e5e7eb; font-size: 14px; }
+              td { padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
+              @media print { body { padding: 0; } .no-print { display: none; } }
+            </style>
+          </head>
+          <body>
+            <h1>Activity Report</h1>
+            <div class="meta">Generated on ${now.toLocaleDateString()} • Scope: ${scope.toUpperCase()}</div>
+            
+            <div class="grid">
+              <div class="card"><div class="label">Total Hours</div><div class="val">${stats.totalHours.toFixed(1)}h</div></div>
+              <div class="card"><div class="label">Daily Average</div><div class="val">${stats.avgHours.toFixed(1)}h</div></div>
+              <div class="card"><div class="label">Sessions</div><div class="val">${sessions.length}</div></div>
+            </div>
+
+            <h2>Project Breakdown</h2>
+            <table>
+              <thead><tr><th>Project</th><th>Hours</th><th>%</th></tr></thead>
+              <tbody>
+                ${projectDistData.map(p => `
+                  <tr>
+                    <td>${p.name}</td>
+                    <td>${p.value.toFixed(1)}</td>
+                    <td>${((p.value / stats.totalHours) * 100).toFixed(1)}%</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <script>window.print();</script>
+          </body>
+        </html>
+      `;
+      reportWindow.document.write(html);
+      reportWindow.document.close();
+  };
   
   const renderChart = () => {
     const commonProps = {
@@ -468,6 +541,14 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                             </button>
                         ))}
                     </div>
+
+                    <button 
+                        onClick={handleExportReport}
+                        className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-gray-900 text-white hover:bg-black dark:bg-white dark:text-gray-900'}`}
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        Export
+                    </button>
                 </div>
             </div>
 
@@ -506,6 +587,14 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                         <span className="ml-1 text-sm text-purple-400/70 font-medium">hrs</span>
                     </div>
                 </div>
+                {productivityPulse && (
+                    <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-5 rounded-2xl border shadow-sm flex flex-col`}>
+                        <p className="text-[10px] text-green-500 dark:text-green-400 font-bold uppercase tracking-wider mb-2">Productivity Pulse</p>
+                        <div className="flex flex-col mt-auto">
+                            <p className={`text-xl font-bold tracking-tight ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{productivityPulse.percent}% in {productivityPulse.timeOfDay}</p>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Goal Adherence Chart */}
@@ -707,6 +796,32 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                         <p className="text-sm text-gray-500">Project Split is available in Global View</p>
                     </div>
                 )}
+            </div>
+
+            {/* Heatmap Comparison */}
+            <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-6 rounded-2xl border shadow-sm`}>
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className={`font-bold text-lg ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Yearly Comparison</h3>
+                    <button 
+                        onClick={() => setShowHeatmapComparison(!showHeatmapComparison)}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${showHeatmapComparison ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400')}`}
+                    >
+                        {showHeatmapComparison ? 'Hide Comparison' : 'Compare Years'}
+                    </button>
+                </div>
+                
+                <div className="space-y-8">
+                    <div>
+                        <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">{new Date().getFullYear()}</p>
+                        <Heatmap data={targetLogs} year={new Date().getFullYear()} onDayClick={onEditLog} isDarkMode={isDarkMode} theme="green" onThemeChange={() => {}} />
+                    </div>
+                    {showHeatmapComparison && (
+                        <div className="animate-fade-in-down">
+                            <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">{new Date().getFullYear() - 1}</p>
+                            <Heatmap data={targetLogs} year={new Date().getFullYear() - 1} onDayClick={onEditLog} isDarkMode={isDarkMode} theme="blue" onThemeChange={() => {}} />
+                        </div>
+                    )}
+                </div>
             </div>
 
         </div>

@@ -49,6 +49,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const [draggingWidgetIndex, setDraggingWidgetIndex] = useState<number | null>(null);
     const [copyStatus, setCopyStatus] = useState<string>('');
     const [isSafetyLocked, setIsSafetyLocked] = useState(true);
+    const [openAtLogin, setOpenAtLogin] = useState(false);
     const isCyberpunk = appTheme === 'cyberpunk';
 
     // Project Manager State
@@ -107,13 +108,66 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const googleActionRef = useRef<'calendar' | 'drive' | 'login' | 'restore'>('none');
     const [tokenClient, setTokenClient] = useState<any>(null);
 
+    // iCloud Integration State
+    const [cloudKitContainerId, setCloudKitContainerId] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('cloudkit_container_id') || '';
+        return '';
+    });
+    const [cloudKitApiToken, setCloudKitApiToken] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('cloudkit_api_token') || '';
+        return '';
+    });
+    const [isICloudLoggedIn, setIsICloudLoggedIn] = useState(false);
+    const [isUploadingICloud, setIsUploadingICloud] = useState(false);
+    const [isSyncingAll, setIsSyncingAll] = useState(false);
+
+    // Local/Folder Backup State
+    const [backupPath, setBackupPath] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_backup_path') || '';
+        return '';
+    });
+    const [autoObsidianSync, setAutoObsidianSync] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_auto_obsidian_sync') === 'true';
+        return false;
+    });
+    const [obsidianMode, setObsidianMode] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_obsidian_mode') || 'dashboard';
+        return 'dashboard';
+    });
+    const [obsidianTemplate, setObsidianTemplate] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_obsidian_template') || '- [x] {time} - **{label}** ({duration}m) [{project}] #focusflow';
+        return '- [x] {time} - **{label}** ({duration}m) [{project}] #focusflow';
+    });
+    const [obsidianHeader, setObsidianHeader] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_obsidian_header') || '';
+        return '';
+    });
+    const [obsidianPosition, setObsidianPosition] = useState<'append' | 'prepend'>(() => {
+        if (typeof window !== 'undefined') return (localStorage.getItem('focusflow_obsidian_position') as 'append' | 'prepend') || 'append';
+        return 'append';
+    });
+    const [obsidianDateFormat, setObsidianDateFormat] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_obsidian_date_format') || 'YYYY-MM-DD';
+        return 'YYYY-MM-DD';
+    });
+
     // Inventory State for Themes
     const [inventory, setInventory] = useState<Record<string, any>>({});
+
+    const isMounted = useRef(true);
+    useEffect(() => {
+        isMounted.current = true;
+        return () => { isMounted.current = false; };
+    }, []);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
             try {
                 setInventory(JSON.parse(localStorage.getItem('focusflow_inventory') || '{}'));
+                // Check startup status
+                if ((window as any).electronAPI?.getOpenAtLogin) {
+                    (window as any).electronAPI.getOpenAtLogin().then(setOpenAtLogin);
+                }
             } catch {}
         }
     }, []);
@@ -138,7 +192,127 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         } else if (googleClientId) {
             initTokenClient(googleClientId);
         }
-    }, [googleClientId]);
+
+        // Load CloudKit
+        if (typeof (window as any).CloudKit === 'undefined') {
+            if (navigator.onLine) {
+                const ckScript = document.createElement('script');
+                ckScript.src = 'https://cdn.apple-cloudkit.com/ck/2/cloudkit.js';
+                ckScript.async = true;
+                ckScript.onload = () => {
+                    if (cloudKitContainerId && cloudKitApiToken) initCloudKit();
+                };
+                document.body.appendChild(ckScript);
+            }
+        } else if (cloudKitContainerId && cloudKitApiToken) {
+            initCloudKit();
+        }
+    }, [googleClientId, cloudKitContainerId, cloudKitApiToken]);
+
+    const initCloudKit = () => {
+        const CK = (window as any).CloudKit;
+        if (!CK) return;
+        
+        try {
+            CK.configure({
+                containers: [{
+                    containerIdentifier: cloudKitContainerId,
+                    apiTokenAuth: {
+                        apiToken: cloudKitApiToken,
+                        persist: true
+                    },
+                    environment: 'development'
+                }]
+            });
+            
+            const container = CK.getDefaultContainer();
+            container.setUpAuth().then((user: any) => {
+                if(user) setIsICloudLoggedIn(true);
+                else setIsICloudLoggedIn(false);
+            }).catch(() => setIsICloudLoggedIn(false));
+        } catch (e) {
+            console.error("CloudKit Init Error", e);
+        }
+    };
+
+    const handleICloudLogin = async () => {
+        const CK = (window as any).CloudKit;
+        if (!CK) return;
+        const container = CK.getDefaultContainer();
+        try {
+            // This triggers the Apple Sign-In popup
+            await container.getAuth().signIn(); 
+            setIsICloudLoggedIn(true);
+            alert("Signed in to iCloud!");
+        } catch (e) {
+            console.error(e);
+            alert("iCloud Sign-in failed");
+        }
+    };
+
+    const uploadToICloud = async (silent = false) => {
+        setIsUploadingICloud(true);
+        try {
+            const data = await storage.exportData();
+            const CK = (window as any).CloudKit;
+            const container = CK.getDefaultContainer();
+            const privateDB = container.privateCloudDatabase;
+            
+            // Create a record. Note: You must create a 'Backup' Record Type in CloudKit Dashboard first.
+            const record = {
+                recordType: 'Backup',
+                fields: {
+                    jsonContent: { value: data },
+                    deviceName: { value: 'FocusFlow App' }
+                }
+            };
+            
+            await privateDB.saveRecords([record]);
+            if (!silent) alert("Backup saved to iCloud!");
+            
+            const now = Date.now();
+            localStorage.setItem('focusflow_last_backup', now.toString());
+            setLastBackup(new Date(now).toLocaleString());
+        } catch (e: any) {
+            console.error(e);
+            if (!silent) alert(`iCloud Backup Failed: ${e.message}`);
+        } finally {
+            if (isMounted.current) setIsUploadingICloud(false);
+        }
+    };
+
+    const restoreFromICloud = async () => {
+        try {
+            const CK = (window as any).CloudKit;
+            const container = CK.getDefaultContainer();
+            const privateDB = container.privateCloudDatabase;
+            
+            // Query last backup
+            const query = { recordType: 'Backup', sortBy: [{ fieldName: 'created', ascending: false }] };
+            const response = await privateDB.performQuery(query, { limit: 1 });
+            
+            if (response.records.length === 0) {
+                alert("No backups found in iCloud.");
+                return;
+            }
+            
+            const record = response.records[0];
+            const data = record.fields.jsonContent.value;
+            
+            if (confirm(`Restore backup from ${new Date(record.created.timestamp).toLocaleString()}?`)) {
+                const result = await storage.importData(data);
+                if (result.success) {
+                    alert('Restored successfully. Reloading...');
+                    window.location.reload();
+                } else {
+                    alert('Import failed.');
+                }
+            }
+        } catch (e: any) {
+            console.error(e);
+            alert(`iCloud Restore Failed: ${e.message}`);
+        }
+    };
 
     const initTokenClient = (clientId: string) => {
         if (typeof (window as any).google !== 'undefined' && (window as any).google.accounts && (window as any).google.accounts.oauth2) {
@@ -153,7 +327,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 },
                 callback: (resp: any) => {
                     if (resp.access_token) {
-                        setAccessToken(resp.access_token);
+                        if (isMounted.current) setAccessToken(resp.access_token);
                         if (googleActionRef.current === 'calendar') {
                             importBirthdays(resp.access_token);
                         } else if (googleActionRef.current === 'drive') {
@@ -165,7 +339,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         }
                     }
                     else {
-                        setIsImportingBirthdays(false);
+                        if (isMounted.current) setIsImportingBirthdays(false);
                         console.error("OAuth error:", resp);
                     }
                 },
@@ -222,13 +396,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             if (!response.ok) throw new Error('Failed to list files');
             
             const data = await response.json();
-            setDriveFiles(data.files || []);
+            if (isMounted.current) setDriveFiles(data.files || []);
         } catch (e: any) {
             console.error(e);
             alert(`Failed to list backups: ${e.message}`);
-            setIsRestoreModalOpen(false);
+            if (isMounted.current) setIsRestoreModalOpen(false);
         } finally {
-            setIsLoadingDriveFiles(false);
+            if (isMounted.current) setIsLoadingDriveFiles(false);
         }
     };
 
@@ -260,7 +434,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             console.error(e);
             alert(`Restore Failed: ${e.message}`);
         } finally {
-            setRestoreFileCandidate(null);
+            if (isMounted.current) setRestoreFileCandidate(null);
         }
     };
 
@@ -276,11 +450,94 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             if (!response.ok) throw new Error('Failed to delete file');
 
-            setDriveFiles(prev => prev.filter(f => f.id !== fileId));
+            if (isMounted.current) setDriveFiles(prev => prev.filter(f => f.id !== fileId));
         } catch (e: any) {
             console.error(e);
             alert(`Delete Failed: ${e.message}`);
         }
+    };
+
+    const handleSelectBackupFolder = async () => {
+        const path = await (window as any).electronAPI?.selectBackupFolder();
+        if (path) {
+            setBackupPath(path);
+            localStorage.setItem('focusflow_backup_path', path);
+        }
+    };
+
+    const handleBackupToFolder = async (silent = false) => {
+        if (!backupPath) return;
+        const data = await storage.exportData();
+        const result = await (window as any).electronAPI?.saveBackupFile(backupPath, data);
+        if (result?.success) {
+            if (!silent) alert(`Backup saved successfully to:\n${result.path}`);
+            setLastBackup(new Date().toLocaleString());
+        } else {
+            if (!silent) alert(`Backup failed: ${result?.error}`);
+        }
+    };
+
+    const handleObsidianSync = async (silent = false) => {
+        if (!backupPath) return;
+        
+        // Generate Markdown Content
+        const sessions = await storage.getSessions();
+        const today = new Date().toISOString().split('T')[0];
+        const todaySessions = sessions.filter(s => s.startTime.startsWith(today));
+        const totalHours = sessions.reduce((acc, s) => acc + s.duration, 0) / 3600;
+        const todayHours = todaySessions.reduce((acc, s) => acc + s.duration, 0) / 3600;
+        
+        const mdContent = `# 🍅 FocusFlow Dashboard
+**Last Updated:** ${new Date().toLocaleString()}
+
+## 📊 Stats
+- **Total Focus:** ${totalHours.toFixed(1)} hours
+- **Today:** ${todayHours.toFixed(1)} hours
+- **Sessions:** ${sessions.length}
+
+## 📅 Today's Sessions
+${todaySessions.length === 0 ? '_No sessions yet today._' : todaySessions.map(s => `- **${new Date(s.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}** - ${s.label || 'Focus'} (${Math.round(s.duration/60)}m)`).join('\n')}
+
+## 🏆 Recent History
+${sessions.slice(0, 10).sort((a,b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()).map(s => `- ${new Date(s.startTime).toLocaleDateString()} - **${s.label || 'Session'}**: ${Math.round(s.duration/60)}m`).join('\n')}
+`;
+
+        const result = await (window as any).electronAPI?.saveFileToFolder(backupPath, 'FocusFlow_Stats.md', mdContent);
+        if (result?.success) { if (!silent) alert("Synced 'FocusFlow_Stats.md' to your folder!"); }
+        else { if (!silent) alert("Sync failed: " + result?.error); }
+    };
+
+    const handleTestDailyNote = async () => {
+        if (!backupPath) {
+            alert("Please select a folder first.");
+            return;
+        }
+        
+        const now = new Date();
+        const year = now.getFullYear().toString();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const filename = obsidianDateFormat.replace('YYYY', year).replace('MM', month).replace('DD', day) + '.md';
+        
+        const line = `\n- [ ] Test entry from FocusFlow at ${now.toLocaleTimeString()}`;
+        
+        const result = await (window as any).electronAPI?.updateDailyNote(backupPath, filename, line, obsidianHeader, obsidianPosition);
+        
+        if (result?.success) {
+            alert(`Successfully appended test line to ${filename}`);
+        } else {
+            alert(`Failed to update daily note: ${result?.error}\n\nMake sure the file exists if you expect it to, or that the folder is writable.`);
+        }
+    };
+
+    const handleAutoSyncChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setAutoObsidianSync(e.target.checked);
+        localStorage.setItem('focusflow_auto_obsidian_sync', String(e.target.checked));
+    };
+
+    const handleObsidianModeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setObsidianMode(e.target.value);
+        localStorage.setItem('focusflow_obsidian_mode', e.target.value);
     };
 
     const sortedDriveFiles = useMemo(() => {
@@ -495,6 +752,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         setIsCreatingProject(false);
     };
 
+    const toggleOpenAtLogin = () => {
+        const newValue = !openAtLogin;
+        setOpenAtLogin(newValue);
+        (window as any).electronAPI?.setOpenAtLogin(newValue);
+    };
+
 
     // --- Danger Zone ---
     const handleClearLogs = async () => {
@@ -550,6 +813,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         alert("Gemini API Key Saved.");
     };
 
+    const handleSaveCloudKitConfig = () => {
+        localStorage.setItem('cloudkit_container_id', cloudKitContainerId);
+        localStorage.setItem('cloudkit_api_token', cloudKitApiToken);
+        initCloudKit();
+        alert("CloudKit Configuration Saved.");
+    };
+
     const handleImportBirthdaysClick = () => {
         if (!googleClientId) {
             alert("Please enter a Google Client ID in the 'Integrations & API' section first.");
@@ -591,7 +861,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         }
     };
 
-    const uploadToDrive = async (accessToken: string) => {
+    const uploadToDrive = async (accessToken: string, silent = false) => {
         setUploadProgress(0);
         try {
             const data = await storage.exportData();
@@ -634,17 +904,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 xhr.send(form);
             });
 
-            alert(`Backup uploaded to Google Drive successfully!`);
+            if (!silent) alert(`Backup uploaded to Google Drive successfully!`);
             
             const now = Date.now();
             localStorage.setItem('focusflow_last_backup', now.toString());
             setLastBackup(new Date(now).toLocaleString());
         } catch (e: any) {
             console.error(e);
-            alert(`Drive Backup Failed: ${e.message}`);
+            if (!silent) alert(`Drive Backup Failed: ${e.message}`);
         } finally {
-            setIsUploadingDrive(false);
-            setUploadProgress(0);
+            if (isMounted.current) setIsUploadingDrive(false);
+            if (isMounted.current) setUploadProgress(0);
         }
     };
 
@@ -718,7 +988,33 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             console.error(e);
             alert(`Error importing: ${e.message}`);
         } finally {
-            setIsImportingBirthdays(false);
+            if (isMounted.current) setIsImportingBirthdays(false);
+        }
+    };
+
+    const handleSyncAll = async () => {
+        if (isSyncingAll) return;
+        setIsSyncingAll(true);
+        try {
+            const promises = [];
+            if (backupPath) {
+                promises.push(handleBackupToFolder(true));
+                promises.push(handleObsidianSync(true));
+            }
+            if (cloudKitContainerId && cloudKitApiToken && isICloudLoggedIn) {
+                promises.push(uploadToICloud(true));
+            }
+            if (googleClientId && accessToken) {
+                promises.push(uploadToDrive(accessToken, true));
+            }
+            
+            await Promise.all(promises);
+            alert("Sync All Completed Successfully.");
+        } catch (e) {
+            console.error(e);
+            alert("Errors occurred during Sync All. Check console.");
+        } finally {
+            setIsSyncingAll(false);
         }
     };
 
@@ -821,17 +1117,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         
                         {/* Tab Navigation */}
                         <div className={`flex p-1 rounded-xl shadow-inner overflow-x-auto no-scrollbar ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-800'}`}>
-                            {(['general', 'timer', 'projects', 'integrations', 'data'] as SettingsTab[]).map(tab => (
+                            {(['general', 'timer', 'projects', 'sync', 'data'] as any[]).map(tab => (
                                 <button
                                     key={tab}
-                                    onClick={() => onTabChange(tab)}
+                                    onClick={() => onTabChange(tab as SettingsTab)}
                                     className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wide whitespace-nowrap ${
                                         activeTab === tab 
                                         ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm')
                                         : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200')
                                     }`}
                                 >
-                                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                                    {tab === 'timer' ? 'Preferences' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                                 </button>
                             ))}
                         </div>
@@ -1219,6 +1515,23 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
                         {/* === TIMER TAB === */}
                         {activeTab === 'timer' && (
+                            <div className="space-y-6">
+                            <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} rounded-2xl p-6 border shadow-sm`}>
+                                <h3 className={`text-xl font-bold mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>System</h3>
+                                <div className={`flex justify-between items-center p-3 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-700/50'}`}>
+                                    <div>
+                                        <p className={`font-semibold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Launch at Startup</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Automatically start FocusFlow when you log in</p>
+                                    </div>
+                                    <button 
+                                        onClick={toggleOpenAtLogin}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${openAtLogin ? 'bg-blue-600' : 'bg-gray-200'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${openAtLogin ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                            </div>
+
                             <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} rounded-2xl p-6 border shadow-sm`}>
                                 <h3 className={`text-xl font-bold mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Timer Configuration</h3>
                                 
@@ -1318,6 +1631,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                     </div>
                                 </div>
                             </div>
+                            </div>
                         )}
 
                         {/* ... (Integrations and Data Tabs remain same but updated with activeTab logic if needed) ... */}
@@ -1326,41 +1640,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
                                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Integrations & API</h3>
                                 <div className="space-y-6">
-                                    {/* Google Client ID */}
-                                    <div>
-                                        <div className="flex justify-between items-center mb-2">
-                                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Google Client ID</label>
-                                            <span className="text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-medium">Calendar</span>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <input 
-                                                type="text" 
-                                                value={googleClientId}
-                                                onChange={(e) => setGoogleClientId(e.target.value)}
-                                                placeholder="apps.googleusercontent.com"
-                                                className="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-900 dark:text-white transition-all font-mono"
-                                            />
-                                            <button 
-                                                onClick={handleSaveClientId}
-                                                className="px-5 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-white dark:text-gray-900 dark:border-transparent dark:hover:bg-gray-200 text-gray-900 text-sm font-bold rounded-xl transition-colors"
-                                            >
-                                                Save
-                                            </button>
-                                        </div>
-                                        <div className="flex justify-between items-center mt-3">
-                                            <p className="text-xs text-gray-400">Required for syncing birthdays, events, and Drive backups.</p>
-                                            <button 
-                                                onClick={handleGoogleLogin}
-                                                className="flex items-center space-x-2 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                                            >
-                                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/></svg>
-                                                <span>Connect Account</span>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div className="w-full h-px bg-gray-100 dark:bg-gray-700"></div>
-
                                     {/* Gemini API Key */}
                                     <div>
                                         <div className="flex justify-between items-center mb-2">
@@ -1396,6 +1675,298 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             </div>
                         )}
 
+                        {/* === SYNC TAB === */}
+                        {activeTab === ('sync' as any) && (
+                            <div className="space-y-6">
+                                {/* Sync All Button */}
+                                <div className="flex justify-end">
+                                    <button 
+                                        onClick={handleSyncAll}
+                                        disabled={isSyncingAll}
+                                        className={`px-6 py-3 rounded-xl font-bold text-sm shadow-lg transition-all flex items-center gap-2 ${isCyberpunk ? 'bg-[#00f0ff] text-black hover:bg-[#00f0ff]/80 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                                    >
+                                        {isSyncingAll ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>}
+                                        Sync All Now
+                                    </button>
+                                </div>
+
+                                {/* Gemini Integration */}
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">AI Integration</h3>
+                                    <div className="space-y-6">
+                                        {/* Gemini API Key */}
+                                        <div>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Gemini API Key</label>
+                                                <span className="text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded-full font-medium">AI Coach</span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="password" 
+                                                    value={geminiApiKey}
+                                                    onChange={(e) => setGeminiApiKey(e.target.value)}
+                                                    placeholder="Enter Gemini API Key"
+                                                    className="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-900 dark:text-white transition-all font-mono"
+                                                />
+                                                <button 
+                                                    onClick={handleSaveGeminiKey}
+                                                    className="px-5 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-white dark:text-gray-900 dark:border-transparent dark:hover:bg-gray-200 text-gray-900 text-sm font-bold rounded-xl transition-colors"
+                                                >
+                                                    Save
+                                                </button>
+                                            </div>
+                                            <div className="flex justify-between items-center mt-2">
+                                                <p className="text-xs text-gray-400">Required for AI insights and analysis.</p>
+                                                <div className="flex items-center space-x-2">
+                                                    <div className={`h-2 w-2 rounded-full ${geminiApiKey ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                                                    <span className={`text-xs font-bold uppercase tracking-wide ${geminiApiKey ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                        {geminiApiKey ? 'Active' : 'Inactive'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Google Drive Integration */}
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Google Drive</h3>
+                                    <div className="space-y-6">
+                                        <div>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Google Client ID</label>
+                                                <span className="text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-medium">Cloud Sync</span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    value={googleClientId}
+                                                    onChange={(e) => setGoogleClientId(e.target.value)}
+                                                    placeholder="apps.googleusercontent.com"
+                                                    className="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-900 dark:text-white transition-all font-mono"
+                                                />
+                                                <button 
+                                                    onClick={handleSaveClientId}
+                                                    className="px-5 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-white dark:text-gray-900 dark:border-transparent dark:hover:bg-gray-200 text-gray-900 text-sm font-bold rounded-xl transition-colors"
+                                                >
+                                                    Save
+                                                </button>
+                                            </div>
+                                            <div className="flex justify-between items-center mt-3">
+                                                <p className="text-xs text-gray-400">Required for Drive backups and Calendar sync.</p>
+                                                <button 
+                                                    onClick={handleGoogleLogin}
+                                                    className="flex items-center space-x-2 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/></svg>
+                                                    <span>Connect Account</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <button onClick={handleDriveBackupClick} disabled={isUploadingDrive} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden">
+                                                {isUploadingDrive && (
+                                                    <div 
+                                                        className="absolute left-0 top-0 bottom-0 bg-blue-500/10 transition-all duration-300 ease-out"
+                                                        style={{ width: `${uploadProgress}%` }}
+                                                    />
+                                                )}
+                                                <div className="text-left relative z-10">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">
+                                                        {isUploadingDrive ? `Uploading... ${Math.round(uploadProgress)}%` : 'Backup to Drive'}
+                                                    </span>
+                                                </div>
+                                                <div className="relative z-10">
+                                                    {isUploadingDrive ? (
+                                                        <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
+                                                    ) : (
+                                                        <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                                                    )}
+                                                </div>
+                                            </button>
+
+                                            <button onClick={handleRestoreFromDriveClick} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all">
+                                                <div className="text-left">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">Restore from Drive</span>
+                                                </div>
+                                                <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* iCloud Integration */}
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">iCloud (CloudKit)</h3>
+                                        <button onClick={handleICloudLogin} className="flex items-center space-x-2 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
+                                            <span>{isICloudLoggedIn ? 'Signed In' : 'Sign In to iCloud'}</span>
+                                        </button>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <input 
+                                                type="text" 
+                                                value={cloudKitContainerId}
+                                                onChange={(e) => setCloudKitContainerId(e.target.value)}
+                                                placeholder="Container ID (iCloud.com.example.app)"
+                                                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white transition-all font-mono"
+                                            />
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    value={cloudKitApiToken}
+                                                    onChange={(e) => setCloudKitApiToken(e.target.value)}
+                                                    placeholder="API Token"
+                                                    className="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white transition-all font-mono"
+                                                />
+                                                <button onClick={handleSaveCloudKitConfig} className="px-5 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-white dark:text-gray-900 dark:border-transparent dark:hover:bg-gray-200 text-gray-900 text-sm font-bold rounded-xl transition-colors">Save</button>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <button onClick={uploadToICloud} disabled={isUploadingICloud || !isICloudLoggedIn} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden">
+                                                <div className="text-left relative z-10">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">
+                                                        {isUploadingICloud ? 'Uploading...' : 'Backup to iCloud'}
+                                                    </span>
+                                                </div>
+                                                <div className="relative z-10">
+                                                    {isUploadingICloud ? (
+                                                        <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
+                                                    ) : (
+                                                        <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg>
+                                                    )}
+                                                </div>
+                                            </button>
+
+                                            <button onClick={restoreFromICloud} disabled={!isICloudLoggedIn} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all disabled:opacity-50">
+                                                <div className="text-left">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">Restore from iCloud</span>
+                                                </div>
+                                                <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Obsidian / Local Folder Sync */}
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Obsidian & Local Sync</h3>
+                                    <div className="p-4 rounded-xl border border-blue-200 dark:border-blue-900/30 bg-blue-50 dark:bg-blue-900/10 mb-6">
+                                        <h4 className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-2">Sync Folder</h4>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                                            Select your <strong>Obsidian Vault</strong>, <strong>iCloud Drive</strong>, or <strong>Dropbox</strong> folder.
+                                        </p>
+                                        <div className="flex gap-2 mb-2">
+                                            <input 
+                                                type="text" 
+                                                value={backupPath} 
+                                                readOnly 
+                                                placeholder="No folder selected"
+                                                className="flex-1 px-3 py-1.5 rounded-lg text-xs bg-white dark:bg-black/20 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300"
+                                            />
+                                            <button onClick={handleSelectBackupFolder} className="px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-600">Select</button>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={handleBackupToFolder} disabled={!backupPath} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                                Save JSON Backup
+                                            </button>
+                                            <button onClick={handleObsidianSync} disabled={!backupPath} className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Export FocusFlow_Stats.md">
+                                                Sync to Obsidian
+                                            </button>
+                                        </div>
+                                        
+                                        {/* Obsidian Settings */}
+                                        <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-800/30 space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <label className="flex items-center space-x-2 cursor-pointer">
+                                                    <input type="checkbox" checked={autoObsidianSync} onChange={handleAutoSyncChange} className="rounded text-blue-600 focus:ring-blue-500 bg-white dark:bg-black/20 border-gray-300 dark:border-gray-600" />
+                                                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Auto-sync on Timer Finish</span>
+                                                </label>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-gray-500 dark:text-gray-400 w-16">Mode:</span>
+                                                <select 
+                                                    value={obsidianMode} 
+                                                    onChange={handleObsidianModeChange}
+                                                    className="flex-1 text-xs px-2 py-1 rounded bg-white dark:bg-black/20 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                >
+                                                    <option value="dashboard">Dashboard (Overwrite FocusFlow_Stats.md)</option>
+                                                    <option value="daily">Daily Note (Append to Daily Note)</option>
+                                                </select>
+                                            </div>
+
+                                            {obsidianMode === 'daily' && (
+                                                <div className="space-y-2 pl-2 border-l-2 border-blue-200 dark:border-blue-800/30">
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1">Daily Note Date Format</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={obsidianDateFormat}
+                                                            onChange={(e) => { setObsidianDateFormat(e.target.value); localStorage.setItem('focusflow_obsidian_date_format', e.target.value); }}
+                                                            className="w-full px-2 py-1.5 text-xs rounded bg-white dark:bg-black/20 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                                                            placeholder="YYYY-MM-DD"
+                                                        />
+                                                        <div className="flex justify-between items-center mt-1">
+                                                            <p className="text-[9px] text-gray-400">Use YYYY, MM, DD</p>
+                                                            <p className="text-[9px] font-mono text-blue-500">
+                                                                Preview: {obsidianDateFormat.replace('YYYY', new Date().getFullYear().toString())
+                                                                    .replace('MM', String(new Date().getMonth() + 1).padStart(2, '0'))
+                                                                    .replace('DD', String(new Date().getDate()).padStart(2, '0'))}.md
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1">Entry Template</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={obsidianTemplate}
+                                                            onChange={(e) => { setObsidianTemplate(e.target.value); localStorage.setItem('focusflow_obsidian_template', e.target.value); }}
+                                                            className="w-full px-2 py-1.5 text-xs rounded bg-white dark:bg-black/20 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                                                            placeholder="- [x] {time} - {label} ({duration}m)"
+                                                        />
+                                                        <p className="text-[9px] text-gray-400 mt-1">Vars: {'{time}, {duration}, {label}, {project}'}</p>
+                                                    </div>
+                                                    
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1">Header (Optional)</label>
+                                                            <input 
+                                                                type="text" 
+                                                                value={obsidianHeader}
+                                                                onChange={(e) => { setObsidianHeader(e.target.value); localStorage.setItem('focusflow_obsidian_header', e.target.value); }}
+                                                                className="w-full px-2 py-1.5 text-xs rounded bg-white dark:bg-black/20 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                placeholder="e.g. Log"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1">Position</label>
+                                                            <select 
+                                                                value={obsidianPosition}
+                                                                onChange={(e) => { setObsidianPosition(e.target.value as any); localStorage.setItem('focusflow_obsidian_position', e.target.value); }}
+                                                                className="w-full px-2 py-1.5 text-xs rounded bg-white dark:bg-black/20 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                            >
+                                                                <option value="append">Append (Bottom)</option>
+                                                                <option value="prepend">Prepend (Top)</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="pt-2">
+                                                        <button onClick={handleTestDailyNote} className="w-full py-1.5 text-xs font-bold rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors">
+                                                            Test Daily Note Append
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* === DATA TAB === */}
                         {activeTab === 'data' && (
                             <div className="space-y-6">
@@ -1416,36 +1987,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                     <span className="text-xs text-gray-500 dark:text-gray-400">Save full state to file</span>
                                                 </div>
                                                 <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                            </button>
-
-                                            <button onClick={handleDriveBackupClick} disabled={isUploadingDrive} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden">
-                                                {isUploadingDrive && (
-                                                    <div 
-                                                        className="absolute left-0 top-0 bottom-0 bg-blue-500/10 transition-all duration-300 ease-out"
-                                                        style={{ width: `${uploadProgress}%` }}
-                                                    />
-                                                )}
-                                                <div className="text-left relative z-10">
-                                                    <span className="block font-bold text-gray-900 dark:text-white">
-                                                        {isUploadingDrive ? `Uploading... ${Math.round(uploadProgress)}%` : 'Backup to Google Drive'}
-                                                    </span>
-                                                    <span className="text-xs text-gray-500 dark:text-gray-400">Upload backup to cloud</span>
-                                                </div>
-                                                <div className="relative z-10">
-                                                    {isUploadingDrive ? (
-                                                        <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
-                                                    ) : (
-                                                        <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                                                    )}
-                                                </div>
-                                            </button>
-
-                                            <button onClick={handleRestoreFromDriveClick} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all">
-                                                <div className="text-left">
-                                                    <span className="block font-bold text-gray-900 dark:text-white">Restore from Drive</span>
-                                                    <span className="text-xs text-gray-500 dark:text-gray-400">Load backup from cloud</span>
-                                                </div>
-                                                <svg className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                                             </button>
 
                                             <button onClick={handleCopyToClipboard} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl group transition-all">

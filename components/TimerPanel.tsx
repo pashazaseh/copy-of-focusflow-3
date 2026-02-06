@@ -34,8 +34,13 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   const [pomosCompleted, setPomosCompleted] = useState(0); 
 
   // [FIX] Calculate currentGems state for the Wager UI
-  const [bonusGems, setBonusGems] = useState(() => parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0);
-  const [spentGems, setSpentGems] = useState(() => parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0);
+  const [bonusGems, setBonusGems] = useState(0);
+  const [spentGems, setSpentGems] = useState(0);
+
+  useEffect(() => {
+      setBonusGems(parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0);
+      setSpentGems(parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0);
+  }, []);
   
   const totalHours = useMemo(() => logs.reduce((acc, log) => acc + log.hours, 0), [logs]);
   // Note: Using simplified calculation (10 gems/hr) to match Hard Mode base rate to prevent crashes.
@@ -81,6 +86,24 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
   const endTimeRef = useRef<number | null>(null); 
   const startTimeRef = useRef<number | null>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+      isMounted.current = true;
+      return () => { isMounted.current = false; };
+  }, []);
+
+  // --- Power Save Blocker ---
+  useEffect(() => {
+      if (isActive) {
+          (window as any).electronAPI?.preventAppSuspension?.(true);
+      } else {
+          (window as any).electronAPI?.preventAppSuspension?.(false);
+      }
+      return () => {
+          (window as any).electronAPI?.preventAppSuspension?.(false);
+      };
+  }, [isActive]);
 
   // --- Initialization ---
   useEffect(() => {
@@ -195,7 +218,17 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
 
       // Handle Wager Win
       if (isWagerActive && wager > 0) {
-          const reward = wager * 2; 
+          // Randomized Multiplier
+          const roll = Math.random();
+          let multiplier = 2;
+          let type = '';
+
+          if (roll > 0.95) { multiplier = 5; type = ' (JACKPOT!)'; }
+          else if (roll > 0.85) { multiplier = 3; type = ' (CRITICAL!)'; }
+          else if (roll > 0.60) { multiplier = 2.5; type = ' (Great!)'; }
+
+          const reward = Math.floor(wager * multiplier);
+
           const newBonus = (parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0) + reward;
           localStorage.setItem('focusflow_bonus_gems', newBonus.toString());
           
@@ -208,11 +241,11 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
               date: new Date().toISOString(),
               type: 'WIN',
               amount: reward,
-              description: `Focus Wager Won (2x)`
+              description: `Focus Wager Won (${multiplier}x${type})`
           });
           setIsWagerActive(false);
           setWager(0);
-          alert(`WAGER WON! You earned ${reward} Gems!`);
+          alert(`WAGER WON!${type} You earned ${reward} Gems!`);
       }
 
       const now = new Date();
@@ -232,10 +265,66 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
               projectId: selectedProjectId
           };
           const updatedSessions = await storage.saveSessionRecord(newSession);
-          setSessions(updatedSessions);
+          if (isMounted.current) setSessions(updatedSessions);
           
           const hours = Math.round((durationSecs / 3600) * 10) / 10;
           onSaveSession(hours, labelText, selectedProjectId);
+
+          // --- Auto-Sync to Obsidian ---
+          const backupPath = localStorage.getItem('focusflow_backup_path');
+          const autoSync = localStorage.getItem('focusflow_auto_obsidian_sync') === 'true';
+          
+          if (backupPath && autoSync) {
+              const syncMode = localStorage.getItem('focusflow_obsidian_mode') || 'dashboard';
+              
+              if (syncMode === 'daily') {
+                  // Append to Daily Note
+                  const dateFormat = localStorage.getItem('focusflow_obsidian_date_format') || 'YYYY-MM-DD';
+                  const year = now.getFullYear().toString();
+                  const month = String(now.getMonth() + 1).padStart(2, '0');
+                  const day = String(now.getDate()).padStart(2, '0');
+                  
+                  const dateStr = dateFormat.replace('YYYY', year).replace('MM', month).replace('DD', day);
+                  
+                  const timeStr = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                  const durationMins = Math.round(durationSecs / 60);
+                  const projectName = projects.find(p => p.id === selectedProjectId)?.name || 'Unknown Project';
+                  
+                  const template = localStorage.getItem('focusflow_obsidian_template') || '- [x] {time} - **{label}** ({duration}m) [{project}] #focusflow';
+                  const header = localStorage.getItem('focusflow_obsidian_header') || '';
+                  const position = localStorage.getItem('focusflow_obsidian_position') || 'append';
+
+                  const line = template
+                      .replace(/{time}/g, timeStr)
+                      .replace(/{duration}/g, durationMins.toString())
+                      .replace(/{label}/g, labelText)
+                      .replace(/{project}/g, projectName);
+                  
+                  (window as any).electronAPI?.updateDailyNote(backupPath, `${dateStr}.md`, line, header, position);
+              } else {
+                  // Update Dashboard (Re-generate full stats)
+                  const today = new Date().toISOString().split('T')[0];
+                  const todaySessions = updatedSessions.filter(s => s.startTime.startsWith(today));
+                  const totalHours = updatedSessions.reduce((acc, s) => acc + s.duration, 0) / 3600;
+                  const todayHours = todaySessions.reduce((acc, s) => acc + s.duration, 0) / 3600;
+                  
+                  const mdContent = `# 🍅 FocusFlow Dashboard
+**Last Updated:** ${new Date().toLocaleString()}
+
+## 📊 Stats
+- **Total Focus:** ${totalHours.toFixed(1)} hours
+- **Today:** ${todayHours.toFixed(1)} hours
+- **Sessions:** ${updatedSessions.length}
+
+## 📅 Today's Sessions
+${todaySessions.length === 0 ? '_No sessions yet today._' : todaySessions.map(s => `- **${new Date(s.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}** - ${s.label || 'Focus'} (${Math.round(s.duration/60)}m)`).join('\n')}
+
+## 🏆 Recent History
+${updatedSessions.slice(0, 10).sort((a,b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()).map(s => `- ${new Date(s.startTime).toLocaleDateString()} - **${s.label || 'Session'}**: ${Math.round(s.duration/60)}m`).join('\n')}
+`;
+                  (window as any).electronAPI?.saveFileToFolder(backupPath, 'FocusFlow_Stats.md', mdContent);
+              }
+          }
 
           const newPomos = pomosCompleted + 1;
           setPomosCompleted(newPomos);
@@ -302,7 +391,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
           };
           
           const updatedSessions = await storage.saveSessionRecord(newSession);
-          setSessions(updatedSessions);
+          if (isMounted.current) setSessions(updatedSessions);
           
           const hours = Math.round((durationSecs / 3600) * 10) / 10;
           onSaveSession(hours, labelText, selectedProjectId);
@@ -422,7 +511,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       };
       
       const updated = await storage.saveSessionRecord(newSession);
-      setSessions(updated);
+      if (isMounted.current) setSessions(updated);
       
       const hours = Math.round((durationSecs / 3600) * 10) / 10;
       onSaveSession(hours, manualDesc, manualProject);
@@ -507,7 +596,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
           }
       }
       
-      setSessions(await storage.getSessions());
+      if (isMounted.current) setSessions(await storage.getSessions());
       setIsEditModalOpen(false);
       setEditingSessionIds([]);
       setSelectedSessionIds(new Set()); 
@@ -531,7 +620,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       if (selectedSessionIds.size === 0) return;
       if (confirm(`Delete ${selectedSessionIds.size} sessions?`)) {
           const updated = await storage.batchDeleteSessions(Array.from(selectedSessionIds));
-          setSessions(updated);
+          if (isMounted.current) setSessions(updated);
           setSelectedSessionIds(new Set());
           setIsHistoryMenuOpen(false);
       }
@@ -541,7 +630,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({ onSaveSession, projectId
       if (confirm("Clear all session history? This cannot be undone.")) {
           const allIds = sessions.map(s => s.id);
           const updated = await storage.batchDeleteSessions(allIds);
-          setSessions(updated);
+          if (isMounted.current) setSessions(updated);
           setSelectedSessionIds(new Set());
           setIsHistoryMenuOpen(false);
       }

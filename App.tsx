@@ -51,10 +51,20 @@ const Toast = ({ title, icon, onClose, isCyberpunk }: { title: string, icon: str
     </div>
 );
 
-class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean }> {
-  public state = { hasError: false };
+// Interfaces defined OUTSIDE the class for clarity
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
 
-  static getDerivedStateFromError(_: any) {
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  declare props: ErrorBoundaryProps;
+  public state: ErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(_: any): ErrorBoundaryState {
     return { hasError: true };
   }
 
@@ -81,7 +91,6 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError:
     return this.props.children;
   }
 }
-
 // --- Extracted Memoized Components to prevent re-renders on input change ---
 
 const DashboardHeader = React.memo(({ activeProjectName, currentYear, activeProject, streaks }: { activeProjectName: string, currentYear: number, activeProject: any, streaks: any }) => (
@@ -290,16 +299,6 @@ function FocusFlowContent() {
       return [];
   });
 
-  // Goal History State (Lifted/Shared via LocalStorage)
-  const [goalHistory, setGoalHistory] = useState<{date: string, goals: UserGoals}[]>(() => {
-      if (typeof window !== 'undefined') {
-          try {
-              return JSON.parse(localStorage.getItem('focusflow_goal_history') || '[]');
-          } catch { return []; }
-      }
-      return [];
-  });
-
   // Log History State (Moved from StatisticsPanel)
   const [historyScope, setHistoryScope] = useState<'project' | 'global'>('project');
   const [historyFilter, setHistoryFilter] = useState<'all' | '7days' | '30days' | 'year'>('30days');
@@ -385,19 +384,33 @@ function FocusFlowContent() {
       setNotesInput(projectLog ? projectLog.notes || '' : '');
   }, [currentProjectId, projects, selectedDate, logs]);
 
+  const activeProject = projects.find(p => p.id === currentProjectId);
+  const activeProjectName = activeProject?.name || 'Project';
+
+  // Effective Goals Logic (Project Specific)
+  const effectiveGoals = useMemo<UserGoals>(() => {
+      if (activeProject?.goals) return activeProject.goals;
+      
+      // Fallback/Legacy support: Use global defaults but override weekly if project has legacy weeklyGoal
+      return {
+          daily: goals.daily,
+          weekly: activeProject?.weeklyGoal || goals.weekly,
+          monthly: goals.monthly,
+          yearly: goals.yearly
+      };
+  }, [activeProject, goals]);
+
   const handleUpdateGoals = (newGoals: UserGoals) => {
-      const now = new Date().toISOString();
-      const newHistory = [...goalHistory];
-      
-      // If history is empty, assume the *previous* goals applied from the beginning of time
-      if (newHistory.length === 0) {
-          newHistory.push({ date: '1970-01-01T00:00:00.000Z', goals: goals });
+      if (activeProject) {
+          const now = new Date().toISOString();
+          const currentHistory = activeProject.goalHistory || [];
+          const newHistory = [...currentHistory, { date: now, goals: newGoals }];
+          
+          const updatedProject = { ...activeProject, goals: newGoals, weeklyGoal: newGoals.weekly, goalHistory: newHistory };
+          const updatedProjects = projects.map(p => p.id === activeProject.id ? updatedProject : p);
+          updateProjects(updatedProjects);
       }
-      
-      newHistory.push({ date: now, goals: newGoals });
-      setGoalHistory(newHistory);
-      localStorage.setItem('focusflow_goal_history', JSON.stringify(newHistory));
-      updateGoals(newGoals);
+      // Note: We no longer update global `goals` context for project-specific changes
   };
 
   const handleSaveLog = (e: React.FormEvent) => {
@@ -688,12 +701,8 @@ function FocusFlowContent() {
       checkStreakFreeze();
   }, [logs, freezeDates]); // Check when logs change or freezeDates update
 
-  const activeProject = projects.find(p => p.id === currentProjectId);
-  const activeProjectName = activeProject?.name || 'Project';
-  
-  // Effective Weekly Goal (Project overrides Global)
-  const effectiveWeeklyGoal = activeProject?.weeklyGoal || goals.weekly;
   const heatmapTheme = activeProject?.theme || 'green';
+  const effectiveGoalHistory = activeProject?.goalHistory || [];
 
   useEffect(() => {
       if (menuBarConfig.mode === 'none' || menuBarConfig.mode === 'timer') {
@@ -709,7 +718,7 @@ function FocusFlowContent() {
       switch (menuBarConfig.mode) {
           case 'today': text = `Today: ${todayHours.toFixed(1)}h`; break;
           case 'remaining': 
-              const dailyGoal = goals.daily || 4;
+              const dailyGoal = effectiveGoals.daily || 4;
               const remaining = Math.max(0, dailyGoal - todayHours);
               text = `${remaining.toFixed(1)}h Left`; 
               break;
@@ -770,11 +779,11 @@ function FocusFlowContent() {
         <Sidebar 
             currentView={currentView} 
             onChangeView={setCurrentView} 
-            weeklyGoal={effectiveWeeklyGoal}
+            weeklyGoal={effectiveGoals.weekly}
             currentWeeklyHours={currentWeeklyHours}
             currentDailyHours={currentDailyHours}
             currentMonthlyHours={currentMonthlyHours}
-            goals={goals}
+            goals={effectiveGoals}
             projects={projects}
             currentProjectId={currentProjectId}
             onSelectProject={setCurrentProjectId}
@@ -813,7 +822,7 @@ function FocusFlowContent() {
                 <DashboardHeader 
                     activeProjectName={activeProjectName} 
                     currentYear={currentYear} 
-                    activeProject={activeProject} 
+                    activeProject={{...activeProject, weeklyGoal: effectiveGoals.weekly}} 
                     streaks={projectStreaks} 
                 />
 
@@ -926,24 +935,24 @@ function FocusFlowContent() {
               <StatisticsPanel 
                   logs={projectLogs} 
                   allLogs={logs}
-                  projects={projects}
-                  goals={goals} 
+                  projects={projects} 
+                  goals={effectiveGoals} 
                   onUpdateGoals={handleUpdateGoals}
                   onEditLog={handleEditLogFromStats}
                   projectId={currentProjectId}
-                  goalHistory={goalHistory}
+                  goalHistory={effectiveGoalHistory}
               />
             )}
 
             {currentView === ViewMode.GOALS && (
               <GoalsPanel 
-                  goals={goals}
+                  goals={effectiveGoals}
                   onUpdateGoals={handleUpdateGoals}
                   currentDailyHours={currentDailyHours}
                   currentWeeklyHours={currentWeeklyHours}
                   currentMonthlyHours={currentMonthlyHours}
                   currentYearlyHours={currentYearlyHours}
-                  goalHistory={goalHistory}
+                  goalHistory={effectiveGoalHistory}
               />
             )}
 

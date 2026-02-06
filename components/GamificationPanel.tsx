@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { StudyLog, Transaction, ShopItem } from '../types';
 import { getUnlockedAchievements, RANKS, getDailyQuests, getAchievementReward } from '../services/gamificationService';
 import * as storage from '../services/storageService';
@@ -18,6 +18,8 @@ interface Particle {
     y: number;
     color: string;
     text?: string;
+    tx: number;
+    ty: number;
 }
 
 // --- Constants & Helpers ---
@@ -49,7 +51,7 @@ const STATIC_SHOP_ITEMS: ShopItem[] = [
     { id: 'theme_cyber', name: 'Cyberpunk Theme', icon: '🌆', cost: 500, desc: 'Unlock visual theme. (50h Work)', type: 'unlock', category: 'Moderate' },
     { id: 'vacation', name: 'Vacation Ticket', icon: '✈️', cost: 500, desc: 'Take a break! (50h Work)', type: 'consumable', category: 'Moderate' },
     { id: 'app_coding', name: 'Coding Sprint', icon: '👨‍💻', cost: 550, desc: 'Investment.', type: 'consumable', category: 'Moderate' },
-    { id: 'yes_man', name: '"Yes Man" Day', icon: '👍', cost: 600, desc: 'Say yes to everything.', type: 'consumable', category: 'Moderate' },
+    { id: 'yes_man', name: '"Yes Man" Day', icon: '👍', cost: 6000, desc: 'Say yes to everything.', type: 'consumable', category: 'Major' },
     { id: 'netflix_series', name: 'Netflix Binge', icon: '🎬', cost: 1000, desc: 'Permission to watch. (100h Work)', type: 'consumable', category: 'Major' },
     { id: 'videogame', name: 'New Video Game', icon: '🎮', cost: 1500, desc: 'AAA Title. 150 hours work.', type: 'consumable', category: 'Major' },
     { id: 'streaming_sub', name: 'Streaming Subscription', icon: '📺', cost: 2000, desc: 'Yearly sub.', type: 'consumable', category: 'Major' },
@@ -71,8 +73,39 @@ const getCategoryColor = (cat: string, isCyberpunk: boolean) => {
 
 // --- Sub-Components ---
 
-const ParticleOverlay: React.FC<{ particles: Particle[] }> = ({ particles }) => (
-    <>
+interface ParticleSystemHandle {
+    spawn: (x: number, y: number, color: string, count?: number, text?: string) => void;
+}
+
+const ParticleSystem = forwardRef<ParticleSystemHandle, {}>((_, ref) => {
+    const [particles, setParticles] = useState<Particle[]>([]);
+
+    const isMounted = useRef(true);
+    useEffect(() => {
+        isMounted.current = true;
+        return () => { isMounted.current = false; };
+    }, []);
+
+    useImperativeHandle(ref, () => ({
+        spawn: (x, y, color, count = 12, text) => {
+            const newParticles = Array.from({ length: count }).map(() => ({
+                id: Math.random().toString(36).substr(2, 9),
+                x,
+                y,
+                color,
+                text,
+                tx: (Math.random() - 0.5) * 150,
+                ty: (Math.random() - 0.5) * 150
+            }));
+            if (isMounted.current) setParticles(prev => [...prev, ...newParticles]);
+            setTimeout(() => {
+                if (isMounted.current) setParticles(prev => prev.filter(p => !newParticles.find(np => np.id === p.id)));
+            }, 1000);
+        }
+    }));
+
+    return (
+        <>
         <style>{`
             @keyframes particle-explode {
                 0% { transform: translate(0, 0) scale(1); opacity: 1; }
@@ -96,15 +129,16 @@ const ParticleOverlay: React.FC<{ particles: Particle[] }> = ({ particles }) => 
                     backgroundColor: p.color,
                     width: '6px',
                     height: '6px',
-                    '--tx': `${(Math.random() - 0.5) * 150}px`,
-                    '--ty': `${(Math.random() - 0.5) * 150}px`
+                    '--tx': `${p.tx}px`,
+                    '--ty': `${p.ty}px`
                 } as React.CSSProperties}
             >
                 {p.text && <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-xs font-bold" style={{color: p.color}}>{p.text}</span>}
             </div>
         ))}
     </>
-);
+    );
+});
 
 const CreateItemModal: React.FC<{
     isOpen: boolean;
@@ -250,7 +284,29 @@ const ShopGrid: React.FC<{
     handleDeleteCustom: (id: string) => void;
     isCyberpunk: boolean;
     onAddCustom?: () => void;
-}> = ({ inventory, items, currentGems, handleBuy, handleDeleteCustom, isCyberpunk, onAddCustom }) => (
+    onReorder: (ids: string[]) => void;
+}> = ({ inventory, items, currentGems, handleBuy, handleDeleteCustom, isCyberpunk, onAddCustom, onReorder }) => {
+    const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+
+    const handleDragStart = (e: React.DragEvent, index: number) => {
+        setDraggingIndex(index);
+        e.dataTransfer.effectAllowed = "move";
+    };
+
+    const handleDragOver = (e: React.DragEvent, index: number) => {
+        e.preventDefault();
+        if (draggingIndex === null || draggingIndex === index) return;
+        
+        const newItems = [...items];
+        const draggedItem = newItems[draggingIndex];
+        newItems.splice(draggingIndex, 1);
+        newItems.splice(index, 0, draggedItem);
+        
+        onReorder(newItems.map(i => i.id));
+        setDraggingIndex(index);
+    };
+
+    return (
     <div className={`rounded-3xl p-8 border shadow-2xl relative overflow-hidden ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-gradient-to-br from-slate-900 to-slate-800 border-white/10'}`}>
         <div className={`absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none ${isCyberpunk ? 'bg-[#00f0ff]/10' : 'bg-purple-500/10'}`}></div>
         <div className="flex justify-between items-center mb-8 relative z-10">
@@ -264,10 +320,16 @@ const ShopGrid: React.FC<{
             )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
-            {items.map(item => {
+            {items.map((item, index) => {
                 const isExpired = item.expiryDate ? new Date(item.expiryDate) < new Date() : false;
                 return (
-                <div key={item.id} className={`group rounded-2xl p-5 transition-all duration-300 flex flex-col gap-4 relative ${isCyberpunk ? 'bg-black border-[#00f0ff]/20 hover:border-[#00f0ff]' : 'bg-black/20 hover:bg-white/5 border-white/5 hover:border-purple-500/50'} ${inventory[item.id] && item.type === 'unlock' ? (isCyberpunk ? 'border-[#00ff00]/50 bg-[#00ff00]/10' : 'border-green-500/30 bg-green-900/10') : ''} ${isExpired ? 'opacity-60 grayscale' : ''}`}>
+                <div 
+                    key={item.id} 
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, index)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDragEnd={() => setDraggingIndex(null)}
+                    className={`group rounded-2xl p-5 transition-all duration-300 flex flex-col gap-4 relative cursor-move ${isCyberpunk ? 'bg-black border-[#00f0ff]/20 hover:border-[#00f0ff]' : 'bg-black/20 hover:bg-white/5 border-white/5 hover:border-purple-500/50'} ${inventory[item.id] && item.type === 'unlock' ? (isCyberpunk ? 'border-[#00ff00]/50 bg-[#00ff00]/10' : 'border-green-500/30 bg-green-900/10') : ''} ${isExpired ? 'opacity-60 grayscale' : ''} ${draggingIndex === index ? 'opacity-50' : ''}`}>
                     {item.isCustom && (
                         <button 
                             onClick={(e) => { e.stopPropagation(); handleDeleteCustom(item.id); }}
@@ -304,7 +366,8 @@ const ShopGrid: React.FC<{
             })}
         </div>
     </div>
-);
+    );
+};
 
 const SlotMachineModal: React.FC<{
     isOpen: boolean;
@@ -484,60 +547,99 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
   const [customShopItems, setCustomShopItems] = useState<ShopItem[]>([]);
   const [shopFilter, setShopFilter] = useState<'all' | 'custom'>('all');
 
+  const isMounted = useRef(true);
+  useEffect(() => {
+      isMounted.current = true;
+      return () => { isMounted.current = false; };
+  }, []);
+
   useEffect(() => {
       storage.getCustomShopItems().then(setCustomShopItems);
   }, []);
 
-  const allShopItems = useMemo(() => [...STATIC_SHOP_ITEMS, ...customShopItems], [customShopItems]);
+  const [shopOrder, setShopOrder] = useState<string[]>([]);
+  useEffect(() => {
+      try {
+          setShopOrder(JSON.parse(localStorage.getItem('focusflow_shop_order') || '[]'));
+      } catch { setShopOrder([]); }
+  }, []);
+
+  const orderedShopItems = useMemo(() => {
+      const all = [...STATIC_SHOP_ITEMS, ...customShopItems];
+      if (shopOrder.length === 0) return all;
+
+      const itemMap = new Map(all.map(i => [i.id, i]));
+      const result: ShopItem[] = [];
+      
+      shopOrder.forEach(id => {
+          const item = itemMap.get(id);
+          if (item) {
+              result.push(item);
+              itemMap.delete(id);
+          }
+      });
+      
+      // Append remaining items
+      all.forEach(item => {
+          if (itemMap.has(item.id)) {
+              result.push(item);
+          }
+      });
+      
+      return result;
+  }, [customShopItems, shopOrder]);
+
+  const handleShopReorder = (newOrderIds: string[]) => {
+      setShopOrder(newOrderIds);
+      localStorage.setItem('focusflow_shop_order', JSON.stringify(newOrderIds));
+  };
 
   // --- Particle State ---
-  const [particles, setParticles] = useState<Particle[]>([]);
+  const particleSystemRef = useRef<ParticleSystemHandle>(null);
 
   const spawnParticles = (x: number, y: number, color: string, count: number = 12, text?: string) => {
-      const newParticles = Array.from({ length: count }).map(() => ({
-          id: Math.random().toString(36).substr(2, 9),
-          x,
-          y,
-          color,
-          text
-      }));
-      setParticles(prev => [...prev, ...newParticles]);
-      setTimeout(() => {
-          setParticles(prev => prev.filter(p => !newParticles.find(np => np.id === p.id)));
-      }, 1000);
+      particleSystemRef.current?.spawn(x, y, color, count, text);
   };
 
   // --- Slot Machine State ---
-  const [lastSpinStreak, setLastSpinStreak] = useState(() => {
-      if (typeof window === 'undefined') return 0;
+  const [lastSpinStreak, setLastSpinStreak] = useState(0);
+  useEffect(() => {
       const val = parseInt(localStorage.getItem('focusflow_last_spin_streak') || '0');
-      return isNaN(val) ? 0 : val;
-  });
+      setLastSpinStreak(isNaN(val) ? 0 : val);
+  }, []);
+
   const [isSlotMachineOpen, setIsSlotMachineOpen] = useState(false);
   const [slotRolling, setSlotRolling] = useState(false);
   const [slotItems, setSlotItems] = useState(['🍒', '7️⃣', '💎']);
   const [reelStatuses, setReelStatuses] = useState([true, true, true]); // true = stopped
   const [slotMessage, setSlotMessage] = useState('');
+  
+  const spinIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const winIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+      return () => {
+          if (spinIntervalRef.current) clearInterval(spinIntervalRef.current);
+          if (winIntervalRef.current) clearInterval(winIntervalRef.current);
+      };
+  }, []);
 
   // --- Inventory & Economy State ---
-  const [spentGems, setSpentGems] = useState(() => {
-      if (typeof window === 'undefined') return 0;
-      const val = parseInt(localStorage.getItem('focusflow_spent_gems') || '0');
-      return isNaN(val) ? 0 : val;
-  });
-  const [bonusGems, setBonusGems] = useState(() => {
-      if (typeof window === 'undefined') return 0;
-      const val = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0');
-      return isNaN(val) ? 0 : val;
-  });
-  const [inventory, setInventory] = useState<Record<string, any>>(() => {
-      if (typeof window === 'undefined') return {};
+  const [spentGems, setSpentGems] = useState(0);
+  const [bonusGems, setBonusGems] = useState(0);
+  const [inventory, setInventory] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+      const s = parseInt(localStorage.getItem('focusflow_spent_gems') || '0');
+      setSpentGems(isNaN(s) ? 0 : s);
+      
+      const b = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0');
+      setBonusGems(isNaN(b) ? 0 : b);
+      
       try {
-          return JSON.parse(localStorage.getItem('focusflow_inventory') || '{}');
-      } catch (e) {
-          return {};
-      }
-  });
+          setInventory(JSON.parse(localStorage.getItem('focusflow_inventory') || '{}'));
+      } catch { setInventory({}); }
+  }, []);
 
   // --- Filters ---
   const [badgeFilter, setBadgeFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
@@ -665,14 +767,16 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
           if (item.id === 'mech_double') {
               const win = Math.random() > 0.5;
               if (win) {
+                  const isCrit = Math.random() > 0.9; // 10% chance for critical win
+                  const winAmount = isCrit ? 250 : 100; // 5x payout on crit, 2x normal
                   playWin(vol);
                   setBonusGems(prev => {
-                      const newVal = prev + 100;
+                      const newVal = prev + winAmount;
                       localStorage.setItem('focusflow_bonus_gems', newVal.toString());
                       return newVal;
                   });
-                  alert("WON Double or Nothing! (+100 Gems)");
-                  addTransaction({ id: `gamble-win-${Date.now()}`, date: new Date().toISOString(), type: 'WIN', amount: 100, description: `Won Double or Nothing` });
+                  alert(isCrit ? `JACKPOT! Double or Nothing CRITICAL WIN! (+${winAmount} Gems)` : "WON Double or Nothing! (+100 Gems)");
+                  addTransaction({ id: `gamble-win-${Date.now()}`, date: new Date().toISOString(), type: 'WIN', amount: winAmount, description: isCrit ? `Won Double or Nothing (CRIT)` : `Won Double or Nothing` });
               } else {
                   playTone(200, 0.3, vol, 'sawtooth');
                   const newSpent = spentGems + item.cost;
@@ -710,7 +814,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
   };
 
   const handleConsume = (itemId: string, e?: React.MouseEvent) => {
-      const item = allShopItems.find(i => i.id === itemId);
+      const item = orderedShopItems.find(i => i.id === itemId);
       if (!confirm(`Are you sure you want to use ${item ? item.name : 'this item'}?`)) return;
 
       const newInventory = { ...inventory };
@@ -730,7 +834,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
               if (roll < 0.7) {
                   // Gems Reward
                   const base = isMega ? 300 : 80;
-                  const amount = Math.floor(base * (0.8 + Math.random() * 0.4)); // Random variance
+                  const amount = Math.floor(base * (0.5 + Math.random() * 2.0)); // Increased variance (0.5x to 2.5x)
                   
                   setBonusGems(prev => {
                       const newVal = prev + amount;
@@ -762,7 +866,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
   };
 
   const handleSell = (itemId: string, e?: React.MouseEvent) => {
-      const item = allShopItems.find(i => i.id === itemId);
+      const item = orderedShopItems.find(i => i.id === itemId);
       if (!item) return;
       
       const sellPrice = Math.floor(item.cost * 0.6);
@@ -805,12 +909,12 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
 
   const handleCreateItem = async (item: ShopItem) => {
       const updated = await storage.saveCustomShopItem(item);
-      setCustomShopItems(updated);
+      if (isMounted.current) setCustomShopItems(updated);
   };
 
   const handleDeleteCustomItem = async (id: string) => {
       const updated = await storage.deleteCustomShopItem(id);
-      setCustomShopItems(updated);
+      if (isMounted.current) setCustomShopItems(updated);
   };
 
   const canSpin = streak > 0 && streak % 7 === 0 && lastSpinStreak < streak;
@@ -828,7 +932,8 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
       let ticks = 0;
       const symbols = ['🍒', '🍋', '🍇', '💎', '7️⃣', '🔔'];
       
-      const interval = setInterval(() => {
+      if (spinIntervalRef.current) clearInterval(spinIntervalRef.current);
+      spinIntervalRef.current = setInterval(() => {
           ticks++;
           setSlotItems(prev => {
               if (ticks % 2 === 0) playSpinTick(vol);
@@ -842,7 +947,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
               return next;
           });
           if (ticks >= 50) {
-              clearInterval(interval);
+              if (spinIntervalRef.current) clearInterval(spinIntervalRef.current);
               finalizeSpin();
           }
       }, 60);
@@ -856,11 +961,13 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
       const amount = Math.floor(Math.random() * 951) + 50;
       let current = 0;
       const step = Math.max(1, Math.floor(amount / 20));
-      const counterInterval = setInterval(() => {
+      
+      if (winIntervalRef.current) clearInterval(winIntervalRef.current);
+      winIntervalRef.current = setInterval(() => {
           current += step;
           if (current >= amount) {
               current = amount;
-              clearInterval(counterInterval);
+              if (winIntervalRef.current) clearInterval(winIntervalRef.current);
               const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
               const newBonus = currentBonus + amount;
               setBonusGems(newBonus);
@@ -891,7 +998,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
 
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 relative ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-[#0f172a] text-white'}`}>
-      <ParticleOverlay particles={particles} />
+      <ParticleSystem ref={particleSystemRef} />
       <div className={`absolute inset-0 pointer-events-none ${isCyberpunk ? 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#00f0ff]/10 via-[#050505] to-[#050505]' : 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-[#0f172a] to-[#0f172a]'}`}></div>
       
       <div className="p-6 h-full overflow-y-auto custom-scrollbar relative z-10">
@@ -986,19 +1093,20 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
                 <>
                 <InventoryGrid 
                     inventory={inventory}
-                    items={allShopItems}
+                    items={orderedShopItems}
                     handleConsume={handleConsume}
                     handleSell={handleSell}
                     isCyberpunk={isCyberpunk}
                 />
                 <ShopGrid 
                     inventory={inventory}
-                    items={allShopItems}
+                    items={orderedShopItems}
                     currentGems={currentGems}
                     handleBuy={handleBuy}
                     handleDeleteCustom={handleDeleteCustomItem}
                     isCyberpunk={isCyberpunk}
                     onAddCustom={() => setIsCreateItemModalOpen(true)}
+                    onReorder={handleShopReorder}
                 />
                 </>
                 )}
