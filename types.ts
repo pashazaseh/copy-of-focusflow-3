@@ -1,3 +1,4 @@
+// types.ts
 
 export interface Project {
   id: string;
@@ -9,6 +10,26 @@ export interface Project {
   weeklyGoal?: number; // Overrides global weekly goal if set
   goals?: UserGoals; // Project specific goals
   goalHistory?: { date: string; goals: UserGoals }[]; // Project specific goal history
+}
+
+export interface Subtask {
+  id: string;
+  title: string;
+  isCompleted: boolean;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  projectId?: string; // Links to your existing Projects
+  isCompleted: boolean;
+  tickTickId?: string; // Optional: For future syncing
+  dueDate?: string;
+  estimatedPomodoros?: number;
+  priority?: 'low' | 'medium' | 'high';
+  description?: string;
+  createdAt?: string;
+  subtasks?: Subtask[];
 }
 
 export interface StudyLog {
@@ -42,6 +63,7 @@ export enum ViewMode {
   CALENDAR = 'CALENDAR',
   SETTINGS = 'SETTINGS',
   GAMIFICATION = 'GAMIFICATION',
+  TASKS = 'TASKS',
   PROFILE = 'PROFILE' // New View
 }
 
@@ -96,6 +118,7 @@ export interface SessionRecord {
   type: 'POMO' | 'STOPWATCH';
   label?: string;
   projectId?: string;
+  taskId?: string; // <--- Added this to link sessions to tasks
 }
 
 // Menu Bar Configuration
@@ -144,6 +167,9 @@ export interface GoogleEvent {
   description?: string;
   location?: string;
   htmlLink: string;
+  calendarSummary?: string;
+  calendarColor?: string;
+  calendarId?: string;
 }
 
 // Gamification Types
@@ -183,17 +209,17 @@ export interface ShopItem {
     isCustom?: boolean;
 }
 
-// Electron Interface
-declare global {
-  interface Window {
-    electronAPI?: {
-      close: () => void;
-      minimize: () => void;
-      maximize: () => void;
-      updateTrayTitle: (title: string) => void;
-      startQuickTimer: (minutes: number) => void;
-      onQuickTimerTriggered: (callback: (minutes: number) => void) => void;
-      cancelQuickTimer: () => void;
-    };
-  }
+export interface CustomPrompt {
+    id: string;
+    label: string;
+    prompt: string;
+}
+
+export interface CaptureDestination {
+    id: string;
+    name: string;
+    path: string;
+    header?: string;
+    type: 'file' | 'daily';
+    position?: 'append' | 'prepend';
 }

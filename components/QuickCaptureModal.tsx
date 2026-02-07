@@ -61,10 +61,21 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
         e?.preventDefault();
         if (!text.trim()) return;
 
-        const backupPath = localStorage.getItem('focusflow_backup_path');
+        let backupPath = localStorage.getItem('focusflow_backup_path');
         if (!backupPath) {
-            setStatus('Error: No Sync Folder configured in Settings.');
-            return;
+            if (window.electronAPI?.selectBackupFolder) {
+                const path = await window.electronAPI.selectBackupFolder();
+                if (path) {
+                    localStorage.setItem('focusflow_backup_path', path);
+                    backupPath = path;
+                } else {
+                    setStatus('Error: No Sync Folder configured.');
+                    return;
+                }
+            } else {
+                setStatus('Error: No Sync Folder configured in Settings.');
+                return;
+            }
         }
 
         const inboxFile = localStorage.getItem('focusflow_obsidian_inbox_filename') || 'Inbox.md';
@@ -90,14 +101,8 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
         
         let apiKey = localStorage.getItem('gemini_api_key');
         if (!apiKey) {
-            const input = prompt("Enter Gemini API Key (from aistudio.google.com):");
-            if (input && input.trim()) {
-                apiKey = input.trim();
-                localStorage.setItem('gemini_api_key', apiKey);
-            } else {
-                setStatus('Error: No AI Key');
-                return;
-            }
+            setStatus('Error: Set API Key in Settings');
+            return;
         }
 
         setIsEnhancing(true);
@@ -147,6 +152,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
 
     const triggerContextMenu = () => {
         if (inputRef.current) {
+            inputRef.current.focus();
             const rect = inputRef.current.getBoundingClientRect();
             const event = new MouseEvent('contextmenu', {
                 bubbles: true,
@@ -185,14 +191,32 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
                 const arrayBuffer = await audioBlob.arrayBuffer();
                 const uint8Array = new Uint8Array(arrayBuffer);
                 
-                const backupPath = localStorage.getItem('focusflow_backup_path');
+                let backupPath = localStorage.getItem('focusflow_backup_path');
+                if (!backupPath) {
+                    if (window.electronAPI?.selectBackupFolder) {
+                        const path = await window.electronAPI.selectBackupFolder();
+                        if (path) {
+                            localStorage.setItem('focusflow_backup_path', path);
+                            backupPath = path;
+                        }
+                    }
+                }
+
                 if (!backupPath) {
                     setStatus('Error: No Sync Folder.');
                     return;
                 }
 
+                let subfolder = '';
+                const inboxFile = localStorage.getItem('focusflow_obsidian_inbox_filename') || 'Inbox.md';
+                const parts = inboxFile.split(/[/\\]/);
+                if (parts.length > 1) {
+                    parts.pop();
+                    subfolder = parts.join('/');
+                }
                 const filename = `Voice Note ${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
-                const result = await window.electronAPI?.saveBinaryFile(backupPath, filename, uint8Array);
+                const savePath = subfolder ? `${subfolder}/${filename}` : filename;
+                const result = await window.electronAPI?.saveBinaryFile(backupPath, savePath, uint8Array);
                 
                 if (result?.success) {
                     const link = ` ![[${filename}]]`;
@@ -252,6 +276,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
                             <div className="relative" ref={menuRef}>
                                 <button 
                                     type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
                                     onClick={() => setShowPrompts(!showPrompts)} 
                                     disabled={isEnhancing} 
                                     className={`p-1.5 rounded-md transition-all ${isEnhancing ? 'text-purple-500 animate-spin' : (isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'text-gray-400 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20')}`} 
@@ -261,18 +286,18 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
                                 </button>
                                 {showPrompts && (
                                     <div className={`absolute bottom-full left-0 mb-2 w-40 rounded-xl shadow-xl border z-50 overflow-hidden flex flex-col ${isCyberpunk ? 'bg-black border-[#00f0ff] text-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'}`}>
-                                        <button onClick={() => handleSmartEnhance('enhance')} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>✨ Enhance</button>
-                                        <button onClick={() => handleSmartEnhance('fix')} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>🔧 Fix Grammar</button>
-                                        <button onClick={() => handleSmartEnhance('task')} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>✅ Make Task</button>
-                                        <button onClick={() => handleSmartEnhance('steps')} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>📋 Breakdown</button>
+                                        <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleSmartEnhance('enhance')} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>✨ Enhance</button>
+                                        <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleSmartEnhance('fix')} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>🔧 Fix Grammar</button>
+                                        <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleSmartEnhance('task')} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>✅ Make Task</button>
+                                        <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleSmartEnhance('steps')} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>📋 Breakdown</button>
                                         {customPrompts.map(p => (
-                                            <button key={p.id} onClick={() => handleSmartEnhance(p.id)} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>⚡ {p.label}</button>
+                                            <button onMouseDown={(e) => e.preventDefault()} key={p.id} onClick={() => handleSmartEnhance(p.id)} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>⚡ {p.label}</button>
                                         ))}
                                         {window.electronAPI?.platform === 'darwin' && (
-                                            <button onClick={triggerContextMenu} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}> Writing Tools</button>
+                                            <button onMouseDown={(e) => e.preventDefault()} onClick={triggerContextMenu} className={`text-left px-4 py-2 text-xs font-medium transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}> Writing Tools</button>
                                         )}
                                         <div className={`h-px my-1 ${isCyberpunk ? 'bg-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-700'}`}></div>
-                                        <button onClick={() => { setIsManagingPrompts(true); setShowPrompts(false); }} className={`text-left px-4 py-2 text-xs font-medium transition-colors opacity-60 hover:opacity-100 ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>⚙️ Manage Prompts</button>
+                                        <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setIsManagingPrompts(true); setShowPrompts(false); }} className={`text-left px-4 py-2 text-xs font-medium transition-colors opacity-60 hover:opacity-100 ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-gray-100 dark:hover:bg-white/5'}`}>⚙️ Manage Prompts</button>
                                     </div>
                                 )}
                             </div>

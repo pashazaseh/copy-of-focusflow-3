@@ -1,4 +1,3 @@
-
 {
   "name": "focus-flow",
   "private": true,
@@ -16,13 +15,15 @@
     "dist:mac:universal": "electron-builder --mac --universal"
   },
   "dependencies": {
+    "@google/genai": "*",
+    "d3": "^7.8.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "recharts": "^2.12.0",
-    "d3": "^7.8.5",
-    "@google/genai": "*"
+    "recharts": "^2.12.0"
   },
   "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.18",
     "concurrently": "^8.2.2",
@@ -56,7 +57,10 @@
         },
         {
           "target": "zip",
-          "arch": ["arm64", "x64"]
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.icns",

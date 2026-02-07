@@ -1,18 +1,41 @@
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, powerSaveBlocker, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, powerSaveBlocker, dialog, globalShortcut, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 
 let tray = null;
 let win = null;
 let quickWin = null;
+let miniCaptureWin = null;
 let defaultIcon = null;
 let transparentIcon = null;
 let isQuitting = false;
 let powerSaveBlockerId = null;
+let fileWatcher = null;
+let currentGlobalShortcut = 'CommandOrControl+Shift+O';
+let lastTrayTitle = '';
+
+// Ensure notifications work on Windows
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.yourname.focusflow');
+}
+
+// Register Custom Protocol 'focusflow://'
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('focusflow', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('focusflow');
+}
 
 // Helper to create a simple icon since we might not have assets
 function createTrayIcon() {
+  // Customize your tray icon here
+  const useTemplateImage = true; // Set to false to use the custom color below
+  const iconColor = { r: 0, g: 0, b: 0 }; // RGB Color (if useTemplateImage is false)
+
   const createIconBuffer = (size, scale) => {
     const effectiveSize = size * scale;
     const buffer = Buffer.alloc(effectiveSize * effectiveSize * 4);
@@ -41,7 +64,7 @@ function createTrayIcon() {
         alpha = Math.max(0, Math.min(1, alpha)) * 255;
 
         if (alpha > 0) {
-          buffer[idx] = 0; buffer[idx + 1] = 0; buffer[idx + 2] = 0; buffer[idx + 3] = Math.floor(alpha);
+          buffer[idx] = iconColor.r; buffer[idx + 1] = iconColor.g; buffer[idx + 2] = iconColor.b; buffer[idx + 3] = Math.floor(alpha);
         } else {
           buffer[idx + 3] = 0;
         }
@@ -54,7 +77,7 @@ function createTrayIcon() {
   const img = nativeImage.createEmpty();
   img.addRepresentation({ scaleFactor: 1, width: size, height: size, buffer: createIconBuffer(size, 1) });
   img.addRepresentation({ scaleFactor: 2, width: size, height: size, buffer: createIconBuffer(size, 2) });
-  img.setTemplateImage(true);
+  img.setTemplateImage(useTemplateImage);
   return img;
 }
 
@@ -94,6 +117,96 @@ function createAppIcon() {
   return nativeImage.createFromBuffer(buffer, { width: size, height: size });
 }
 
+function setupContextMenu(window) {
+  window.webContents.on('context-menu', (event, params) => {
+    if (!params.isEditable && !params.selectionText) return;
+
+    const template = [];
+
+    if (params.selectionText) {
+      const trimmedText = params.selectionText.trim();
+      const searchText = trimmedText.length > 20 ? trimmedText.substring(0, 20) + '...' : trimmedText;
+      template.push({
+        label: `Search Google for "${searchText}"`,
+        click: () => {
+          shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(params.selectionText)}`);
+        }
+      });
+      template.push({ type: 'separator' });
+    }
+
+    if (params.misspelledWord && params.dictionarySuggestions.length > 0) {
+      params.dictionarySuggestions.forEach(suggestion => {
+        template.push({
+          label: suggestion,
+          click: () => window.webContents.replaceMisspelling(suggestion)
+        });
+      });
+      template.push({ type: 'separator' });
+    }
+
+    template.push(
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      { role: 'pasteAndMatchStyle' },
+      { role: 'delete' },
+      { role: 'selectAll' },
+      { type: 'separator' }
+    );
+
+    if (process.platform === 'darwin') {
+      template.push({
+        label: 'Substitutions',
+        submenu: [
+          { role: 'showSubstitutions', label: 'Show Substitutions' },
+          { type: 'separator' },
+          { role: 'toggleSmartQuotes', label: 'Smart Quotes' },
+          { role: 'toggleSmartDashes', label: 'Smart Dashes' },
+          { role: 'toggleTextReplacement', label: 'Text Replacement' }
+        ]
+      });
+      template.push({ type: 'separator' });
+    }
+
+    template.push({
+      label: 'Speech',
+      submenu: [
+        { role: 'startSpeaking' },
+        { role: 'stopSpeaking' }
+      ]
+    });
+
+    if (process.platform === 'darwin') {
+      template.push({ type: 'separator' });
+      
+      template.push({
+        label: 'Start Dictation...',
+        click: () => Menu.sendActionToFirstResponder('startDictation:')
+      });
+      
+      template.push({
+        label: 'Emoji & Symbols',
+        click: () => app.showEmojiPanel()
+      });
+
+      template.push({ type: 'separator' });
+
+      if (params.selectionText) {
+        template.push({ label: 'Look Up', click: () => window.webContents.showDefinitionForSelection() });
+        template.push({ type: 'separator' });
+      }
+      template.push({ role: 'services' }); // Required for Apple Writing Tools
+    }
+
+    const menu = Menu.buildFromTemplate(template);
+    menu.popup();
+  });
+}
+
 function hideQuickTimer() {
   if (quickWin && !quickWin.isDestroyed()) {
     quickWin.hide();
@@ -103,9 +216,86 @@ function hideQuickTimer() {
   }
 }
 
+function createMiniCaptureWindow() {
+  if (miniCaptureWin && !miniCaptureWin.isDestroyed()) {
+    if (process.platform === 'darwin') {
+      miniCaptureWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      miniCaptureWin.setAlwaysOnTop(true, 'screen-saver', 1);
+    }
+    miniCaptureWin.show();
+    miniCaptureWin.focus();
+    return;
+  }
+
+  miniCaptureWin = new BrowserWindow({
+    width: 600,
+    height: 400,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    resizable: true,
+    show: false,
+    alwaysOnTop: true,
+    type: 'panel',
+    vibrancy: 'under-window',
+    visualEffectState: 'active',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: false // Allow external API calls (Gemini)
+    }
+  });
+
+  if (process.platform === 'darwin') {
+    miniCaptureWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    miniCaptureWin.setAlwaysOnTop(true, 'screen-saver', 1);
+    miniCaptureWin.setFullScreenable(false);
+  } else {
+    miniCaptureWin.setAlwaysOnTop(true, 'floating');
+  }
+
+  const isDev = !app.isPackaged;
+  const url = isDev 
+    ? 'http://localhost:5173?mode=mini-capture' 
+    : `file://${path.join(__dirname, '../dist/index.html')}?mode=mini-capture`;
+  
+  miniCaptureWin.loadURL(url);
+
+  setupContextMenu(miniCaptureWin);
+
+  miniCaptureWin.once('ready-to-show', () => {
+    miniCaptureWin.show();
+    miniCaptureWin.focus();
+  });
+
+  miniCaptureWin.on('closed', () => {
+    miniCaptureWin = null;
+  });
+}
+
+function triggerQuickCapture() {
+  // Toggle behavior: If open and focused, hide it.
+  if (miniCaptureWin && !miniCaptureWin.isDestroyed() && miniCaptureWin.isVisible() && miniCaptureWin.isFocused()) {
+    miniCaptureWin.hide();
+    if (process.platform === 'darwin') app.hide();
+    return;
+  }
+
+  createMiniCaptureWindow();
+}
+
 function setupIpcHandlers() {
   // IPC handlers for the custom traffic light buttons
-  ipcMain.on('window-close', () => {
+  ipcMain.on('window-close', (event) => {
+    const webContents = event.sender;
+    const window = BrowserWindow.fromWebContents(webContents);
+    
+    if (window === miniCaptureWin) {
+        window.close();
+        return;
+    }
+
     if (tray && !tray.isDestroyed()) {
         if (win && !win.isDestroyed()) win.hide();
     } else if (win && !win.isDestroyed()) {
@@ -121,14 +311,22 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('update-tray-title', (event, title) => {
+    lastTrayTitle = title;
     if (tray && !tray.isDestroyed()) {
-      tray.setTitle(title);
-      // If title is present (e.g. Timer, Streak), hide icon by using transparent image.
-      // If title is empty (Mode: None), show the default app icon.
-      if (title && title.length > 0) {
-        if (transparentIcon) tray.setImage(transparentIcon);
+      if (process.platform === 'darwin') {
+        tray.setTitle(title);
+        // If title is present (e.g. Timer, Streak), hide icon by using transparent image.
+        // If title is empty (Mode: None), show the default app icon.
+        if (title && title.length > 0) {
+          if (transparentIcon) tray.setImage(transparentIcon);
+        } else {
+          if (defaultIcon) tray.setImage(defaultIcon);
+        }
       } else {
+        // On Windows/Linux, we can't show text next to icon easily.
+        // We should keep the icon visible and update tooltip.
         if (defaultIcon) tray.setImage(defaultIcon);
+        tray.setToolTip(title || 'FocusFlow');
       }
     }
   });
@@ -139,6 +337,11 @@ function setupIpcHandlers() {
     if (win && !win.isDestroyed()) {
       // Don't force show window, let it run in background (tray updates)
       win.webContents.send('start-timer-from-quick', minutes);
+
+      // If main window is minimized, prevent it from restoring/focusing by hiding the app (macOS)
+      if (win.isMinimized() && process.platform === 'darwin') {
+        app.hide();
+      }
     }
   });
 
@@ -180,18 +383,80 @@ function setupIpcHandlers() {
     app.setLoginItemSettings({ openAtLogin });
   });
 
+  ipcMain.handle('update-global-shortcut', async (event, shortcut) => {
+    globalShortcut.unregisterAll();
+    if (shortcut && shortcut.trim() !== '') {
+      currentGlobalShortcut = shortcut;
+      try {
+        const success = globalShortcut.register(shortcut, triggerQuickCapture);
+        return success;
+      } catch (e) {
+        console.error('Failed to register shortcut:', e);
+        return false;
+      }
+    }
+    return true;
+  });
+
+  ipcMain.on('open-quick-capture', triggerQuickCapture);
+
   ipcMain.handle('select-backup-folder', async () => {
-    const result = await dialog.showOpenDialog(win, {
-      properties: ['openDirectory']
-    });
+    const targetWindow = BrowserWindow.getFocusedWindow() || win;
+    const result = targetWindow 
+      ? await dialog.showOpenDialog(targetWindow, { properties: ['openDirectory'] })
+      : await dialog.showOpenDialog({ properties: ['openDirectory'] });
+      
     if (result.canceled) return null;
     return result.filePaths[0];
+  });
+
+  ipcMain.handle('select-file', async () => {
+    const targetWindow = BrowserWindow.getFocusedWindow() || win;
+    const result = targetWindow 
+      ? await dialog.showOpenDialog(targetWindow, { properties: ['openFile'] })
+      : await dialog.showOpenDialog({ properties: ['openFile'] });
+      
+    if (result.canceled) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('select-directory', async () => {
+    const targetWindow = BrowserWindow.getFocusedWindow() || win;
+    const result = targetWindow 
+      ? await dialog.showOpenDialog(targetWindow, { properties: ['openDirectory'] })
+      : await dialog.showOpenDialog({ properties: ['openDirectory'] });
+      
+    if (result.canceled) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('create-new-file', async () => {
+    const targetWindow = BrowserWindow.getFocusedWindow() || win;
+    const result = targetWindow 
+      ? await dialog.showSaveDialog(targetWindow, {
+          title: 'Create New Capture File',
+          filters: [{ name: 'Markdown', extensions: ['md'] }]
+      })
+      : await dialog.showSaveDialog({
+          title: 'Create New Capture File',
+          filters: [{ name: 'Markdown', extensions: ['md'] }]
+      });
+      
+    if (result.canceled || !result.filePath) return null;
+    
+    try {
+        await fs.promises.writeFile(result.filePath, '');
+        return result.filePath;
+    } catch (e) {
+        return null;
+    }
   });
 
   ipcMain.handle('save-backup-file', async (event, folderPath, data) => {
     try {
       const filename = `focusflow_backup_${Date.now()}.json`;
       const filePath = path.join(folderPath, filename);
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
       await fs.promises.writeFile(filePath, data, 'utf8');
       return { success: true, path: filePath };
     } catch (e) {
@@ -202,7 +467,19 @@ function setupIpcHandlers() {
   ipcMain.handle('save-file-to-folder', async (event, folderPath, filename, data) => {
     try {
       const filePath = path.join(folderPath, filename);
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
       await fs.promises.writeFile(filePath, data, 'utf8');
+      return { success: true, path: filePath };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('save-binary-file', async (event, folderPath, filename, buffer) => {
+    try {
+      const filePath = path.isAbsolute(filename) ? filename : path.join(folderPath, filename);
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.promises.writeFile(filePath, buffer);
       return { success: true, path: filePath };
     } catch (e) {
       return { success: false, error: e.message };
@@ -211,7 +488,8 @@ function setupIpcHandlers() {
 
   ipcMain.handle('append-file-to-folder', async (event, folderPath, filename, data) => {
     try {
-      const filePath = path.join(folderPath, filename);
+      const filePath = path.isAbsolute(filename) ? filename : path.join(folderPath, filename);
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
       // Append to file, create if it doesn't exist
       await fs.promises.appendFile(filePath, data, 'utf8');
       return { success: true, path: filePath };
@@ -222,7 +500,15 @@ function setupIpcHandlers() {
 
   ipcMain.handle('update-daily-note', async (event, folderPath, filename, lineContent, header, position) => {
     try {
-      const filePath = path.join(folderPath, filename);
+      const filePath = path.isAbsolute(filename) ? filename : path.join(folderPath, filename);
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+
+      // Optimization: Use appendFile if possible to avoid read-modify-write race conditions with iCloud
+      if (!header && position === 'append') {
+        await fs.promises.appendFile(filePath, lineContent, 'utf8');
+        return { success: true, path: filePath };
+      }
+
       let fileContent = '';
       try {
         fileContent = await fs.promises.readFile(filePath, 'utf8');
@@ -234,7 +520,11 @@ function setupIpcHandlers() {
       if (lines.length === 1 && lines[0] === '') lines.pop();
 
       if (!header) {
-          lines.push(lineContent);
+          if (position === 'prepend') {
+              lines.unshift(lineContent);
+          } else {
+              lines.push(lineContent);
+          }
       } else {
           const headerRegex = new RegExp(`^#+\\s+${header.trim()}\\s*$`, 'i');
           const headerIndex = lines.findIndex(line => headerRegex.test(line));
@@ -269,6 +559,47 @@ function setupIpcHandlers() {
       return { success: false, error: e.message };
     }
   });
+
+  ipcMain.handle('get-file-headers', async (event, folderPath, filename) => {
+    try {
+      const filePath = path.isAbsolute(filename) ? filename : path.join(folderPath || '', filename);
+      try {
+        await fs.promises.access(filePath);
+      } catch {
+        return { success: false, error: 'File not found' };
+      }
+      const content = await fs.promises.readFile(filePath, 'utf8');
+      const headers = content.split(/\r?\n/).filter(line => /^#+\s/.test(line)).map(line => line.replace(/^#+\s*/, '').trim());
+      return { success: true, headers };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.on('watch-path', (event, targetPath) => {
+    if (fileWatcher) {
+      fileWatcher.close();
+      fileWatcher = null;
+    }
+    if (!targetPath || !fs.existsSync(targetPath)) return;
+
+    try {
+      fileWatcher = fs.watch(targetPath, (eventType, filename) => {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('file-changed', { eventType, filename, path: targetPath });
+        }
+      });
+    } catch (e) {
+      console.error("Failed to watch path:", e);
+    }
+  });
+
+  ipcMain.on('unwatch-path', () => {
+    if (fileWatcher) {
+      fileWatcher.close();
+      fileWatcher = null;
+    }
+  });
 }
 
 function createWindow() {
@@ -292,8 +623,17 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false,
-      backgroundThrottling: false // Ensure timer runs accurately in background
     },
+  });
+
+  // Fix for Google Auth "Cross-Origin-Opener-Policy" error and other CORS issues
+  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Cross-Origin-Opener-Policy': ['same-origin-allow-popups']
+      }
+    });
   });
 
   // Prevent closing the app when the window is closed (minimize to tray)
@@ -309,8 +649,12 @@ function createWindow() {
   if (isDev) {
     win.loadURL('http://localhost:5173');
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'));
+    win.loadFile(path.join(__dirname, '../dist/index.html')).catch(e => {
+        console.error('Failed to load index.html:', e);
+    });
   }
+  
+  setupContextMenu(win);
   
   return win;
 }
@@ -381,6 +725,19 @@ function showQuickTimer() {
   let startX = cursorPoint.x;
   let startY = cursorPoint.y;
 
+  // Use tray bounds if available for precise centering
+  if (tray && !tray.isDestroyed()) {
+      try {
+          const bounds = tray.getBounds();
+          if (bounds && bounds.width > 0) {
+              startX = Math.round(bounds.x + bounds.width / 2);
+              startY = Math.round(bounds.y + bounds.height / 2);
+          }
+      } catch (e) {
+          // Fallback to cursor
+      }
+  }
+
   const localX = startX - display.bounds.x;
   const localY = startY - display.bounds.y;
     
@@ -430,12 +787,58 @@ function showQuickTimer() {
   quickWin.focus();
 }
 
+// Handle Deep Links (focusflow://)
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    win.webContents.send('oauth-code', url);
+  }
+});
+
+// Local Auth Server for OAuth Callbacks (TickTick, etc.)
+function createAuthServer() {
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost:54321');
+    const code = url.searchParams.get('code');
+    
+    if (code) {
+      if (win) {
+        if (win.isMinimized()) win.restore();
+        win.focus();
+        win.webContents.send('oauth-code', code); // Send the code directly
+      }
+      
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<html><body style="background:#111;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;"><h1>Login Successful</h1><p>You can close this window and return to FocusFlow.</p><script>setTimeout(window.close, 1000);</script></body></html>');
+    } else {
+      res.writeHead(400);
+      res.end('No code found');
+    }
+  });
+  
+  server.listen(54321, '127.0.0.1', () => {
+    console.log('Auth server listening on port 54321');
+  });
+}
+
 app.whenReady().then(() => {
     setupIpcHandlers();
     createWindow();
+    createAuthServer();
     
     // Defer non-critical background windows and tray to prioritize main window render
     setTimeout(() => {
+        // Register Global Hotkey for Quick Capture
+        try {
+            if (currentGlobalShortcut && !globalShortcut.isRegistered(currentGlobalShortcut)) {
+                globalShortcut.register(currentGlobalShortcut, triggerQuickCapture);
+            }
+        } catch (e) {
+            console.error('Failed to register global shortcut:', e);
+        }
+
         createQuickWindow();
         
         // Create Tray
@@ -448,13 +851,22 @@ app.whenReady().then(() => {
         
         const contextMenu = Menu.buildFromTemplate([
             { label: 'Show FocusFlow', click: () => win.show() },
+            { label: 'Preferences', click: () => win.show() },
+            { type: 'separator' },
             { label: 'Quit', click: () => app.quit() }
         ]);
         
         tray.setToolTip('FocusFlow');
         
         // Left Click: Trigger Quick Timer (Drag)
-        tray.on('mouse-down', () => showQuickTimer());
+        tray.on('mouse-down', (event) => {
+            // Fix: Allow Option/Alt + Click or Ctrl + Click to show context menu
+            if (event.altKey || event.ctrlKey) {
+                tray.popUpContextMenu(contextMenu);
+            } else {
+                showQuickTimer();
+            }
+        });
         
         // Right Click: Open Context Menu
         tray.on('right-click', () => tray.popUpContextMenu(contextMenu));
@@ -471,6 +883,16 @@ app.whenReady().then(() => {
         // If we want left click to trigger Drag immediately, we can intercept 'click'
         // But user asked for "Select 'New Timer (Drag)'", which implies a menu. 
         // However, Gestimer workflow usually triggers on drag. We stick to Menu per prompt "Access: left-click ... select ...".
+        
+        // Apply any pending title that came in before tray was ready
+        if (lastTrayTitle) {
+            if (process.platform === 'darwin') {
+                tray.setTitle(lastTrayTitle);
+                if (transparentIcon) tray.setImage(transparentIcon);
+            } else {
+                tray.setToolTip(lastTrayTitle);
+            }
+        }
     }, 300);
 });
 
@@ -480,9 +902,30 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  try {
+    globalShortcut.unregisterAll();
+  } catch (e) {
+    // Ignore error if app is not ready (e.g. single instance lock check failed)
+  }
 });
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
   else if (win) win.show();
 });
+
+// Handle Second Instance (Focus existing window)
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+      // Find the protocol url in commandLine
+      const url = commandLine.find(arg => arg.startsWith('focusflow://'));
+      if (url) win.webContents.send('oauth-code', url);
+    }
+  });
+}

@@ -221,8 +221,8 @@ const InventoryGrid: React.FC<{
     handleSell: (id: string, e: React.MouseEvent) => void;
     isCyberpunk: boolean;
 }> = ({ inventory, items, handleConsume, handleSell, isCyberpunk }) => (
-    <div className={`rounded-3xl p-8 border ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-slate-800/50 border-white/5'}`}>
-        <h3 className={`text-xl font-bold mb-6 flex items-center gap-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>
+    <div className={`rounded-3xl p-8 border ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-slate-800/50 border-gray-200 dark:border-white/5'}`}>
+        <h3 className={`text-xl font-bold mb-6 flex items-center gap-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>
             <span className="text-2xl">🎒</span> Inventory
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -233,7 +233,7 @@ const InventoryGrid: React.FC<{
                 if (item.id === 'vacation') return false;
                 return (inventory[item.id] || 0) > 0;
             }).length === 0 ? (
-                <div className={`col-span-full text-center py-8 ${isCyberpunk ? 'text-[#00f0ff]/40' : 'text-slate-500'}`}>Your inventory is empty. Visit the shop!</div>
+                <div className={`col-span-full text-center py-8 ${isCyberpunk ? 'text-[#00f0ff]/40' : 'text-gray-500 dark:text-slate-500'}`}>Your inventory is empty. Visit the shop!</div>
             ) : (
                 items.filter(item => {
                     if (item.type === 'unlock') return inventory[item.id];
@@ -248,24 +248,24 @@ const InventoryGrid: React.FC<{
                     else if (item.type !== 'unlock') count = inventory[item.id];
 
                     return (
-                        <div key={item.id} className={`flex items-center justify-between p-4 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-black/20 border-white/10'}`}>
+                        <div key={item.id} className={`flex items-center justify-between p-4 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-gray-50 dark:bg-black/20 border-gray-200 dark:border-white/10'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="text-2xl">{item.icon}</div>
                                 <div>
-                                    <p className={`font-bold text-sm ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{item.name}</p>
-                                    {item.type !== 'unlock' && <p className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-slate-400'}`}>Owned: {count}</p>}
+                                    <p className={`font-bold text-sm ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{item.name}</p>
+                                    {item.type !== 'unlock' && <p className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-slate-400'}`}>Owned: {count}</p>}
                                 </div>
                             </div>
                             {item.type !== 'unlock' && (
                                 <div className="flex gap-2">
-                                    <button onClick={(e) => handleConsume(item.id, e)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}>Use</button>
-                                    <button onClick={(e) => handleSell(item.id, e)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${isCyberpunk ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30' : 'bg-red-100 text-red-600 hover:bg-red-200'}`} title={`Sell for ${Math.floor(item.cost * 0.6)} Gems`}>Sell</button>
+                                    <button onClick={(e) => handleConsume(item.id, e)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-white dark:bg-slate-700 border border-gray-200 dark:border-transparent hover:bg-gray-50 dark:hover:bg-slate-600 text-gray-700 dark:text-white'}`}>Use</button>
+                                    <button onClick={(e) => handleSell(item.id, e)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${isCyberpunk ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30'}`} title={`Sell for ${Math.floor(item.cost * 0.6)} Gems`}>Sell</button>
                                 </div>
                             )}
                             {item.type === 'unlock' && (
                                 <div className="flex gap-2 items-center">
-                                    <span className={`text-xs font-bold px-2 py-1 rounded ${isCyberpunk ? 'bg-[#00ff00]/20 text-[#00ff00]' : 'bg-green-900/20 text-green-400'}`}>Active</span>
-                                    <button onClick={(e) => handleSell(item.id, e)} className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-colors ${isCyberpunk ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30' : 'bg-red-100 text-red-600 hover:bg-red-200'}`} title={`Sell for ${Math.floor(item.cost * 0.6)} Gems`}>Sell</button>
+                                    <span className={`text-xs font-bold px-2 py-1 rounded ${isCyberpunk ? 'bg-[#00ff00]/20 text-[#00ff00]' : 'bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400'}`}>Active</span>
+                                    <button onClick={(e) => handleSell(item.id, e)} className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-colors ${isCyberpunk ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30'}`} title={`Sell for ${Math.floor(item.cost * 0.6)} Gems`}>Sell</button>
                                 </div>
                             )}
                         </div>
@@ -307,14 +307,14 @@ const ShopGrid: React.FC<{
     };
 
     return (
-    <div className={`rounded-3xl p-8 border shadow-2xl relative overflow-hidden ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-gradient-to-br from-slate-900 to-slate-800 border-white/10'}`}>
-        <div className={`absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none ${isCyberpunk ? 'bg-[#00f0ff]/10' : 'bg-purple-500/10'}`}></div>
+    <div className={`rounded-3xl p-8 border shadow-2xl relative overflow-hidden ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-gradient-to-br dark:from-slate-900 dark:to-slate-800 border-gray-200 dark:border-white/10'}`}>
+        <div className={`absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none ${isCyberpunk ? 'bg-[#00f0ff]/10' : 'bg-purple-100 dark:bg-purple-500/10'}`}></div>
         <div className="flex justify-between items-center mb-8 relative z-10">
-            <h3 className={`text-2xl font-bold flex items-center gap-3 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>
-                <span className="text-3xl">🏦</span> Market <span className={`text-sm font-normal ml-2 opacity-60 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-slate-300'}`}>(Spend your winnings)</span>
+            <h3 className={`text-2xl font-bold flex items-center gap-3 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>
+                <span className="text-3xl">🏦</span> Market <span className={`text-sm font-normal ml-2 opacity-60 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-500 dark:text-slate-300'}`}>(Spend your winnings)</span>
             </h3>
             {onAddCustom && (
-                <button onClick={onAddCustom} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/30 hover:bg-[#00f0ff]/20' : 'bg-white/10 text-white border-white/20 hover:bg-white/20'}`}>
+                <button onClick={onAddCustom} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/30 hover:bg-[#00f0ff]/20' : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-white border-gray-200 dark:border-white/20 hover:bg-gray-200 dark:hover:bg-white/20'}`}>
                     + Custom Item
                 </button>
             )}
@@ -329,7 +329,7 @@ const ShopGrid: React.FC<{
                     onDragStart={(e) => handleDragStart(e, index)}
                     onDragOver={(e) => handleDragOver(e, index)}
                     onDragEnd={() => setDraggingIndex(null)}
-                    className={`group rounded-2xl p-5 transition-all duration-300 flex flex-col gap-4 relative cursor-move ${isCyberpunk ? 'bg-black border-[#00f0ff]/20 hover:border-[#00f0ff]' : 'bg-black/20 hover:bg-white/5 border-white/5 hover:border-purple-500/50'} ${inventory[item.id] && item.type === 'unlock' ? (isCyberpunk ? 'border-[#00ff00]/50 bg-[#00ff00]/10' : 'border-green-500/30 bg-green-900/10') : ''} ${isExpired ? 'opacity-60 grayscale' : ''} ${draggingIndex === index ? 'opacity-50' : ''}`}>
+                    className={`group rounded-2xl p-5 transition-all duration-300 flex flex-col gap-4 relative cursor-move ${isCyberpunk ? 'bg-black border-[#00f0ff]/20 hover:border-[#00f0ff]' : 'bg-gray-50 dark:bg-black/20 hover:bg-white dark:hover:bg-white/5 border-gray-200 dark:border-white/5 hover:border-purple-300 dark:hover:border-purple-500/50'} ${inventory[item.id] && item.type === 'unlock' ? (isCyberpunk ? 'border-[#00ff00]/50 bg-[#00ff00]/10' : 'border-green-200 dark:border-green-500/30 bg-green-50 dark:bg-green-900/10') : ''} ${isExpired ? 'opacity-60 grayscale' : ''} ${draggingIndex === index ? 'opacity-50' : ''}`}>
                     {item.isCustom && (
                         <button 
                             onClick={(e) => { e.stopPropagation(); handleDeleteCustom(item.id); }}
@@ -340,12 +340,12 @@ const ShopGrid: React.FC<{
                         </button>
                     )}
                     <div className="flex justify-between items-start">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl shadow-inner border group-hover:scale-110 transition-transform ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-gradient-to-br from-purple-900 to-slate-900 border-white/10'}`}>
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl shadow-inner border group-hover:scale-110 transition-transform ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gradient-to-br dark:from-purple-900 dark:to-slate-900 border-gray-200 dark:border-white/10'}`}>
                             {item.icon}
                         </div>
                         <div className="flex flex-col items-end gap-1">
                             <div className="flex gap-1">
-                                {item.type === 'unlock' && <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${isCyberpunk ? 'border-purple-500/30 text-purple-400 bg-purple-500/10' : 'border-purple-500/30 text-purple-300 bg-purple-500/10'}`}>One-Time</span>}
+                                {item.type === 'unlock' && <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${isCyberpunk ? 'border-purple-500/30 text-purple-400 bg-purple-500/10' : 'border-purple-200 dark:border-purple-500/30 text-purple-600 dark:text-purple-300 bg-purple-50 dark:bg-purple-500/10'}`}>One-Time</span>}
                                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border ${getCategoryColor(item.category || '', isCyberpunk)}`}>{item.category}</span>
                             </div>
                             {item.expiryDate && <span className={`text-[9px] font-mono ${isExpired ? 'text-red-500' : (isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-400')}`}>{isExpired ? 'EXPIRED' : new Date(item.expiryDate).toLocaleDateString()}</span>}
@@ -353,12 +353,12 @@ const ShopGrid: React.FC<{
                     </div>
                     <div className="flex-1">
                         <div className="flex justify-between items-baseline mb-1">
-                            <h4 className={`font-bold text-base ${isCyberpunk ? 'text-[#00f0ff]' : 'text-slate-200'}`}>{item.name}</h4>
-                            <span className={`font-mono font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{item.cost > 0 ? `${item.cost} 💎` : 'FREE'}</span>
+                            <h4 className={`font-bold text-base ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-slate-200'}`}>{item.name}</h4>
+                            <span className={`font-mono font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-white'}`}>{item.cost > 0 ? `${item.cost} 💎` : 'FREE'}</span>
                         </div>
-                        <p className={`text-xs leading-relaxed ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-slate-400'}`}>{item.desc}</p>
+                        <p className={`text-xs leading-relaxed ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-slate-400'}`}>{item.desc}</p>
                     </div>
-                    <button onClick={(e) => handleBuy(item, e)} disabled={isExpired || currentGems < item.cost || (item.type === 'unlock' && inventory[item.id])} className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${item.type === 'unlock' && inventory[item.id] ? (isCyberpunk ? 'bg-[#00ff00]/20 text-[#00ff00] cursor-default' : 'bg-green-600/20 text-green-500 cursor-default') : (isExpired ? (isCyberpunk ? 'bg-[#0a0a0a] text-red-500/50 border border-red-900/30 cursor-not-allowed' : 'bg-gray-800 text-gray-500 cursor-not-allowed') : (currentGems >= item.cost ? (isCyberpunk ? 'bg-[#00f0ff] text-black hover:bg-[#00f0ff]/80 shadow-[0_0_10px_rgba(0,240,255,0.4)]' : 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/20') : (isCyberpunk ? 'bg-[#0a0a0a] text-[#00f0ff]/30 cursor-not-allowed border border-[#00f0ff]/10' : 'bg-slate-800 text-slate-600 cursor-not-allowed')))}`}>
+                    <button onClick={(e) => handleBuy(item, e)} disabled={isExpired || currentGems < item.cost || (item.type === 'unlock' && inventory[item.id])} className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${item.type === 'unlock' && inventory[item.id] ? (isCyberpunk ? 'bg-[#00ff00]/20 text-[#00ff00] cursor-default' : 'bg-green-100 dark:bg-green-600/20 text-green-600 dark:text-green-500 cursor-default') : (isExpired ? (isCyberpunk ? 'bg-[#0a0a0a] text-red-500/50 border border-red-900/30 cursor-not-allowed' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed') : (currentGems >= item.cost ? (isCyberpunk ? 'bg-[#00f0ff] text-black hover:bg-[#00f0ff]/80 shadow-[0_0_10px_rgba(0,240,255,0.4)]' : 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/20') : (isCyberpunk ? 'bg-[#0a0a0a] text-[#00f0ff]/30 cursor-not-allowed border border-[#00f0ff]/10' : 'bg-gray-200 dark:bg-slate-800 text-gray-400 dark:text-slate-600 cursor-not-allowed')))}`}>
                         {item.type === 'unlock' && inventory[item.id] ? 'Purchased' : isExpired ? 'Expired' : currentGems >= item.cost ? 'Purchase' : `Need ${item.cost - currentGems} 💎`}
                     </button>
                 </div>
@@ -382,13 +382,31 @@ const SlotMachineModal: React.FC<{
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+            <style>{`
+                @keyframes slot-spin {
+                    0% { transform: translateY(-150%); filter: blur(4px); opacity: 0.5; }
+                    100% { transform: translateY(150%); filter: blur(4px); opacity: 0.5; }
+                }
+                @keyframes reel-stop {
+                    0% { transform: translateY(-100%); filter: blur(2px); }
+                    60% { transform: translateY(15%); filter: blur(0); }
+                    80% { transform: translateY(-5%); }
+                    100% { transform: translateY(0); }
+                }
+                .slot-spinning {
+                    animation: slot-spin 0.1s linear infinite;
+                }
+                .reel-stop {
+                    animation: reel-stop 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+                }
+            `}</style>
             <div className={`w-full max-w-md rounded-3xl border-4 shadow-[0_0_50px_rgba(234,179,8,0.3)] p-8 relative overflow-hidden flex flex-col items-center ${isCyberpunk ? 'bg-black border-[#00f0ff] shadow-[0_0_50px_rgba(0,240,255,0.3)]' : 'bg-[#1c1c1e] border-yellow-500'}`}>
                 <div className={`absolute top-0 left-0 w-full h-32 bg-gradient-to-b to-transparent pointer-events-none ${isCyberpunk ? 'from-[#00f0ff]/20' : 'from-yellow-500/20'}`}></div>
                 <h3 className={`text-3xl font-black mb-8 drop-shadow-sm ${isCyberpunk ? 'text-[#00f0ff]' : 'text-yellow-400'}`}>JACKPOT SLOTS</h3>
                 <div className={`flex gap-4 mb-8 p-6 rounded-2xl border shadow-inner ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-black/50 border-white/10'}`}>
                     {slotItems.map((item, i) => (
                         <div key={i} className={`w-20 h-24 bg-white text-6xl flex items-center justify-center rounded-xl shadow-[inset_0_2px_10px_rgba(0,0,0,0.2)] border-b-4 border-slate-300 overflow-hidden relative transition-transform duration-200 ${reelStatuses[i] ? 'scale-100' : 'scale-95'} ${isCyberpunk ? 'bg-[#00f0ff] text-black border-[#0099ff]' : ''}`}>
-                            <div className={`transition-all duration-100 ${!reelStatuses[i] ? 'blur-[2px] -translate-y-1' : ''}`}>{item}</div>
+                            <div className={`${!reelStatuses[i] ? 'slot-spinning' : 'reel-stop'}`}>{item}</div>
                         </div>
                     ))}
                 </div>
@@ -490,42 +508,42 @@ const TrophyRoom: React.FC<{
 }> = ({ achievements, unlockedCount, isCyberpunk, filter, setFilter }) => (
     <div>
         <div className="flex items-center justify-between mb-6">
-            <h3 className={`text-xl font-bold flex items-center gap-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>
+            <h3 className={`text-xl font-bold flex items-center gap-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>
                 <span className="text-2xl">🏆</span> Trophy Room
             </h3>
             <div className="flex gap-2">
-                <div className={`flex p-1 rounded-lg ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-slate-800'}`}>
+                <div className={`flex p-1 rounded-lg ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-slate-800'}`}>
                     {(['all', 'unlocked', 'locked'] as const).map(f => (
-                        <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all capitalize ${filter === f ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-sm' : 'bg-blue-600 text-white shadow-sm') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-slate-400 hover:text-white')}`}>
+                        <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all capitalize ${filter === f ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-sm' : 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white')}`}>
                             {f}
                         </button>
                     ))}
                 </div>
-                <div className={`px-3 py-1 rounded-lg border flex items-center ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-slate-800 border-slate-700'}`}>
-                    <span className={`text-xs font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-slate-300'}`}>{unlockedCount} / {achievements.length}</span>
+                <div className={`px-3 py-1 rounded-lg border flex items-center ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'}`}>
+                    <span className={`text-xs font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-slate-300'}`}>{unlockedCount} / {achievements.length}</span>
                 </div>
             </div>
         </div>
         
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {achievements.map((badge) => (
-                <div key={badge.id} className={`relative aspect-square rounded-2xl border flex flex-col items-center justify-center text-center p-2 transition-all duration-300 group overflow-hidden ${badge.isUnlocked ? (isCyberpunk ? 'bg-black border-[#00f0ff]/50 shadow-[0_0_15px_rgba(0,240,255,0.2)] hover:border-[#00f0ff]' : `bg-gradient-to-b from-slate-800 to-slate-900 shadow-[0_0_15px_rgba(0,0,0,0.3)] hover:-translate-y-1 ${RARITY_COLORS[badge.rewardConfig.rarity].replace('text-', 'border-').split(' ')[1] || 'border-slate-700'}`) : (isCyberpunk ? 'bg-black border-[#00f0ff]/10 opacity-40 grayscale' : 'bg-slate-900/50 border-slate-800 opacity-40 grayscale')}`}>
+                <div key={badge.id} className={`relative aspect-square rounded-2xl border flex flex-col items-center justify-center text-center p-2 transition-all duration-300 group overflow-hidden ${badge.isUnlocked ? (isCyberpunk ? 'bg-black border-[#00f0ff]/50 shadow-[0_0_15px_rgba(0,240,255,0.2)] hover:border-[#00f0ff]' : `bg-white dark:bg-gradient-to-b dark:from-slate-800 dark:to-slate-900 shadow-lg dark:shadow-[0_0_15px_rgba(0,0,0,0.3)] hover:-translate-y-1 ${RARITY_COLORS[badge.rewardConfig.rarity].replace('text-', 'border-').split(' ')[1] || 'border-gray-200 dark:border-slate-700'}`) : (isCyberpunk ? 'bg-black border-[#00f0ff]/10 opacity-40 grayscale' : 'bg-gray-50 dark:bg-slate-900/50 border-gray-200 dark:border-slate-800 opacity-40 grayscale')}`}>
                 <div className="flex flex-col items-center transition-opacity duration-300 group-hover:opacity-0">
                     <div className={`text-4xl mb-2 transition-transform duration-300 ${badge.isUnlocked ? (isCyberpunk ? 'drop-shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]') : 'opacity-50'}`}>{badge.icon}</div>
-                    <h4 className={`font-bold text-xs mb-1 line-clamp-1 ${badge.isUnlocked ? (isCyberpunk ? 'text-[#00f0ff]' : RARITY_COLORS[badge.rewardConfig.rarity].split(' ')[0]) : (isCyberpunk ? 'text-[#00f0ff]/40' : 'text-slate-500')}`}>{badge.title}</h4>
+                    <h4 className={`font-bold text-xs mb-1 line-clamp-1 ${badge.isUnlocked ? (isCyberpunk ? 'text-[#00f0ff]' : RARITY_COLORS[badge.rewardConfig.rarity].split(' ')[0]) : (isCyberpunk ? 'text-[#00f0ff]/40' : 'text-gray-400 dark:text-slate-500')}`}>{badge.title}</h4>
                     {badge.isUnlocked && <div className={`absolute top-2 right-2 w-2 h-2 rounded-full ${isCyberpunk ? 'bg-[#00f0ff] shadow-[0_0_5px_rgba(0,240,255,0.8)]' : 'bg-yellow-500 shadow-[0_0_5px_rgba(234,179,8,0.8)]'}`}></div>}
-                    <div className={`mt-1 text-[9px] font-bold px-1.5 py-0.5 rounded border ${badge.isUnlocked ? (isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/20' : 'bg-slate-800 ' + RARITY_COLORS[badge.rewardConfig.rarity]) : (isCyberpunk ? 'bg-black text-[#00f0ff]/30 border-[#00f0ff]/10' : 'bg-slate-800 text-slate-600 border-slate-700')}`}>{badge.rewardConfig.gems} 💎</div>
+                    <div className={`mt-1 text-[9px] font-bold px-1.5 py-0.5 rounded border ${badge.isUnlocked ? (isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-slate-800 ' + RARITY_COLORS[badge.rewardConfig.rarity]) : (isCyberpunk ? 'bg-black text-[#00f0ff]/30 border-[#00f0ff]/10' : 'bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-600 border-gray-200 dark:border-slate-700')}`}>{badge.rewardConfig.gems} 💎</div>
                 </div>
-                <div className={`absolute inset-0 flex flex-col items-center justify-center p-3 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 ${isCyberpunk ? 'bg-black/95' : 'bg-slate-900/95'}`}>
-                    <p className={`text-xs font-bold mb-1 line-clamp-1 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{badge.title}</p>
-                    <p className={`text-[10px] leading-relaxed line-clamp-3 ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-slate-300'}`}>{badge.description}</p>
+                <div className={`absolute inset-0 flex flex-col items-center justify-center p-3 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 ${isCyberpunk ? 'bg-black/95' : 'bg-white/95 dark:bg-slate-900/95'}`}>
+                    <p className={`text-xs font-bold mb-1 line-clamp-1 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{badge.title}</p>
+                    <p className={`text-[10px] leading-relaxed line-clamp-3 ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-gray-600 dark:text-slate-300'}`}>{badge.description}</p>
                     {!badge.isUnlocked && badge.progress > 0 && (
                         <div className="w-full mt-2 px-1">
-                            <div className={`flex justify-between text-[8px] mb-0.5 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-slate-400'}`}><span>Progress</span><span>{Math.floor(badge.progress)}%</span></div>
+                            <div className={`flex justify-between text-[8px] mb-0.5 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-slate-400'}`}><span>Progress</span><span>{Math.floor(badge.progress)}%</span></div>
                             <div className={`h-1 w-full rounded-full overflow-hidden ${isCyberpunk ? 'bg-[#00f0ff]/20' : 'bg-slate-700'}`}><div className={`h-full ${isCyberpunk ? 'bg-[#00f0ff]' : 'bg-blue-500'}`} style={{ width: `${badge.progress}%` }}></div></div>
                         </div>
                     )}
-                    <div className={`mt-2 text-[9px] font-bold px-1.5 py-0.5 rounded border ${badge.isUnlocked ? (isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/20' : 'bg-slate-800 ' + RARITY_COLORS[badge.rewardConfig.rarity]) : (isCyberpunk ? 'bg-black text-[#00f0ff]/40 border-[#00f0ff]/10' : 'bg-slate-800 text-slate-500 border-slate-700')}`}>{badge.rewardConfig.gems} 💎</div>
+                    <div className={`mt-2 text-[9px] font-bold px-1.5 py-0.5 rounded border ${badge.isUnlocked ? (isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-slate-800 ' + RARITY_COLORS[badge.rewardConfig.rarity]) : (isCyberpunk ? 'bg-black text-[#00f0ff]/40 border-[#00f0ff]/10' : 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-500 border-gray-200 dark:border-slate-700')}`}>{badge.rewardConfig.gems} 💎</div>
                 </div>
             </div>
             ))}
@@ -929,6 +947,8 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
       const savedVol = localStorage.getItem('focusflow_timer_volume');
       const vol = savedVol ? parseFloat(savedVol) : 0.5;
       
+      playTone(600, 0.2, vol, 'sine'); // Start Spin Sound
+      
       let ticks = 0;
       const symbols = ['🍒', '🍋', '🍇', '💎', '7️⃣', '🔔'];
       
@@ -939,11 +959,11 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
               if (ticks % 2 === 0) playSpinTick(vol);
               const next = [...prev];
               if (ticks < 20) next[0] = symbols[Math.floor(Math.random() * symbols.length)];
-              else if (ticks === 20) { next[0] = '💎'; setReelStatuses(s => [true, false, false]); }
+              else if (ticks === 20) { next[0] = '💎'; setReelStatuses(s => [true, false, false]); playTone(300, 0.1, vol, 'sawtooth'); }
               if (ticks < 35) next[1] = symbols[Math.floor(Math.random() * symbols.length)];
-              else if (ticks === 35) { next[1] = '💎'; setReelStatuses(s => [true, true, false]); }
+              else if (ticks === 35) { next[1] = '💎'; setReelStatuses(s => [true, true, false]); playTone(300, 0.1, vol, 'sawtooth'); }
               if (ticks < 50) next[2] = symbols[Math.floor(Math.random() * symbols.length)];
-              else if (ticks === 50) { next[2] = '💎'; setReelStatuses(s => [true, true, true]); }
+              else if (ticks === 50) { next[2] = '💎'; setReelStatuses(s => [true, true, true]); playTone(300, 0.1, vol, 'sawtooth'); }
               return next;
           });
           if (ticks >= 50) {

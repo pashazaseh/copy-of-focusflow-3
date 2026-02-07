@@ -198,7 +198,7 @@ export const CountdownPanel: React.FC = () => {
         setIsSyncingGoogle(true);
         const client = (window as any).google.accounts.oauth2.initTokenClient({
             client_id: googleClientId,
-            scope: 'https://www.googleapis.com/auth/calendar.readonly',
+            scope: 'https://www.googleapis.com/auth/calendar',
             callback: (resp: any) => {
                 if (resp.access_token) {
                     importFromGoogle(resp.access_token);

@@ -23,6 +23,12 @@ export const Heatmap: React.FC<HeatmapProps> = React.memo(({ data, year, onDayCl
   const settingsRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(800);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+      isMounted.current = true;
+      return () => { isMounted.current = false; };
+  }, []);
   
   // View Preferences
   const [density, setDensity] = useState<Density>(() => {
@@ -77,7 +83,7 @@ export const Heatmap: React.FC<HeatmapProps> = React.memo(({ data, year, onDayCl
           // Debounce slightly to prevent "ResizeObserver loop limit exceeded"
           // and reduce render frequency during rapid resizing
           setTimeout(() => {
-              if (entry.contentRect.width > 0) {
+              if (isMounted.current && entry.contentRect.width > 0) {
                   setContainerWidth(prev => {
                       const newWidth = Math.round(entry.contentRect.width);
                       // Only update if difference is significant (>2px) to prevent jitter/loops

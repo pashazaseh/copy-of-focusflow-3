@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { Project, StudyLog, UserGoals, ViewMode, SettingsTab, SidebarConfig, MenuBarConfig, HeatmapTheme, AppTheme, CountdownItem, Transaction } from './types';
 import { NAV_ITEMS_DEF } from './components/Sidebar';
 import * as storage from './services/storageService';
+import { fetchTickTickTasks } from './services/tickTickService';
 
 // --- Theme Context ---
 interface ThemeContextType {
@@ -105,13 +106,27 @@ export const useCountdowns = () => {
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // --- Initialization & Global Effects ---
     const notifiedEventsRef = useRef<Set<string>>(new Set());
+    const lastCheckedDateRef = useRef<string>('');
+
+    // Check for lightweight modes to skip heavy data loading
+    const isLightweightMode = typeof window !== 'undefined' && (
+        new URLSearchParams(window.location.search).get('mode') === 'mini-capture' ||
+        new URLSearchParams(window.location.search).get('mode') === 'quick'
+    );
 
     const checkReminders = useCallback(async () => {
+        if (isLightweightMode) return;
         if (Notification.permission !== "granted") return;
         try {
             const events = await storage.getCustomEvents();
             const now = new Date();
             const todayStr = now.toISOString().split('T')[0];
+
+            // Clear cache if day changed to prevent memory leak
+            if (lastCheckedDateRef.current !== todayStr) {
+                notifiedEventsRef.current.clear();
+                lastCheckedDateRef.current = todayStr;
+            }
 
             events.forEach(event => {
                 if (!event.reminderMinutes || !event.time) return;
@@ -147,7 +162,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch (error) {
             console.error("Failed to check reminders:", error);
         }
-    }, []);
+    }, [isLightweightMode]);
 
     // --- Theme State ---
     const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -300,7 +315,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [currentView, setCurrentView] = useState<ViewMode>(ViewMode.DASHBOARD);
     const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
     const [navConfig, setNavConfigState] = useState<StoredNavConfig[]>([]);
-    const [sidebarConfig, setSidebarConfigState] = useState<SidebarConfig>({ showWeeklyGoalWidget: true });
+    const [sidebarConfig, setSidebarConfigState] = useState<SidebarConfig>({
+        showWeeklyGoalWidget: true,
+        showDailyGoalWidget: false,
+        showMonthlyGoalWidget: false,
+        showTimerWidget: false,
+        showCountdownWidget: false,
+        showQuestsWidget: true,
+        questsWidgetSize: 'standard',
+        widgetOrder: [
+            'showTimerWidget', 'showQuestsWidget', 'showCountdownWidget',
+            'showDailyGoalWidget', 'showWeeklyGoalWidget', 'showMonthlyGoalWidget'
+        ]
+    });
     const [menuBarConfig, setMenuBarConfigState] = useState<MenuBarConfig>({ mode: 'none' });
 
     const setNavConfig = useCallback((newConfig: StoredNavConfig[]) => {
@@ -369,6 +396,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // --- Global Init Effect ---
     useEffect(() => {
         const init = async () => {
+          if (isLightweightMode) return;
+
           try {
             const initialized = await storage.isInitialized();
             if (!initialized) {
@@ -438,10 +467,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const reminderInterval = setInterval(checkReminders, 30000);
         return () => clearInterval(reminderInterval);
-    }, [checkReminders]);
+    }, [checkReminders, isLightweightMode]);
+
+    // --- TickTick Auto Sync ---
+    useEffect(() => {
+        if (isLightweightMode) return;
+
+        const syncTickTick = async () => {
+            const autoSync = localStorage.getItem('focusflow_ticktick_auto_sync') === 'true';
+            const token = localStorage.getItem('ticktick_access_token');
+            
+            if (autoSync && token) {
+                try {
+                    const importedTasks = await fetchTickTickTasks(token);
+                    const projects = await storage.getProjects();
+                    const defaultPid = projects[0]?.id;
+                    
+                    const tasksWithProject = importedTasks.map(t => ({
+                        ...t,
+                        projectId: defaultPid
+                    }));
+
+                    const { count } = await storage.mergeTasks(tasksWithProject);
+                    
+                    if (count > 0) {
+                        window.dispatchEvent(new Event('focusflow-task-update'));
+                    }
+                } catch (e) {
+                    console.error("TickTick Background Sync Failed", e);
+                }
+            }
+        };
+
+        const interval = setInterval(syncTickTick, 5 * 60 * 1000); // 5 minutes
+        const timer = setTimeout(syncTickTick, 5000); // Initial check
+        return () => { clearInterval(interval); clearTimeout(timer); };
+    }, [isLightweightMode]);
 
     // --- Auto Backup ---
     useEffect(() => {
+        if (isLightweightMode) return;
+
         const performAutoBackup = async () => {
             const lastBackup = localStorage.getItem('focusflow_last_backup');
             const now = Date.now();
@@ -472,7 +538,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         
         const timer = setTimeout(performAutoBackup, 5000);
         return () => clearTimeout(timer);
-    }, []);
+    }, [isLightweightMode]);
 
     // --- Memoized Values ---
     const themeValue = useMemo(() => ({ isDarkMode, toggleTheme, appTheme, setAppTheme: handleSetAppTheme }), [isDarkMode, toggleTheme, appTheme, handleSetAppTheme]);

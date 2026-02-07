@@ -1,22 +1,26 @@
+/// <reference path="./electron.d.ts" />
 import React, { Component, useState, useEffect, useMemo, useRef, lazy, Suspense, useCallback } from 'react';
 import { MacWindow } from './components/MacWindow';
 import { Sidebar } from './components/Sidebar';
 import { QuickTimerOverlay } from './components/QuickTimerOverlay';
+import { MiniCaptureWindow } from './components/MiniCaptureWindow';
 import { ViewMode, HeatmapTheme, UserGoals, CountdownItem, Achievement, Transaction, StudyLog } from './types';
 import { AppProvider, useTheme, useProjects, useLogs, useUI, useTimerContext, useCountdowns } from './AppContext';
-import { TimerPanel } from './components/TimerPanel';
-import { getUnlockedAchievements, calculateTotalGems } from './services/gamificationService';
+import { getUnlockedAchievements } from './services/gamificationService';
 import { playWin } from './services/audioService';
 
 // Lazy load heavy components
+const TimerPanel = lazy(() => import('./components/TimerPanel').then(m => ({ default: m.TimerPanel })));
 const CalendarPanel = lazy(() => import('./components/CalendarPanel').then(m => ({ default: m.CalendarPanel })));
 const StatisticsPanel = lazy(() => import('./components/StatisticsPanel').then(m => ({ default: m.StatisticsPanel })));
 const CountdownPanel = lazy(() => import('./components/CountdownPanel').then(m => ({ default: m.CountdownPanel })));
-const SettingsPanel = lazy(() => import('./components/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
+const SettingsPanel = lazy(() => import('./components/Settings/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
 const Heatmap = lazy(() => import('./components/Heatmap').then(m => ({ default: m.Heatmap })));
 const InsightsPanel = lazy(() => import('./components/InsightsPanel').then(m => ({ default: m.InsightsPanel })));
 const GamificationPanel = lazy(() => import('./components/GamificationPanel').then(m => ({ default: m.GamificationPanel })));
 const GoalsPanel = lazy(() => import('./components/GoalsPanel').then(m => ({ default: m.GoalsPanel })));
+const TaskPanel = lazy(() => import('./components/TaskPanel').then(m => ({ default: m.TaskPanel })));
+const QuickCapturePanel = lazy(() => import('./components/QuickCapturePanel').then(m => ({ default: m.QuickCapturePanel })));
 
 // Add loading fallback
 const PanelLoader = () => (
@@ -261,6 +265,58 @@ const LogHistoryTable = React.memo(({
     </div>
 ));
 
+// OAuth Callback Component
+const OAuthCallback = ({ code }: { code: string }) => {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(code);
+        setCopied(true);
+    };
+
+    return (
+        <div className="flex flex-col items-center justify-center h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white p-8">
+            <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 text-center border border-gray-200 dark:border-gray-700">
+                <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">
+                    ✓
+                </div>
+                <h2 className="text-2xl font-bold mb-2">Authorization Successful</h2>
+                <p className="text-gray-500 dark:text-gray-400 mb-6">
+                    Please copy the code below and paste it back into FocusFlow to complete the setup.
+                </p>
+                
+                <div className="relative mb-6">
+                    <input 
+                        type="text" 
+                        readOnly 
+                        value={code} 
+                        className="w-full px-4 py-3 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl font-mono text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={(e) => e.currentTarget.select()}
+                    />
+                </div>
+
+                <button 
+                    onClick={handleCopy}
+                    className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${copied ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+                >
+                    {copied ? (
+                        <>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                            Copied!
+                        </>
+                    ) : (
+                        <>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                            Copy Code
+                        </>
+                    )}
+                </button>
+                <p className="text-xs text-gray-400 mt-4">You can close this window after copying.</p>
+            </div>
+        </div>
+    );
+};
+
 function FocusFlowContent() {
   // --- Context Hooks ---
   const { isDarkMode, toggleTheme, appTheme, setAppTheme } = useTheme();
@@ -270,10 +326,18 @@ function FocusFlowContent() {
   const { pendingQuickTimer, setPendingQuickTimer } = useTimerContext();
   const { countdowns } = useCountdowns();
 
-  // --- Quick Timer Overlay Mode Check ---
+  // Helper to check if a view is enabled in settings
+  const isViewEnabled = useCallback((view: ViewMode) => {
+      if (navConfig.length === 0) return true; // Default to true while loading
+      const config = navConfig.find(c => c.view === view);
+      return config ? config.isVisible : true;
+  }, [navConfig]);
+
+  // --- OAuth Callback Check ---
   const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-  if (searchParams.get('mode') === 'quick') {
-      return <QuickTimerOverlay />;
+  const authCode = searchParams.get('code');
+  if (authCode) {
+      return <OAuthCallback code={authCode} />;
   }
 
   const [timerViewInitialized, setTimerViewInitialized] = useState(false);
@@ -314,31 +378,36 @@ function FocusFlowContent() {
   const [toast, setToast] = useState<{title: string, icon: string} | null>(null);
   const prevBadgeCount = useRef<number>(-1);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
-  
-  // Economy State for TimerPanel
-  const [economyState, setEconomyState] = useState({ bonus: 0, spent: 0 });
-
-  // Poll for economy changes (since they happen in localStorage)
-  useEffect(() => {
-      const checkEconomy = () => {
-          const bonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
-          const spent = parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0;
-          if (bonus !== economyState.bonus || spent !== economyState.spent) {
-              setEconomyState({ bonus, spent });
-          }
-      };
-      const interval = setInterval(checkEconomy, 2000);
-      return () => clearInterval(interval);
-  }, [economyState]);
 
   // --- Daily Login Bonus ---
   useEffect(() => {
+      if (!isViewEnabled(ViewMode.GAMIFICATION)) return;
+
       const checkDailyBonus = () => {
           const today = new Date().toISOString().split('T')[0];
           const lastLogin = localStorage.getItem('focusflow_last_login_date');
 
           if (lastLogin !== today) {
-              const bonusAmount = 50;
+              // Randomized Daily Bonus with Jackpot
+              const roll = Math.random();
+              let bonusAmount = 0;
+              let title = '';
+              let icon = '';
+
+              if (roll < 0.02) { // 2% Chance - Mega Jackpot
+                  bonusAmount = 500;
+                  title = 'MEGA JACKPOT!';
+                  icon = '💎';
+              } else if (roll < 0.15) { // 13% Chance - Big Win
+                  bonusAmount = 150;
+                  title = 'Big Bonus!';
+                  icon = '💰';
+              } else {
+                  // 85% Chance - Standard (30-60 gems)
+                  bonusAmount = Math.floor(Math.random() * 31) + 30;
+                  title = 'Daily Login Bonus';
+                  icon = '🎁';
+              }
               
               // Update Bonus Gems (Direct localStorage manipulation to sync with GamificationPanel)
               const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
@@ -350,12 +419,12 @@ function FocusFlowContent() {
                   date: new Date().toISOString(),
                   type: 'EARN',
                   amount: bonusAmount,
-                  description: 'Daily Login Bonus'
+                  description: title
               });
 
               localStorage.setItem('focusflow_last_login_date', today);
               
-              setToast({ title: `Daily Bonus: +${bonusAmount} Gems`, icon: '🎁' });
+              setToast({ title: `${title}: +${bonusAmount} Gems`, icon });
               
               const savedVol = localStorage.getItem('focusflow_timer_volume');
               const vol = savedVol ? parseFloat(savedVol) : 0.5;
@@ -365,7 +434,15 @@ function FocusFlowContent() {
       };
       const timer = setTimeout(checkDailyBonus, 1500);
       return () => clearTimeout(timer);
-  }, [addTransaction]);
+  }, [addTransaction, isViewEnabled]);
+
+  // Sync Global Shortcut on Mount
+  useEffect(() => {
+      const savedShortcut = localStorage.getItem('focusflow_quick_capture_shortcut');
+      if (savedShortcut && window.electronAPI?.updateGlobalShortcut) {
+          window.electronAPI.updateGlobalShortcut(savedShortcut);
+      }
+  }, []);
 
   // Reset page when filters change
   useEffect(() => setHistoryPage(1), [historyFilter, historyScope, historySortField, historySortDesc, historyTypeFilter]);
@@ -373,8 +450,8 @@ function FocusFlowContent() {
   const formRef = useRef<HTMLDivElement>(null); 
 
   useEffect(() => {
-    if (currentView === ViewMode.TIMER) setTimerViewInitialized(true);
-  }, [currentView]);
+    if (currentView === ViewMode.TIMER || pendingQuickTimer) setTimerViewInitialized(true);
+  }, [currentView, pendingQuickTimer]);
 
   const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
@@ -622,9 +699,6 @@ function FocusFlowContent() {
 
   const projectStreaks = useMemo(() => calculateStreaks(projectLogs, freezeDates), [projectLogs, freezeDates]);
 
-  // Gamification uses GLOBAL stats
-  const currentGems = useMemo(() => calculateTotalGems(logs, globalTotalHours, globalStreaks.current, economyState.bonus, economyState.spent), [logs, globalTotalHours, globalStreaks.current, economyState]);
-
   const latestBadge = useMemo<Achievement | null>(() => {
       const all = getUnlockedAchievements(logs, globalTotalHours, globalStreaks.current);
       const unlocked = all.filter(a => a.isUnlocked);
@@ -796,12 +870,16 @@ function FocusFlowContent() {
             latestBadge={latestBadge}
             logs={projectLogs} // Pass project logs to sidebar for project-specific quests
         />
-        
+        {/* Quick Capture and Mini Overlay Windows */}
+        {pendingQuickTimer && (
+            <QuickTimerOverlay />
+        )}
         <div className={`flex-1 relative overflow-hidden flex flex-col transition-colors duration-300 ${contentBgClass}`}>
           
           {/* TimerPanel must be outside Suspense to prevent unmounting when other tabs load */}
-          {(currentView === ViewMode.TIMER || timerViewInitialized) && (
+          {isViewEnabled(ViewMode.TIMER) && (currentView === ViewMode.TIMER || timerViewInitialized) && (
             <div className={currentView === ViewMode.TIMER ? "h-full" : "hidden"}>
+              <Suspense fallback={<PanelLoader />}>
                 <TimerPanel 
                   onSaveSession={handleTimerSave} 
                   projectId={currentProjectId} 
@@ -809,9 +887,8 @@ function FocusFlowContent() {
                   menuBarConfig={menuBarConfig}
                   externalStart={pendingQuickTimer}
                   onConsumeExternalStart={handleConsumeQuickTimer}
-                  currentGems={currentGems}
-                  addTransaction={addTransaction}
               />
+              </Suspense>
             </div>
           )}
 
@@ -956,6 +1033,14 @@ function FocusFlowContent() {
               />
             )}
 
+            {currentView === ViewMode.TASKS && (
+              <TaskPanel projects={projects} />
+            )}
+
+            {currentView === ('QUICK_CAPTURE' as any) && (
+              <QuickCapturePanel />
+            )}
+
             {currentView === ViewMode.COUNTDOWN && (
               <CountdownPanel />
             )}
@@ -1034,10 +1119,19 @@ const getNextDate = (item: CountdownItem): Date => {
 };
 
 export default function App() {
+    const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    const mode = searchParams.get('mode');
+
     return (
         <AppProvider>
             <ErrorBoundary>
-                <FocusFlowContent />
+                {mode === 'mini-capture' ? (
+                    <MiniCaptureWindow />
+                ) : mode === 'quick' ? (
+                    <QuickTimerOverlay />
+                ) : (
+                    <FocusFlowContent />
+                )}
             </ErrorBoundary>
         </AppProvider>
     );
