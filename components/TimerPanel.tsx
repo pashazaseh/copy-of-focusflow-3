@@ -1,28 +1,35 @@
+/// <reference path="../electron.d.ts" />
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as storage from '../services/storageService';
 import { TimerSettings, SessionRecord, Project, MenuBarConfig, Transaction, Task } from '../types';
 import { playAlarm } from '../services/audioService';
-import { useTheme } from '../AppContext';
+import { useTheme, useLogs } from '../AppContext';
 
 interface TimerPanelProps {
-    onSaveSession: (hours: number, note?: string, projectId?: string) => void;
+    onSaveSession: (hours: number, note?: string, projectId?: string, taskId?: string) => void;
     projectId: string; 
     projects: Project[]; 
     menuBarConfig: MenuBarConfig;
     externalStart?: { duration: number; timestamp: number } | null;
     onConsumeExternalStart?: () => void;
-    currentGems: number;
-    addTransaction: (t: Transaction) => void;
 }
 
 type TimerMode = 'POMO' | 'STOPWATCH';
 type TimerPhase = 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
 
 export const TimerPanel: React.FC<TimerPanelProps> = ({ 
-    onSaveSession, projectId, projects, menuBarConfig, externalStart, onConsumeExternalStart, currentGems: propGems, addTransaction 
+    onSaveSession, projectId, projects, menuBarConfig, externalStart, onConsumeExternalStart 
 }) => {
 // --- Core State ---
   const { appTheme } = useTheme();
+  const { addTransaction, transactions } = useLogs(); // Fetch directly from context
+  
+  // Calculate Gems dynamically
+  const currentGems = useMemo(() => {
+      const bonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
+      const txTotal = transactions.reduce((acc, t) => acc + t.amount, 0);
+      return txTotal + bonus;
+  }, [transactions]);
   
   const [mode, setMode] = useState<TimerMode>('POMO');
   const [phase, setPhase] = useState<TimerPhase>('FOCUS');
@@ -79,15 +86,19 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
   const historyMenuRef = useRef<HTMLDivElement>(null);
   const isMounted = useRef(true);
 
-  // State Ref to prevent stale closures in setInterval
+  // BUG FIX: State Ref to prevent stale closures in setInterval
   const stateRef = useRef({
-      sessionLabel, selectedProjectId, selectedTaskId, settings, pomosCompleted, wager, isWagerActive, initialTime, phase, mode
+      sessionLabel, selectedProjectId, selectedTaskId, settings, pomosCompleted, wager, isWagerActive, initialTime, phase, mode, tasks,
+      onSaveSession, addTransaction, currentGems
   });
-  // Keep ref synchronized with state
-  stateRef.current = { sessionLabel, selectedProjectId, selectedTaskId, settings, pomosCompleted, wager, isWagerActive, initialTime, phase, mode };
-
-  // Use gems from props
-  const currentGems = propGems;
+  
+  // Keep ref synchronized with state on every render
+  useEffect(() => {
+      stateRef.current = { 
+          sessionLabel, selectedProjectId, selectedTaskId, settings, pomosCompleted, wager, isWagerActive, initialTime, phase, mode, tasks,
+          onSaveSession, addTransaction, currentGems
+      };
+  });
 useEffect(() => {
       isMounted.current = true;
       return () => { isMounted.current = false; };
@@ -95,21 +106,15 @@ useEffect(() => {
 
   // --- Power Save Blocker ---
   useEffect(() => {
-      if (isActive) {
-          window.electronAPI?.preventAppSuspension?.(true);
-      } else {
-          window.electronAPI?.preventAppSuspension?.(false);
-      }
-      return () => {
-          window.electronAPI?.preventAppSuspension?.(false);
-      };
+      if (isActive) window.electronAPI?.preventAppSuspension?.(true);
+      else window.electronAPI?.preventAppSuspension?.(false);
+      return () => { window.electronAPI?.preventAppSuspension?.(false); };
   }, [isActive]);
 
   // --- Initialization ---
   useEffect(() => {
       const initTimer = setTimeout(async () => {
           const [sSessions, sSettings, sTasks] = await Promise.all([storage.getSessions(), storage.getTimerSettings(), storage.getTasks()]);
-          
           if (isMounted.current) {
               setSessions(sSessions);
               setSettings(sSettings);
@@ -127,9 +132,7 @@ useEffect(() => {
       };
       document.addEventListener('mousedown', handleClickOutside);
       
-      const handleTaskUpdate = async () => {
-          setTasks(await storage.getTasks());
-      };
+      const handleTaskUpdate = async () => { setTasks(await storage.getTasks()); };
       window.addEventListener('focusflow-task-update', handleTaskUpdate);
       
       return () => {
@@ -282,11 +285,7 @@ const handleTimerComplete = async () => {
           if (isMounted.current) setSessions(updatedSessions);
           
           const hours = Math.round((durationSecs / 3600) * 10) / 10;
-          onSaveSession(hours, labelText, currentData.selectedProjectId);
-
-          if (currentData.selectedTaskId) {
-              // Future: logic to auto-complete task
-          }
+          onSaveSession(hours, labelText, currentData.selectedProjectId, currentData.selectedTaskId);
 
           const newPomos = currentData.pomosCompleted + 1;
           setPomosCompleted(newPomos);
@@ -354,15 +353,21 @@ const handleTimerComplete = async () => {
           } as unknown as SessionRecord;
           
           const updatedSessions = await storage.saveSessionRecord(newSession);
-          if (isMounted.current) setSessions(updatedSessions);
           
           const hours = Math.round((durationSecs / 3600) * 10) / 10;
-          onSaveSession(hours, labelText, selectedProjectId);
+          onSaveSession(hours, labelText, selectedProjectId, selectedTaskId);
+
+          if (isMounted.current) {
+              setSessions(updatedSessions);
+              setTimeLeft(0);
+              setInitialTime(0);
+              startTimeRef.current = null;
+          }
+      } else {
+          setTimeLeft(0);
+          setInitialTime(0);
+          startTimeRef.current = null;
       }
-      
-      setTimeLeft(0);
-      setInitialTime(0);
-      startTimeRef.current = null;
   };
 
   const resetTimer = () => {
@@ -433,7 +438,7 @@ const handleTimerComplete = async () => {
       setIsSettingsOpen(false);
   };
 
-  const handleSettingChange = (k: keyof TimerSettings, v: any) => setTempSettings(p => ({...p, [k]: v}));
+  const handleSettingChange = (k: keyof TimerSettings, v: any) => setTempSettings((p: TimerSettings) => ({...p, [k]: v}));
   
   // --- Add Session Logic ---
   const handleSaveManualSession = async () => {
@@ -453,12 +458,15 @@ const handleTimerComplete = async () => {
       };
       
       const updated = await storage.saveSessionRecord(newSession);
-      if (isMounted.current) setSessions(updated);
       const hours = Math.round((durationSecs / 3600) * 10) / 10;
       onSaveSession(hours, manualDesc, manualProject);
-      setIsAddSessionOpen(false);
-      setManualDesc('');
-      setManualDuration(25);
+      
+      if (isMounted.current) {
+          setSessions(updated);
+          setIsAddSessionOpen(false);
+          setManualDesc('');
+          setManualDuration(25);
+      }
   };
 
   // --- Editing Logic ---
@@ -469,8 +477,8 @@ const handleTimerComplete = async () => {
       const startDate = new Date(session.startTime);
       const endDate = new Date(session.endTime);
       setEditDate(startDate.toISOString().split('T')[0]);
-      setEditStartTime(startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false}));
-      setEditEndTime(endDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false}));
+      setEditStartTime(`${startDate.getHours().toString().padStart(2, '0')}:${startDate.getMinutes().toString().padStart(2, '0')}`);
+      setEditEndTime(`${endDate.getHours().toString().padStart(2, '0')}:${endDate.getMinutes().toString().padStart(2, '0')}`);
       setIsEditModalOpen(true);
   };
 
@@ -487,53 +495,54 @@ const handleTimerComplete = async () => {
   };
 
   const handleSaveEdit = async () => {
-      let updatedSessions = [...sessions];
-      if (editingSessionIds.length === 1) {
-          const id = editingSessionIds[0];
-          const index = updatedSessions.findIndex(s => s.id === id);
-          if (index !== -1) {
-              const startDateTime = new Date(`${editDate}T${editStartTime}`);
-              const endDateTime = new Date(`${editDate}T${editEndTime}`);
-              const updatedSession = {
-                  ...updatedSessions[index],
-                  projectId: editProject || updatedSessions[index].projectId,
-                  label: editLabel,
-                  startTime: startDateTime.toISOString(),
-                  endTime: endDateTime.toISOString(),
-                  duration: (endDateTime.getTime() - startDateTime.getTime()) / 1000
-              };
-              await storage.saveSessionRecord(updatedSession);
-          }
-      } else {
-          for (const s of updatedSessions) {
-              if (editingSessionIds.includes(s.id)) {
-                  let newStart = s.startTime;
-                  let newEnd = s.endTime;
+      const promises: Promise<any>[] = [];
+
+      sessions.forEach(s => {
+          if (editingSessionIds.includes(s.id)) {
+              let updatedSession: SessionRecord;
+              if (editingSessionIds.length === 1) {
+                  const startDateTime = new Date(`${editDate}T${editStartTime}`);
+                  const endDateTime = new Date(`${editDate}T${editEndTime}`);
+                  updatedSession = {
+                      ...s,
+                      projectId: editProject || s.projectId,
+                      label: editLabel,
+                      startTime: startDateTime.toISOString(),
+                      endTime: endDateTime.toISOString(),
+                      duration: (endDateTime.getTime() - startDateTime.getTime()) / 1000
+                  };
+              } else {
+                  let startDateTime = new Date(s.startTime);
+                  let endDateTime = new Date(s.endTime);
+
                   if (editDate) {
-                      const oldStart = new Date(s.startTime);
-                      const oldEnd = new Date(s.endTime);
-                      const timeStart = oldStart.toTimeString().split(' ')[0];
-                      const timeEnd = oldEnd.toTimeString().split(' ')[0];
-                      newStart = new Date(`${editDate}T${timeStart}`).toISOString();
-                      newEnd = new Date(`${editDate}T${timeEnd}`).toISOString();
+                      const timeStart = startDateTime.toTimeString().split(' ')[0];
+                      const timeEnd = endDateTime.toTimeString().split(' ')[0];
+                      startDateTime = new Date(`${editDate}T${timeStart}`);
+                      endDateTime = new Date(`${editDate}T${timeEnd}`);
                   }
-                  const updatedSession = {
+
+                  updatedSession = {
                       ...s,
                       projectId: editProject || s.projectId,
                       label: editLabel || s.label,
-                      startTime: newStart,
-                      endTime: newEnd
+                      startTime: startDateTime.toISOString(),
+                      endTime: endDateTime.toISOString(),
+                      duration: (endDateTime.getTime() - startDateTime.getTime()) / 1000
                   };
-                  await storage.saveSessionRecord(updatedSession);
               }
+              promises.push(storage.saveSessionRecord(updatedSession));
           }
-      }
-      const newSessions = await storage.getSessions();
+      });
+
+      await Promise.all(promises);
+
       if (isMounted.current) {
+          const newSessions = await storage.getSessions();
           setSessions(newSessions);
           setIsEditModalOpen(false);
           setEditingSessionIds([]);
-          setSelectedSessionIds(new Set()); 
+          setSelectedSessionIds(new Set());
       }
   };
 // --- History Management ---
@@ -549,9 +558,11 @@ const handleTimerComplete = async () => {
       if (selectedSessionIds.size === 0) return;
       if (confirm(`Delete ${selectedSessionIds.size} sessions?`)) {
           const updated = await storage.batchDeleteSessions(Array.from(selectedSessionIds));
-          if (isMounted.current) setSessions(updated);
-          setSelectedSessionIds(new Set());
-          setIsHistoryMenuOpen(false);
+          if (isMounted.current) {
+              setSessions(updated);
+              setSelectedSessionIds(new Set());
+              setIsHistoryMenuOpen(false);
+          }
       }
   };
 
@@ -559,17 +570,25 @@ const handleTimerComplete = async () => {
       if (confirm("Clear all session history? This cannot be undone.")) {
           const allIds = sessions.map(s => s.id);
           const updated = await storage.batchDeleteSessions(allIds);
-          if (isMounted.current) setSessions(updated);
-          setSelectedSessionIds(new Set());
-          setIsHistoryMenuOpen(false);
+          if (isMounted.current) {
+              setSessions(updated);
+              setSelectedSessionIds(new Set());
+              setIsHistoryMenuOpen(false);
+          }
       }
   };
 
   // --- Stats & Groups ---
   const stats = useMemo(() => {
-      const today = new Date().toISOString().split('T')[0];
-      const todaySessions = sessions.filter(s => s.startTime.startsWith(today) && s.type === 'POMO');
-      const todayFocusSeconds = sessions.filter(s => s.startTime.startsWith(today)).reduce((acc, curr) => acc + curr.duration, 0);
+      const now = new Date();
+      const isToday = (dateStr: string) => {
+          const d = new Date(dateStr);
+          return d.getDate() === now.getDate() &&
+                 d.getMonth() === now.getMonth() &&
+                 d.getFullYear() === now.getFullYear();
+      };
+      const todaySessions = sessions.filter(s => isToday(s.startTime) && s.type === 'POMO');
+      const todayFocusSeconds = sessions.filter(s => isToday(s.startTime)).reduce((acc, curr) => acc + curr.duration, 0);
       return { todayPomos: todaySessions.length, todayFocus: Math.round(todayFocusSeconds / 60) };
   }, [sessions]);
 
@@ -625,6 +644,15 @@ const handleTimerComplete = async () => {
   const isUrgent = mode === 'POMO' && initialTime > 0 && (timeLeft / initialTime) <= 0.15;
   const themeColor = mode === 'STOPWATCH' ? 'text-orange-500' : isUrgent ? 'text-red-500' : phase === 'FOCUS' ? 'text-blue-500' : 'text-green-500';
   const shouldAnimate = progress !== 0;
+
+  const handleQuickAction = (minutes: number) => {
+    setMode('POMO');
+    setPhase('FOCUS');
+    const seconds = minutes * 60;
+    setInitialTime(seconds);
+    setTimeLeft(seconds);
+    setIsActive(false);
+  };
 
   const isCyberpunk = appTheme === 'cyberpunk';
 return (
@@ -690,102 +718,110 @@ return (
                  </div>
              </div>
         )}
-{/* LEFT COLUMN: Timer Display */}
-        <div className="flex-1 flex flex-col items-center justify-center p-8 relative transition-colors duration-300">
-             {/* Top Bar */}
-             <div className="absolute top-8 left-8 right-8 z-20 flex justify-between items-start pointer-events-none">
-                 {/* Left: Project/Task Info */}
-                 <div className="pointer-events-auto flex flex-col items-start gap-2 max-w-xs">
-                     <div className="relative group">
-                         <select value={selectedProjectId} onChange={(e) => { setSelectedProjectId(e.target.value); setSelectedTaskId(''); setSessionLabel(''); }} disabled={isActive} className={`appearance-none pl-0 pr-6 py-1 bg-transparent border-none text-lg font-bold cursor-pointer focus:ring-0 transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:text-[#00f0ff]/80' : 'text-gray-900 dark:text-white hover:text-gray-600 dark:hover:text-gray-300'} ${isActive ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                             <option value="all">All Projects</option>
-                             <option value="">No Project</option>
-                             {projects.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
-                         </select>
-                         {!isActive && <div className={`absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-400'}`}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></div>}
-                     </div>
-                     {activeTasks.length > 0 && (
-                         <div className="relative group w-full">
-                             <select value={selectedTaskId} onChange={handleTaskSelect} disabled={isActive} className={`appearance-none pl-0 pr-6 py-1 bg-transparent border-none text-sm font-medium cursor-pointer focus:ring-0 transition-colors w-full truncate ${isCyberpunk ? 'text-[#00f0ff]/80 hover:text-[#00f0ff]' : 'text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white'} ${isActive ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                 <option value="">-- Select Task --</option>
-                                 {activeTasks.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
-                             </select>
-                         </div>
-                     )}
-                     <div className="relative w-full"><input type="text" value={sessionLabel} onChange={(e) => setSessionLabel(e.target.value)} placeholder={isCyberpunk ? "MISSION OBJECTIVE" : "What are you working on?"} className={`w-full bg-transparent border-none p-0 text-sm focus:ring-0 transition-colors ${isCyberpunk ? 'text-[#00f0ff]/80 placeholder-[#00f0ff]/30' : 'text-gray-600 dark:text-gray-300 placeholder-gray-400'}`} disabled={isActive}/></div>
-                 </div>
-
-                 {/* Right: Controls */}
-                 <div className="pointer-events-auto flex gap-2">
-                     <button onClick={openSettings} className={`p-3 rounded-2xl transition-all ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
-                     <button onClick={() => setShowSidebar(!showSidebar)} className={`p-3 rounded-2xl transition-all ${showSidebar ? (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/10' : 'text-blue-600 bg-blue-50 dark:bg-blue-900/20') : (isCyberpunk ? 'text-[#00f0ff]/60 hover:text-[#00f0ff]' : 'text-gray-400 hover:text-gray-900 dark:hover:text-white')}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" /></svg></button>
-                 </div>
-             </div>
-
-             {/* Main Content Centered */}
-             <div className="flex flex-col items-center justify-center w-full max-w-xl z-10">
-                 
-                 {/* Mode Tabs */}
-                 <div className={`flex p-1.5 rounded-2xl mb-10 ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-gray-800/50'}`}>
-                     <button onClick={() => switchMode('POMO')} className={`px-6 py-2 text-sm font-bold rounded-xl transition-all ${mode === 'POMO' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200')}`}>Pomodoro</button>
-                     <button onClick={() => switchMode('STOPWATCH')} className={`px-6 py-2 text-sm font-bold rounded-xl transition-all ${mode === 'STOPWATCH' ? (isCyberpunk ? 'bg-[#f0f]/20 text-[#f0f] shadow-[0_0_10px_rgba(255,0,255,0.3)]' : 'bg-white dark:bg-gray-700 text-orange-500 dark:text-white shadow-sm') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200')}`}>Stopwatch</button>
-                 </div>
-
-                 {/* Timer Circle - Responsive */}
-                 <div className="relative w-full max-w-[380px] aspect-square flex items-center justify-center mb-10 group">
-                     {isCyberpunk && <div className="absolute inset-0 rounded-full border border-[#00f0ff]/20 animate-pulse"></div>}
-                     <svg className="w-full h-full transform -rotate-90 drop-shadow-2xl" viewBox="0 0 100 100">
-                         <defs>
-                             <linearGradient id="focusGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={isCyberpunk ? "#00f0ff" : "#60A5FA"} /><stop offset="100%" stopColor={isCyberpunk ? "#0099ff" : "#3B82F6"} /></linearGradient>
-                             <linearGradient id="breakGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#34D399" /><stop offset="100%" stopColor="#10B981" /></linearGradient>
-                             <linearGradient id="stopwatchGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#FBBF24" /><stop offset="100%" stopColor="#F59E0B" /></linearGradient>
-                             <linearGradient id="urgentGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={isCyberpunk ? "#ff0055" : "#F87171"} /><stop offset="100%" stopColor={isCyberpunk ? "#ff0000" : "#EF4444"} /></linearGradient>
-                             <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2" result="coloredBlur"/><feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-                         </defs>
-                         <circle cx="50" cy="50" r={radius} className={`${isCyberpunk ? 'stroke-[#00f0ff]/10' : 'stroke-gray-200 dark:stroke-gray-800'} transition-colors duration-300`} strokeWidth="3" fill="transparent" />
-                         <circle cx="50" cy="50" r={radius} stroke={`url(#${isUrgent ? 'urgentGradient' : mode === 'POMO' ? (phase === 'FOCUS' ? 'focusGradient' : 'breakGradient') : 'stopwatchGradient'})`} strokeWidth="3" fill="transparent" strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" className={`${shouldAnimate ? 'transition-all duration-1000 ease-linear' : ''}`} style={{ filter: isCyberpunk ? 'url(#glow)' : 'none' }}/>
-                     </svg>
-                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-                         <div className={`text-7xl md:text-8xl font-black tracking-tighter tabular-nums select-none transition-colors duration-300 ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_15px_rgba(0,240,255,0.6)]' : themeColor} drop-shadow-sm`}>{formatTime(timeLeft)}</div>
-                         <div className={`mt-2 text-sm font-bold uppercase tracking-widest ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-400 dark:text-gray-500'}`}>{mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus' : phase === 'SHORT_BREAK' ? 'Short Break' : 'Long Break') : 'Stopwatch'}</div>
-                     </div>
-                 </div>
-
-                 {/* Main Controls */}
-                 <div className="flex items-center gap-6 mt-8">
-                     <button onClick={resetTimer} className={`p-4 rounded-full transition-all active:scale-95 shadow-sm hover:shadow-md ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'bg-gray-100 dark:bg-[#1c1c1e] hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>
-                     <button onClick={toggleTimer} className={`h-24 w-24 rounded-full font-bold text-white shadow-2xl transition-all hover:scale-105 active:scale-95 flex items-center justify-center ${isCyberpunk ? 'bg-black border-2 border-[#00f0ff] text-[#00f0ff] shadow-[0_0_30px_rgba(0,240,255,0.4)] hover:bg-[#00f0ff] hover:text-black' : (mode === 'STOPWATCH' ? 'bg-orange-500 hover:bg-orange-600' : (phase === 'FOCUS' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'))}`}>{isActive ? (<svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>) : (<svg className="w-10 h-10 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>)}</button>
-                     {mode === 'STOPWATCH' && (isActive || timeLeft > 0) && (<button onClick={handleStopwatchFinish} className="p-4 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-500 rounded-full hover:bg-green-200 dark:hover:bg-green-900/50 transition-all active:scale-95" title="Save & Finish"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></button>)}
-                 </div>
-
-                 {/* Wager Controls */}
-                 {mode === 'POMO' && phase === 'FOCUS' && !isActive && (
-                     <div className={`mt-8 flex flex-col items-center animate-fade-in ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-600 dark:text-gray-300'}`}>
-                         <div className="flex items-center gap-2 mb-2"><span className="text-xs font-bold uppercase tracking-wider">Wager Gems</span><span className="text-xs opacity-60">(Win 2x)</span></div>
-                         <div className="flex items-center gap-2">{[0, 10, 50, 100].map(amount => (<button key={amount} onClick={() => setWager(amount)} disabled={currentGems < amount} className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all ${wager === amount ? (isCyberpunk ? 'bg-[#00f0ff] text-black border-[#00f0ff]' : 'bg-blue-600 text-white border-blue-600') : (isCyberpunk ? 'bg-black border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-blue-400')} ${currentGems < amount ? 'opacity-50 cursor-not-allowed' : ''}`}>{amount === 0 ? 'None' : amount} 💎</button>))}</div>
-                         {wager > 0 && <p className="text-[10px] mt-1 text-orange-500 font-bold">Risk: Lose {wager} if stopped early!</p>}
-                     </div>
-                 )}
-             </div>
-        </div>
 
         {/* RIGHT COLUMN: Sidebar Stats & History */}
-        <div className={`${isCyberpunk ? 'bg-[#020202] border-[#00f0ff]/20' : 'bg-[#151516] border-gray-800'} border-l flex flex-col overflow-hidden transition-all duration-300 absolute md:relative right-0 h-full z-30 shadow-2xl md:shadow-none ${showSidebar ? 'w-[320px] md:w-[360px] translate-x-0' : 'w-0 translate-x-full md:translate-x-0 md:w-0'}`}>
-             <div className="p-6 h-full flex flex-col w-[320px] md:w-[360px]"> 
-                <div className="mb-8 shrink-0">
-                    <h3 className={`${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-400'} font-bold text-[10px] uppercase tracking-wider mb-4`}>Today's Overview</h3>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-[#1c1c1e] border-gray-800'} p-4 rounded-xl border`}><div className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Sessions</div><div className={`text-3xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{stats.todayPomos}</div></div>
-                        <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-[#1c1c1e] border-gray-800'} p-4 rounded-xl border`}><div className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Focus Time</div><div className={`text-3xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{stats.todayFocus} <span className={`text-sm font-medium ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>min</span></div></div>
+        <div className={`flex flex-row h-full w-full overflow-hidden`}>
+            
+            {/* LEFT MAIN CONTENT */}
+            <div className="flex-1 flex flex-col relative h-full">
+                
+                {/* 1. TOP HEADER (Responsive Flow) */}
+                <div className="flex justify-between items-start p-6 md:p-8 z-20 shrink-0">
+                    {/* Left: Project/Task Info */}
+                    <div className="flex flex-col items-start gap-2 max-w-[200px] md:max-w-xs w-full">
+                        <div className="relative group w-full">
+                            <select value={selectedProjectId} onChange={(e) => { setSelectedProjectId(e.target.value); setSelectedTaskId(''); setSessionLabel(''); }} disabled={isActive} className={`appearance-none w-full pl-0 pr-6 py-1 bg-transparent border-none text-lg font-bold cursor-pointer focus:ring-0 transition-colors truncate ${isCyberpunk ? 'text-[#00f0ff] hover:text-[#00f0ff]/80' : 'text-gray-900 dark:text-white hover:text-gray-600 dark:hover:text-gray-300'} ${isActive ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                <option value="all">All Projects</option>
+                                <option value="">No Project</option>
+                                {projects.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                            </select>
+                            {!isActive && <div className={`absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-400'}`}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></div>}
+                        </div>
+                        
+                        <div className="relative group w-full">
+                            <select value={selectedTaskId} onChange={handleTaskSelect} disabled={isActive} className={`appearance-none w-full pl-0 pr-6 py-1 bg-transparent border-none text-sm font-medium cursor-pointer focus:ring-0 transition-colors truncate ${isCyberpunk ? 'text-[#00f0ff]/80 hover:text-[#00f0ff]' : 'text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white'} ${isActive ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                <option value="">{activeTasks.length > 0 ? '-- Select Task --' : '-- No Tasks Available --'}</option>
+                                {activeTasks.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+                            </select>
+                        </div>
+                        
+                        <div className="relative w-full"><input type="text" value={sessionLabel} onChange={(e) => setSessionLabel(e.target.value)} placeholder={isCyberpunk ? "MISSION OBJECTIVE" : "What are you working on?"} className={`w-full bg-transparent border-none p-0 text-sm focus:ring-0 transition-colors ${isCyberpunk ? 'text-[#00f0ff]/80 placeholder-[#00f0ff]/30' : 'text-gray-600 dark:text-gray-300 placeholder-gray-400'}`} disabled={isActive}/></div>
+                    </div>
+
+                    {/* Right: Controls */}
+                    <div className="flex gap-2">
+                        <button onClick={openSettings} className={`p-2.5 rounded-xl transition-all ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
+                        <button onClick={() => setShowSidebar(!showSidebar)} className={`p-2.5 rounded-xl transition-all ${showSidebar ? (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/10' : 'text-blue-600 bg-blue-50 dark:bg-blue-900/20') : (isCyberpunk ? 'text-[#00f0ff]/60 hover:text-[#00f0ff]' : 'text-gray-400 hover:text-gray-900 dark:hover:text-white')}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" /></svg></button>
                     </div>
                 </div>
-                <div className="flex-1 flex flex-col min-h-0 relative">
-                    <div className="flex justify-between items-center mb-4 shrink-0 relative"><h3 className="text-gray-400 font-bold text-[10px] uppercase tracking-wider">Session History</h3><div className="flex items-center space-x-3"><button onClick={() => setIsAddSessionOpen(true)} className="text-gray-400 hover:text-white transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg></button><div className="relative" ref={historyMenuRef}><button onClick={() => setIsHistoryMenuOpen(!isHistoryMenuOpen)} className="text-gray-400 hover:text-white transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" /></svg></button>{isHistoryMenuOpen && (<div className="absolute right-0 top-full mt-2 w-48 bg-[#2c2c2e] border border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden animate-fade-in-up">{selectedSessionIds.size > 0 && (<><button onClick={openEditBatch} className="w-full text-left px-4 py-2.5 text-xs font-medium text-white hover:bg-white/5 transition-colors border-b border-gray-700">Edit Selected ({selectedSessionIds.size})</button><button onClick={handleDeleteSelected} className="w-full text-left px-4 py-2.5 text-xs font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors border-b border-gray-700">Delete Selected ({selectedSessionIds.size})</button></>)}<button onClick={handleClearHistory} className="w-full text-left px-4 py-2.5 text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-colors">Clear All History</button></div>)}</div></div></div>
-                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                        {historyGroups.length === 0 ? (<div className="flex flex-col items-center justify-center h-48 text-gray-600 text-xs"><span className="mb-2 opacity-50">No sessions recorded</span></div>) : (<div className="space-y-6 pb-4">{historyGroups.map(group => { const allIds = group.sessions.map(s => s.id); const isAllSelected = allIds.every(id => selectedSessionIds.has(id)); return (<div key={group.dateLabel}><div className="flex items-center mb-3"><button onClick={() => toggleGroupSelection(group.sessions)} className={`w-3 h-3 rounded-sm mr-2 flex items-center justify-center transition-colors ${isAllSelected ? 'bg-blue-600 border-blue-600' : 'border border-gray-600 hover:border-gray-400'}`}>{isAllSelected && <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>}</button><span className="text-[10px] font-bold text-gray-500 tracking-wider">{group.dateLabel}</span></div><div className="space-y-4 border-l border-gray-800 ml-[5.5px] pl-4 relative">{group.sessions.map(session => { const projectName = projects.find(p => p.id === session.projectId)?.name || 'Main Project'; const isSelected = selectedSessionIds.has(session.id); return (<div key={session.id} className="relative group"><div className={`absolute -left-[21px] top-1.5 w-1.5 h-1.5 rounded-full transition-colors ring-4 ring-[#151516] ${isSelected ? 'bg-blue-500' : 'bg-gray-600 group-hover:bg-white'}`}></div><div className="flex justify-between items-start"><div className="min-w-0 pr-2"><div className={`text-sm font-bold mb-0.5 truncate transition-colors ${isSelected ? 'text-blue-400' : 'text-white'}`}>{session.label || 'Session'}</div><div className="text-[10px] text-gray-500 flex items-center gap-1 flex-wrap"><span className={session.type === 'POMO' ? 'text-blue-400' : 'text-orange-400'}>{session.type === 'POMO' ? 'Focus' : 'Timer'}</span><span>•</span><span className="truncate max-w-[80px]">{projectName}</span><span>•</span><span>{new Date(session.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false})} - {new Date(session.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false})}</span></div></div><div className="flex items-center space-x-2 shrink-0"><span className="text-xs font-bold text-white/80">{Math.round(session.duration/60)}m</span><button onClick={() => openEditSingle(session)} className="p-1 text-gray-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button></div></div></div>); })}</div></div>); })}</div>)}
+
+                {/* 2. MAIN CENTER CONTENT (Timer) */}
+                <div className="flex-1 flex flex-col items-center justify-center p-4 min-h-0 overflow-y-auto">
+                    {/* Mode Tabs */}
+                    <div className={`flex p-1 rounded-xl mb-6 md:mb-10 ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-gray-800/50'}`}>
+                        <button onClick={() => switchMode('POMO')} className={`px-4 py-1.5 text-xs md:text-sm font-bold rounded-lg transition-all ${mode === 'POMO' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400')}`}>Pomodoro</button>
+                        <button onClick={() => switchMode('STOPWATCH')} className={`px-4 py-1.5 text-xs md:text-sm font-bold rounded-lg transition-all ${mode === 'STOPWATCH' ? (isCyberpunk ? 'bg-[#f0f]/20 text-[#f0f]' : 'bg-white dark:bg-gray-700 text-orange-500 dark:text-white shadow-sm') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400')}`}>Stopwatch</button>
+                    </div>
+
+                    {/* Timer Circle */}
+                    <div className="relative w-[280px] md:w-[380px] aspect-square flex items-center justify-center mb-6 md:mb-10 shrink-0">
+                        {isCyberpunk && <div className="absolute inset-0 rounded-full border border-[#00f0ff]/20 animate-pulse"></div>}
+                        <svg className="w-full h-full transform -rotate-90 drop-shadow-xl" viewBox="0 0 100 100">
+                            <defs>
+                                <linearGradient id="focusGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={isCyberpunk ? "#00f0ff" : "#60A5FA"} /><stop offset="100%" stopColor={isCyberpunk ? "#0099ff" : "#3B82F6"} /></linearGradient>
+                                <linearGradient id="breakGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#34D399" /><stop offset="100%" stopColor="#10B981" /></linearGradient>
+                                <linearGradient id="stopwatchGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#FBBF24" /><stop offset="100%" stopColor="#F59E0B" /></linearGradient>
+                                <linearGradient id="urgentGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={isCyberpunk ? "#ff0055" : "#F87171"} /><stop offset="100%" stopColor={isCyberpunk ? "#ff0000" : "#EF4444"} /></linearGradient>
+                                <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2" result="coloredBlur"/><feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                            </defs>
+                            <circle cx="50" cy="50" r={radius} className={`${isCyberpunk ? 'stroke-[#00f0ff]/10' : 'stroke-gray-200 dark:stroke-gray-800'} transition-colors duration-300`} strokeWidth="3" fill="transparent" />
+                            <circle cx="50" cy="50" r={radius} stroke={`url(#${isUrgent ? 'urgentGradient' : mode === 'POMO' ? (phase === 'FOCUS' ? 'focusGradient' : 'breakGradient') : 'stopwatchGradient'})`} strokeWidth="3" fill="transparent" strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" className={`${shouldAnimate ? 'transition-all duration-1000 ease-linear' : ''}`} style={{ filter: isCyberpunk ? 'url(#glow)' : 'none' }}/>
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                            <div className={`text-6xl md:text-8xl font-black tracking-tighter tabular-nums select-none transition-colors duration-300 ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_15px_rgba(0,240,255,0.6)]' : themeColor} drop-shadow-sm`}>{formatTime(timeLeft)}</div>
+                            <div className={`mt-2 text-xs md:text-sm font-bold uppercase tracking-widest ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-400 dark:text-gray-500'}`}>{mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus' : phase === 'SHORT_BREAK' ? 'Short Break' : 'Long Break') : 'Stopwatch'}</div>
+                        </div>
+                    </div>
+
+                    {/* 3. BOTTOM CONTROLS (Natural Flow) */}
+                    <div className="flex flex-col items-center gap-6 w-full">
+                        {/* Play/Reset Buttons */}
+                        <div className="flex items-center gap-6">
+                            <button onClick={resetTimer} className={`p-3 md:p-4 rounded-full transition-all active:scale-95 shadow-sm hover:shadow-md ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'bg-gray-100 dark:bg-[#1c1c1e] hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400'}`}><svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>
+                            <button onClick={toggleTimer} className={`h-20 w-20 md:h-24 md:w-24 rounded-full font-bold text-white shadow-2xl transition-all hover:scale-105 active:scale-95 flex items-center justify-center ${isCyberpunk ? 'bg-black border-2 border-[#00f0ff] text-[#00f0ff] shadow-[0_0_30px_rgba(0,240,255,0.4)] hover:bg-[#00f0ff] hover:text-black' : (mode === 'STOPWATCH' ? 'bg-orange-500 hover:bg-orange-600' : (phase === 'FOCUS' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'))}`}>{isActive ? (<svg className="w-8 h-8 md:w-10 md:h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>) : (<svg className="w-8 h-8 md:w-10 md:h-10 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>)}</button>
+                            {mode === 'STOPWATCH' && (isActive || timeLeft > 0) && (<button onClick={handleStopwatchFinish} className="p-3 md:p-4 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-500 rounded-full hover:bg-green-200 dark:hover:bg-green-900/50 transition-all active:scale-95" title="Save & Finish"><svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></button>)}
+                        </div>
+
+                        {/* Wager Controls (Grid for small screens) */}
+                        {mode === 'POMO' && phase === 'FOCUS' && !isActive && (
+                            <div className={`mt-2 md:mt-4 flex flex-col items-center animate-fade-in ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-600 dark:text-gray-300'}`}>
+                                <div className="flex items-center gap-2 mb-2"><span className="text-[10px] font-bold uppercase tracking-wider">Wager Gems</span><span className="text-[10px] opacity-60">(Win 2x)</span></div>
+                                <div className="grid grid-cols-4 gap-2">{[0, 10, 50, 100].map((amount: number) => (<button key={amount} onClick={() => setWager(amount)} disabled={currentGems < amount} className={`px-2 md:px-3 py-1 rounded-lg text-[10px] md:text-xs font-bold border transition-all ${wager === amount ? (isCyberpunk ? 'bg-[#00f0ff] text-black border-[#00f0ff]' : 'bg-blue-600 text-white border-blue-600') : (isCyberpunk ? 'bg-black border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-blue-400')} ${currentGems < amount ? 'opacity-50 cursor-not-allowed' : ''}`}>{amount === 0 ? 'None' : amount} 💎</button>))}</div>
+                                {wager > 0 && <p className="text-[10px] mt-1 text-orange-500 font-bold">Risk: Lose {wager} if stopped early!</p>}
+                            </div>
+                        )}
                     </div>
                 </div>
-             </div>
+            </div>
+
+            {/* RIGHT SIDEBAR (Collapsible) */}
+            <div className={`${isCyberpunk ? 'bg-[#020202] border-[#00f0ff]/20' : 'bg-[#151516] border-gray-800'} border-l flex flex-col overflow-hidden transition-all duration-300 relative z-30 shadow-2xl ${showSidebar ? 'w-[320px] translate-x-0' : 'w-0 translate-x-full'} shrink-0`}>
+                 <div className="p-6 h-full flex flex-col w-[320px]"> 
+                    <div className="mb-8 shrink-0">
+                        <h3 className={`${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-400'} font-bold text-[10px] uppercase tracking-wider mb-4`}>Today's Overview</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-[#1c1c1e] border-gray-800'} p-4 rounded-xl border`}><div className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Sessions</div><div className={`text-3xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{stats.todayPomos}</div></div>
+                            <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-[#1c1c1e] border-gray-800'} p-4 rounded-xl border`}><div className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Focus Time</div><div className={`text-3xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{stats.todayFocus} <span className={`text-sm font-medium ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>min</span></div></div>
+                        </div>
+                    </div>
+                    <div className="flex-1 flex flex-col min-h-0 relative">
+                        <div className="flex justify-between items-center mb-4 shrink-0 relative"><h3 className="text-gray-400 font-bold text-[10px] uppercase tracking-wider">Session History</h3><div className="flex items-center space-x-3"><button onClick={() => setIsAddSessionOpen(true)} className="text-gray-400 hover:text-white transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg></button><div className="relative" ref={historyMenuRef}><button onClick={() => setIsHistoryMenuOpen(!isHistoryMenuOpen)} className="text-gray-400 hover:text-white transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" /></svg></button>{isHistoryMenuOpen && (<div className="absolute right-0 top-full mt-2 w-48 bg-[#2c2c2e] border border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden animate-fade-in-up">{selectedSessionIds.size > 0 && (<><button onClick={openEditBatch} className="w-full text-left px-4 py-2.5 text-xs font-medium text-white hover:bg-white/5 transition-colors border-b border-gray-700">Edit Selected ({selectedSessionIds.size})</button><button onClick={handleDeleteSelected} className="w-full text-left px-4 py-2.5 text-xs font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors border-b border-gray-700">Delete Selected ({selectedSessionIds.size})</button></>)}<button onClick={handleClearHistory} className="w-full text-left px-4 py-2.5 text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-colors">Clear All History</button></div>)}</div></div></div>
+                        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                            {historyGroups.length === 0 ? (<div className="flex flex-col items-center justify-center h-48 text-gray-600 text-xs"><span className="mb-2 opacity-50">No sessions recorded</span></div>) : (<div className="space-y-6 pb-4">{historyGroups.map(group => { const allIds = group.sessions.map(s => s.id); const isAllSelected = allIds.every(id => selectedSessionIds.has(id)); return (<div key={group.dateLabel}><div className="flex items-center mb-3"><button onClick={() => toggleGroupSelection(group.sessions)} className={`w-3 h-3 rounded-sm mr-2 flex items-center justify-center transition-colors ${isAllSelected ? 'bg-blue-600 border-blue-600' : 'border border-gray-600 hover:border-gray-400'}`}>{isAllSelected && <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>}</button><span className="text-[10px] font-bold text-gray-500 tracking-wider">{group.dateLabel}</span></div><div className="space-y-4 border-l border-gray-800 ml-[5.5px] pl-4 relative">{group.sessions.map(session => { const projectName = projects.find(p => p.id === session.projectId)?.name || 'Main Project'; const isSelected = selectedSessionIds.has(session.id); return (<div key={session.id} className="relative group"><div className={`absolute -left-[21px] top-1.5 w-1.5 h-1.5 rounded-full transition-colors ring-4 ring-[#151516] ${isSelected ? 'bg-blue-500' : 'bg-gray-600 group-hover:bg-white'}`}></div><div className="flex justify-between items-start"><div className="min-w-0 pr-2"><div className={`text-sm font-bold mb-0.5 truncate transition-colors ${isSelected ? 'text-blue-400' : 'text-white'}`}>{session.label || 'Session'}</div><div className="text-[10px] text-gray-500 flex items-center gap-1 flex-wrap"><span className={session.type === 'POMO' ? 'text-blue-400' : 'text-orange-400'}>{session.type === 'POMO' ? 'Focus' : 'Timer'}</span><span>•</span><span className="truncate max-w-[80px]">{projectName}</span><span>•</span><span>{new Date(session.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false})} - {new Date(session.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false})}</span></div></div><div className="flex items-center space-x-2 shrink-0"><span className="text-xs font-bold text-white/80">{Math.round(session.duration/60)}m</span><button onClick={() => openEditSingle(session)} className="p-1 text-gray-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button></div></div></div>); })}</div></div>); })}</div>)}
+                        </div>
+                    </div>
+                 </div>
+            </div>
         </div>
     </div>
   );

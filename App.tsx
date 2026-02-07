@@ -4,9 +4,10 @@ import { MacWindow } from './components/MacWindow';
 import { Sidebar } from './components/Sidebar';
 import { QuickTimerOverlay } from './components/QuickTimerOverlay';
 import { MiniCaptureWindow } from './components/MiniCaptureWindow';
-import { ViewMode, HeatmapTheme, UserGoals, CountdownItem, Achievement, Transaction, StudyLog } from './types';
+import { ViewMode, HeatmapTheme, UserGoals, CountdownItem, Achievement, Transaction, StudyLog, Task } from './types';
 import { AppProvider, useTheme, useProjects, useLogs, useUI, useTimerContext, useCountdowns } from './AppContext';
-import { getUnlockedAchievements } from './services/gamificationService';
+import { getUnlockedAchievements, getAchievementReward, getDailyQuests } from './services/gamificationService';
+import * as storage from './services/storageService';
 import { playWin } from './services/audioService';
 
 // Lazy load heavy components
@@ -497,7 +498,7 @@ function FocusFlowContent() {
     saveLog(selectedDate, h, notesInput);
   };
 
-  const handleTimerSave = (sessionHours: number, sessionNote?: string, sessionProjectId?: string) => {
+  const handleTimerSave = async (sessionHours: number, sessionNote?: string, sessionProjectId?: string, taskId?: string) => {
       const targetProject = sessionProjectId || currentProjectId;
       if (!targetProject) return;
       const d = new Date();
@@ -510,6 +511,20 @@ function FocusFlowContent() {
           .join('; ');
 
       saveLog(today, totalHours, mergedNotes, targetProject);
+
+      if (taskId) {
+        const tasks = await storage.getTasks();
+        const task = tasks.find(t => t.id === taskId);
+        if (task) {
+            const updatedTask = { 
+                ...task, 
+                completedPomodoros: (task.completedPomodoros || 0) + 1,
+                lastSessionDate: today,
+            };
+            await storage.saveTask(updatedTask);
+            window.dispatchEvent(new Event('focusflow-task-update'));
+        }
+      }
   };
   
   const handleDeleteLog = () => {
@@ -668,6 +683,29 @@ function FocusFlowContent() {
   const globalTotalHours = useMemo(() => logs.reduce((acc, curr) => acc + curr.hours, 0), [logs]);
   const globalStreaks = useMemo(() => calculateStreaks(logs, freezeDates), [logs, freezeDates]);
   
+  const [currentGems, setCurrentGems] = useState(0);
+
+  useEffect(() => {
+      const calculateGems = () => {
+          const spent = parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0;
+          const bonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
+          
+          const achievements = getUnlockedAchievements(logs, globalTotalHours, globalStreaks.current);
+          const achievementGems = achievements.filter(a => a.isUnlocked).reduce((acc, curr) => acc + getAchievementReward(curr).gems, 0);
+          
+          const quests = getDailyQuests(logs);
+          const questGems = quests.filter(q => q.current >= q.target).reduce((acc, curr) => acc + curr.reward, 0);
+          
+          const earningRate = 10;
+          const rawBalance = Math.floor(globalTotalHours * earningRate) + achievementGems + questGems + bonus - spent;
+          setCurrentGems(Math.max(0, rawBalance));
+      };
+      
+      calculateGems();
+      window.addEventListener('focusflow-gem-update', calculateGems);
+      return () => window.removeEventListener('focusflow-gem-update', calculateGems);
+  }, [logs, globalTotalHours, globalStreaks]);
+
   // Project Stats (For Dashboard/Sidebar)
   const currentDailyHours = useMemo(() => {
       const d = new Date();
@@ -887,6 +925,8 @@ function FocusFlowContent() {
                   menuBarConfig={menuBarConfig}
                   externalStart={pendingQuickTimer}
                   onConsumeExternalStart={handleConsumeQuickTimer}
+                  currentGems={currentGems}
+                  addTransaction={addTransaction}
               />
               </Suspense>
             </div>

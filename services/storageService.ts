@@ -1,12 +1,3 @@
---- /Users/ariyan/Downloads/copy-of-focusflow-3/services/storageService.ts
-+++ /Users/ariyan/Downloads/copy-of-focusflow-3/services/storageService.ts
-@@ -1,4 +1,2 @@
--cconfirm following code will work
--
- import { StudyLog, UserGoals, CountdownItem, SessionRecord, TimerSettings, Project, Task, CustomEvent, MenuBarConfig, CountdownGroup, CountdownType, SidebarConfig, ShopItem } from '../types';
- 
- const STORAGE_KEY = 'focusflow_logs_v1';
-
 import { StudyLog, UserGoals, CountdownItem, SessionRecord, TimerSettings, Project, Task, CustomEvent, MenuBarConfig, CountdownGroup, CountdownType, SidebarConfig, ShopItem } from '../types';
 
 const STORAGE_KEY = 'focusflow_logs_v1';

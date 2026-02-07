@@ -26,6 +26,8 @@ export interface Task {
   tickTickId?: string; // Optional: For future syncing
   dueDate?: string;
   estimatedPomodoros?: number;
+  completedPomodoros?: number;
+  lastSessionDate?: string;
   priority?: 'low' | 'medium' | 'high';
   description?: string;
   createdAt?: string;
