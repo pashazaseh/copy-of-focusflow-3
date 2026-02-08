@@ -156,7 +156,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
   // Use gems from props
   const currentGems = propGems;
 
-  const currentProjectName = projects.find(p => p.id === selectedProjectId)?.name;
+  const currentProjectName = selectedProjectId === 'all' ? 'All Projects' : projects.find(p => p.id === selectedProjectId)?.name;
   const currentTaskTitle = tasks.find(t => t.id === selectedTaskId)?.title;
 
   const maxWager = Math.min(500, Math.max(1, currentGems));
@@ -1073,6 +1073,46 @@ return (
              {/* Main Content Centered */}
              <div className="flex flex-col items-center justify-center w-full max-w-xl z-10">
                  
+                 {/* Selected Context Info */}
+                 <div className="flex flex-col items-center w-full mb-6 min-h-[24px] z-20">
+                     {selectedProjectId && currentProjectName && (
+                         <div className={`flex items-center gap-3 px-5 py-2 rounded-full border backdrop-blur-md animate-fade-in-down shadow-lg mb-2 ${isCyberpunk ? 'bg-[#00f0ff]/10 border-[#00f0ff]/30 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.2)]' : 'bg-white/10 border-white/20 text-white shadow-black/10'}`}>
+                             <svg className="w-4 h-4 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                             <span className="text-sm font-bold tracking-wide">{currentProjectName}</span>
+                             <button 
+                                 onClick={() => setSelectedProjectId('')} 
+                                 className={`ml-1 p-1 rounded-full transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-white/20'}`}
+                                 title="Clear Project"
+                             >
+                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                             </button>
+                         </div>
+                     )}
+                     
+                     {selectedProjectId && currentProjectName && selectedTaskId && currentTaskTitle && (
+                         <div className={`w-px h-3 mb-2 ${isCyberpunk ? 'bg-[#00f0ff]/30' : 'bg-white/20'}`}></div>
+                     )}
+                     
+                     {selectedTaskId && currentTaskTitle && (
+                         <div className={`flex items-center gap-3 px-5 py-2 rounded-full border backdrop-blur-md animate-fade-in-down shadow-lg ${isCyberpunk ? 'bg-[#00f0ff]/10 border-[#00f0ff]/30 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.2)]' : 'bg-white/10 border-white/20 text-white shadow-black/10'}`}>
+                             <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                {tasks.find(t => t.id === selectedTaskId)?.tickTickId && (
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded border ${isCyberpunk ? 'bg-[#00f0ff]/20 border-[#00f0ff]/40 text-[#00f0ff]' : 'bg-blue-500/20 border-blue-400/30 text-blue-300'}`} title="Synced from TickTick">TT</span>
+                                )}
+                             </div>
+                             <span className="text-sm font-bold tracking-wide max-w-[200px] truncate">{currentTaskTitle}</span>
+                             <button 
+                                 onClick={() => setSelectedTaskId('')} 
+                                 className={`ml-1 p-1 rounded-full transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20' : 'hover:bg-white/20'}`}
+                                 title="Clear Task"
+                             >
+                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                             </button>
+                         </div>
+                     )}
+                 </div>
+
                  {/* Mode Tabs */}
                  <div className={`flex p-1.5 rounded-2xl mb-10 ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-gray-800/50'}`}>
                      <button onClick={() => switchMode('POMO')} className={`px-6 py-2 text-sm font-bold rounded-xl transition-all ${mode === 'POMO' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200')}`}>Pomodoro</button>
@@ -1287,9 +1327,6 @@ return (
                         >
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                         </button>
-                        <div className={`absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/50 text-[#00f0ff]' : 'bg-gray-900 text-white shadow-xl'}`}>
-                            {currentProjectName || 'Select Project'}
-                        </div>
                     </div>
                     
                     <div className="relative group">
@@ -1300,9 +1337,6 @@ return (
                         >
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         </button>
-                        <div className={`absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/50 text-[#00f0ff]' : 'bg-gray-900 text-white shadow-xl'}`}>
-                            {currentTaskTitle || 'Select Task'}
-                        </div>
                     </div>
 
                     <div className="w-8 h-px bg-white/10 my-1"></div>
