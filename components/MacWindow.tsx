@@ -8,9 +8,10 @@ interface MacWindowProps {
   isDarkMode: boolean;
   onToggleTheme: () => void;
   appTheme?: AppTheme;
+  icon?: React.ReactNode;
 }
 
-export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMode, onToggleTheme, appTheme = 'default' }) => {
+export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMode, onToggleTheme, appTheme = 'default', icon }) => {
   const [isElectron, setIsElectron] = useState(false);
   const [platform, setPlatform] = useState('');
   
@@ -89,16 +90,18 @@ export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMod
           )}
         </div>
         <div className="text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2">
-          <svg className="w-4 h-4" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-               <defs>
-                   <linearGradient id="iconGrad" x1="0" y1="0" x2="100" y2="100%">
-                       <stop offset="0%" stopColor="#3b82f6" />
-                       <stop offset="100%" stopColor="#8b5cf6" />
-                   </linearGradient>
-               </defs>
-               <circle cx="50" cy="50" r="45" fill="url(#iconGrad)" />
-               <path d="M35 50 L45 60 L65 40" stroke="white" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
-           </svg>
+          {icon ? icon : (
+            <svg className="w-4 h-4" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="iconGrad" x1="0" y1="0" x2="100" y2="100%">
+                        <stop offset="0%" stopColor="#3b82f6" />
+                        <stop offset="100%" stopColor="#8b5cf6" />
+                    </linearGradient>
+                </defs>
+                <circle cx="50" cy="50" r="45" fill="url(#iconGrad)" />
+                <path d="M35 50 L45 60 L65 40" stroke="white" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
           {title || "FocusFlow"}
         </div>
         <div 

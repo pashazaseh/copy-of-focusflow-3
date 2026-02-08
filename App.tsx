@@ -887,7 +887,12 @@ function FocusFlowContent() {
   return (
     <div className={isElectron ? "w-screen h-screen overflow-hidden" : "min-h-screen flex items-center justify-center p-4 sm:p-8 transition-colors duration-500"}>
       {toast && <Toast title={toast.title} icon={toast.icon} onClose={() => setToast(null)} isCyberpunk={appTheme === 'cyberpunk'} />}
-      <MacWindow isDarkMode={isDarkMode} onToggleTheme={toggleTheme} appTheme={appTheme}>
+      <MacWindow 
+        isDarkMode={isDarkMode} 
+        onToggleTheme={toggleTheme} 
+        appTheme={appTheme}
+        icon={<img src="/icon.png" className="w-4 h-4 object-contain" alt="App Icon" />}
+      >
         <Sidebar 
             currentView={currentView} 
             onChangeView={setCurrentView} 

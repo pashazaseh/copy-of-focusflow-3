@@ -188,8 +188,8 @@ useEffect(() => {
   // --- Do Not Disturb ---
   useEffect(() => {
       const shouldDND = isActive && mode === 'POMO' && phase === 'FOCUS';
-      window.electronAPI?.setDoNotDisturb?.(shouldDND);
-      return () => { window.electronAPI?.setDoNotDisturb?.(false); };
+      (window.electronAPI as any)?.setDoNotDisturb?.(shouldDND);
+      return () => { (window.electronAPI as any)?.setDoNotDisturb?.(false); };
   }, [isActive, mode, phase]);
 
   // --- Initialization ---
@@ -265,8 +265,8 @@ useEffect(() => {
 
   // --- Sync State (Ghost Mode) ---
   useEffect(() => {
-      if (window.electronAPI?.onSyncTimerState) {
-          const cleanup = window.electronAPI.onSyncTimerState((state: any) => {
+      if ((window.electronAPI as any)?.onSyncTimerState) {
+          const cleanup = (window.electronAPI as any).onSyncTimerState((state: any) => {
               hasSynced.current = true;
               if (state.timeLeft !== undefined) setTimeLeft(state.timeLeft);
               if (state.initialTime !== undefined) setInitialTime(state.initialTime);
@@ -297,8 +297,8 @@ useEffect(() => {
               if (state.isActive) setIsActive(true);
           });
 
-          if (window.electronAPI.getTimerState) {
-              window.electronAPI.getTimerState();
+          if ((window.electronAPI as any).getTimerState) {
+              (window.electronAPI as any).getTimerState();
           }
 
           return cleanup;
@@ -410,7 +410,7 @@ const handleTimerComplete = async () => {
       triggerAlarm();
       
       if (isGhostMode) {
-          window.electronAPI?.playSoundEffect?.();
+          (window.electronAPI as any)?.playSoundEffect?.();
       }
 
       if (Notification.permission === "granted") {
@@ -613,13 +613,13 @@ const handleTimerComplete = async () => {
           sessionLabel,
           selectedProjectId
       };
-      window.electronAPI?.toggleGhostMode(state);
+      (window.electronAPI as any)?.toggleGhostMode(state);
   };
 
   const togglePin = () => {
       const newState = !isPinned;
       setIsPinned(newState);
-      window.electronAPI?.setAlwaysOnTop(newState);
+      (window.electronAPI as any)?.setAlwaysOnTop(newState);
   };
 
   const handleWorkDurationChange = (val: number) => {
@@ -1340,8 +1340,6 @@ return (
                             selectedValue={workDuration} 
                             onChange={handleWorkDurationChange} 
                             label="Focus"
-                            icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
-                            labelPosition="right"
                             icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
                             labelPosition="top"
                             className="w-14"
@@ -1353,8 +1351,6 @@ return (
                             selectedValue={restDuration} 
                             onChange={handleRestDurationChange} 
                             label="Rest"
-                            icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3" /></svg>}
-                            labelPosition="right"
                             icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3" /></svg>}
                             labelPosition="top"
                             onInteractionStart={() => setIsInteractingWithWheel(true)}
