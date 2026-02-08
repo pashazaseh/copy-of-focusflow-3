@@ -230,8 +230,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
 
       // Listen for ghost mode exit to switch back to timer view
-      if (window.electronAPI?.onSyncTimerState) {
-          const cleanup = window.electronAPI.onSyncTimerState(() => {
+      if ((window.electronAPI as any)?.onSyncTimerState) {
+          const cleanup = (window.electronAPI as any).onSyncTimerState(() => {
               onChangeView(ViewMode.TIMER);
           });
           return cleanup;

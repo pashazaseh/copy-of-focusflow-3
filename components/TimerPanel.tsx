@@ -205,7 +205,36 @@ useEffect(() => {
               });
               setWorkDuration(sSettings.pomoDuration);
               setRestDuration(sSettings.shortBreakDuration);
-              if (!isGhostMode && !hasSynced.current) {
+
+              // Restore Timer State from LocalStorage (Robustness Fix)
+              const savedEndTime = localStorage.getItem('focusflow_timer_end_time');
+              const savedStartTime = localStorage.getItem('focusflow_timer_start_time');
+              const savedMode = localStorage.getItem('focusflow_timer_mode');
+
+              if (savedEndTime && savedMode === 'POMO') {
+                  const end = parseInt(savedEndTime);
+                  if (end > Date.now()) {
+                      endTimeRef.current = end;
+                      setMode('POMO');
+                      setPhase((localStorage.getItem('focusflow_timer_phase') as TimerPhase) || 'FOCUS');
+                      setSelectedProjectId(localStorage.getItem('focusflow_timer_project') || projectId);
+                      setSelectedTaskId(localStorage.getItem('focusflow_timer_task') || '');
+                      setSessionLabel(localStorage.getItem('focusflow_timer_label') || '');
+                      setIsActive(true);
+                      setTimeLeft(Math.ceil((end - Date.now()) / 1000));
+                  } else {
+                      localStorage.removeItem('focusflow_timer_end_time');
+                  }
+              } else if (savedStartTime && savedMode === 'STOPWATCH') {
+                  const start = parseInt(savedStartTime);
+                  startTimeRef.current = start;
+                  setMode('STOPWATCH');
+                  setSelectedProjectId(localStorage.getItem('focusflow_timer_project') || projectId);
+                  setSelectedTaskId(localStorage.getItem('focusflow_timer_task') || '');
+                  setSessionLabel(localStorage.getItem('focusflow_timer_label') || '');
+                  setIsActive(true);
+                  setTimeLeft(Math.floor((Date.now() - start) / 1000));
+              } else if (!isGhostMode && !hasSynced.current) {
                   const duration = sSettings.pomoDuration * 60;
                   setInitialTime(duration);
                   setTimeLeft(duration);
@@ -320,11 +349,24 @@ useEffect(() => {
               const durationMS = timeLeft * 1000;
               endTimeRef.current = Date.now() + durationMS;
           }
+          // Persist State
+          localStorage.setItem('focusflow_timer_end_time', endTimeRef.current.toString());
+          localStorage.setItem('focusflow_timer_mode', 'POMO');
+          localStorage.setItem('focusflow_timer_phase', phase);
+          localStorage.setItem('focusflow_timer_project', selectedProjectId);
+          localStorage.setItem('focusflow_timer_task', selectedTaskId);
+          localStorage.setItem('focusflow_timer_label', sessionLabel);
       } else {
           if (!startTimeRef.current) {
               const elapsedMS = timeLeft * 1000;
               startTimeRef.current = Date.now() - elapsedMS;
           }
+          // Persist State
+          localStorage.setItem('focusflow_timer_start_time', startTimeRef.current.toString());
+          localStorage.setItem('focusflow_timer_mode', 'STOPWATCH');
+          localStorage.setItem('focusflow_timer_project', selectedProjectId);
+          localStorage.setItem('focusflow_timer_task', selectedTaskId);
+          localStorage.setItem('focusflow_timer_label', sessionLabel);
       }
 
       timerRef.current = setInterval(() => {
@@ -350,9 +392,13 @@ useEffect(() => {
     } else {
         endTimeRef.current = null;
         startTimeRef.current = null;
+        // Clear persistence
+        localStorage.removeItem('focusflow_timer_end_time');
+        localStorage.removeItem('focusflow_timer_start_time');
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isActive, mode]);
+  }, [isActive, mode, phase, selectedProjectId, selectedTaskId, sessionLabel]);
+
 const handleTimerComplete = async () => {
       // READ LATEST DATA FROM REF (Fixing stale closure)
       const currentData = stateRef.current;
@@ -360,6 +406,7 @@ const handleTimerComplete = async () => {
       setIsActive(false);
       if (timerRef.current) clearInterval(timerRef.current);
       endTimeRef.current = null;
+      localStorage.removeItem('focusflow_timer_end_time');
       triggerAlarm();
       
       if (isGhostMode) {
@@ -1323,7 +1370,7 @@ return (
                         <button 
                             onClick={() => setIsProjectSelectorOpen(true)} 
                             disabled={isActive}
-                            className={`p-3 rounded-xl transition-all duration-300 ${isActive ? 'opacity-50 cursor-not-allowed' : (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/10 hover:bg-[#00f0ff]/20 hover:shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'text-white/80 bg-white/5 hover:bg-white/10 hover:text-white hover:shadow-lg')}`}
+                            className={`p-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95 ${isActive ? 'opacity-50 cursor-not-allowed' : (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/10 hover:bg-[#00f0ff]/20 hover:shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'text-white/80 bg-white/5 hover:bg-white/10 hover:text-white hover:shadow-lg')} ${(!selectedProjectId || selectedProjectId === 'all') && !isActive ? 'animate-pulse shadow-[0_0_15px_rgba(59,130,246,0.5)]' : ''}`}
                         >
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                         </button>
@@ -1333,7 +1380,7 @@ return (
                         <button 
                             onClick={() => setIsTaskSelectorOpen(true)} 
                             disabled={isActive}
-                            className={`p-3 rounded-xl transition-all duration-300 ${isActive ? 'opacity-50 cursor-not-allowed' : (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/10 hover:bg-[#00f0ff]/20 hover:shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'text-white/80 bg-white/5 hover:bg-white/10 hover:text-white hover:shadow-lg')}`}
+                            className={`p-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95 ${isActive ? 'opacity-50 cursor-not-allowed' : (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/10 hover:bg-[#00f0ff]/20 hover:shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'text-white/80 bg-white/5 hover:bg-white/10 hover:text-white hover:shadow-lg')} ${!selectedTaskId && !isActive ? 'animate-pulse shadow-[0_0_15px_rgba(59,130,246,0.5)]' : ''}`}
                         >
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         </button>

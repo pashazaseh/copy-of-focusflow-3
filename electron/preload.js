@@ -53,4 +53,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   getTimerState: () => ipcRenderer.send('get-timer-state'),
   playSoundEffect: () => ipcRenderer.send('play-sound-effect'),
+  openExternal: (url) => ipcRenderer.send('open-external', url),
+  installUpdate: (path) => ipcRenderer.send('install-update', path),
+  selectUpdateFile: () => ipcRenderer.invoke('select-update-file'),
 });

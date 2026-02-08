@@ -67,6 +67,41 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         }
     }, []);
 
+    const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'latest' | 'error'>('idle');
+    const [latestVersion, setLatestVersion] = useState<string>('');
+    const [updateBranch, setUpdateBranch] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_update_branch') || 'main';
+        return 'main';
+    });
+
+    const checkForUpdates = async () => {
+        setUpdateStatus('checking');
+        try {
+            // Try fetching from branch first
+            const branchRes = await fetch(`https://raw.githubusercontent.com/yourname/focusflow/${updateBranch}/package.json`);
+            if (branchRes.ok) {
+                const data = await branchRes.json();
+                setLatestVersion(data.version);
+                if (data.version !== '1.0.0') setUpdateStatus('available');
+                else setUpdateStatus('latest');
+                return;
+            }
+
+            const res = await fetch('https://api.github.com/repos/yourname/focusflow/releases/latest');
+            if (!res.ok) throw new Error('Failed to check');
+            const data = await res.json();
+            setLatestVersion(data.tag_name);
+            
+            if (data.tag_name.replace('v', '') !== '1.0.0') {
+                setUpdateStatus('available');
+            } else {
+                setUpdateStatus('latest');
+            }
+        } catch (e) {
+            setUpdateStatus('error');
+        }
+    };
+
     return (
         <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50/50 dark:bg-gray-900 transition-colors duration-300">
             <div className="p-8 h-full overflow-y-auto custom-scrollbar">
@@ -78,8 +113,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         </div>
                         
                         {/* Tab Navigation */}
-                        <div className={`flex p-1 rounded-xl shadow-inner overflow-x-auto no-scrollbar ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-800'}`}>
-                            {(['general', 'timer', 'projects', 'sync', 'data'] as any[]).map(tab => (
+                        <div className={`flex flex-wrap p-1 rounded-xl shadow-inner ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-800'}`}>
+                            {(['general', 'timer', 'projects', 'integrations', 'data'] as SettingsTab[]).map(tab => (
                                 <button
                                     key={tab}
                                     onClick={() => onTabChange(tab as SettingsTab)}
@@ -89,7 +124,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                         : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200')
                                     }`}
                                 >
-                                    {tab === 'timer' ? 'Preferences' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                                    {tab === 'timer' ? 'Configuration' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                                 </button>
                             ))}
                         </div>
@@ -97,10 +132,69 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     
                     {/* Content Area */}
                     <div className="space-y-6">
-                        {activeTab === 'general' && <GeneralSettings navConfig={navConfig} onUpdateNavConfig={onUpdateNavConfig} isDarkMode={isDarkMode} onToggleTheme={onToggleTheme} appTheme={appTheme} setAppTheme={setAppTheme} inventory={inventory} sidebarConfig={sidebarConfig} onUpdateSidebarConfig={onUpdateSidebarConfig} menuBarConfig={menuBarConfig} onUpdateMenuBarConfig={onUpdateMenuBarConfig} countdowns={countdowns} />}
+                        {activeTab === 'general' && (
+                            <>
+                                <GeneralSettings navConfig={navConfig} onUpdateNavConfig={onUpdateNavConfig} isDarkMode={isDarkMode} onToggleTheme={onToggleTheme} appTheme={appTheme} setAppTheme={setAppTheme} inventory={inventory} sidebarConfig={sidebarConfig} onUpdateSidebarConfig={onUpdateSidebarConfig} menuBarConfig={menuBarConfig} onUpdateMenuBarConfig={onUpdateMenuBarConfig} countdowns={countdowns} />
+                                <div className={`p-6 rounded-2xl border shadow-sm ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                                    <h3 className={`text-xl font-bold mb-4 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update App</h3>
+                                    <p className={`text-sm mb-6 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>
+                                        Update FocusFlow to the latest version. Your data will be preserved.
+                                    </p>
+                                    
+                                    <div className="space-y-4">
+                                        <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                            <div>
+                                                <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update Branch</div>
+                                                <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Branch to check for updates</div>
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                value={updateBranch}
+                                                onChange={(e) => { setUpdateBranch(e.target.value); localStorage.setItem('focusflow_update_branch', e.target.value); }}
+                                                className={`px-3 py-1.5 rounded-lg text-sm border focus:outline-none w-32 text-right ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'}`}
+                                            />
+                                        </div>
+
+                                        <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                            <div>
+                                                <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Check for Updates</div>
+                                                <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>
+                                                    {updateStatus === 'idle' && 'Current version: 1.0.0'}
+                                                    {updateStatus === 'checking' && 'Checking GitHub...'}
+                                                    {updateStatus === 'latest' && `Up to date (${latestVersion})`}
+                                                    {updateStatus === 'available' && `Update available: ${latestVersion}`}
+                                                    {updateStatus === 'error' && 'Could not fetch releases'}
+                                                </div>
+                                            </div>
+                                            <button onClick={checkForUpdates} disabled={updateStatus === 'checking'} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30 disabled:opacity-50' : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'}`}>
+                                                {updateStatus === 'checking' ? 'Checking...' : 'Check Now'}
+                                            </button>
+                                        </div>
+
+                                        <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                            <div>
+                                                <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update from Local File</div>
+                                                <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Select a .dmg, .pkg, or .zip file</div>
+                                            </div>
+                                            <button onClick={async () => { const path = await (window.electronAPI as any)?.selectUpdateFile(); if (path) (window.electronAPI as any)?.installUpdate(path); }} className={`px-4 py-2 rounded-lg text-sm font-bold ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>Select File</button>
+                                        </div>
+
+                                        <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                            <div>
+                                                <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update from GitHub</div>
+                                                <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Download latest release</div>
+                                            </div>
+                                            <button onClick={() => (window.electronAPI as any)?.openExternal('https://github.com/yourname/focusflow/releases')} className={`px-4 py-2 rounded-lg text-sm font-bold ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'}`}>Open GitHub</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                         {activeTab === 'projects' && <ProjectSettings projects={projects} onCreateProject={onCreateProject} onDeleteProject={onDeleteProject} onUpdateProjects={onUpdateProjects} appTheme={appTheme} />}
-                        {activeTab === 'timer' && <TimerSettingsPanel appTheme={appTheme} />}
-                        {activeTab === ('sync' as any) && <SyncSettings appTheme={appTheme} setLastBackup={setLastBackup} />}
+                        {activeTab === 'timer' && (
+                            <TimerSettingsPanel appTheme={appTheme} />
+                        )}
+                        {activeTab === 'integrations' && <SyncSettings appTheme={appTheme} setLastBackup={setLastBackup} />}
                         {activeTab === 'data' && <DataSettings appTheme={appTheme} lastBackup={lastBackup} setLastBackup={setLastBackup} />}
                     </div>
                 </div>

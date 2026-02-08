@@ -1,8 +1,9 @@
 /// <reference path="../electron.d.ts" />
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme, useProjects } from '../AppContext';
-import { CustomPrompt, CaptureDestination } from '../types';
+import { CustomPrompt, CaptureDestination, Project } from '../types';
 import { PromptManager } from './PromptManager';
+import * as storage from '../services/storageService';
 
 interface CaptureTemplate {
     id: string;
@@ -103,6 +104,18 @@ export const QuickCapturePanel: React.FC = () => {
         if (typeof localStorage !== 'undefined') return localStorage.getItem('focusflow_backup_path') || '';
         return '';
     });
+    const [parsedDate, setParsedDate] = useState<string | null>(null);
+    const [parsedPriority, setParsedPriority] = useState<'high' | 'medium' | 'low' | null>(null);
+
+    // Autocomplete State
+    const [allTags, setAllTags] = useState<string[]>([]);
+    const [autocomplete, setAutocomplete] = useState<{
+        isOpen: boolean;
+        type: 'project' | 'tag' | null;
+        query: string;
+        selectedIndex: number;
+        cursorIndex: number;
+    }>({ isOpen: false, type: null, query: '', selectedIndex: 0, cursorIndex: -1 });
 
     useEffect(() => {
         const savedHistory = localStorage.getItem('focusflow_capture_history');
@@ -124,11 +137,74 @@ export const QuickCapturePanel: React.FC = () => {
             } catch {}
         }
         textareaRef.current?.focus();
+
+        // Load tags for autocomplete
+        const loadTags = async () => {
+            try {
+                const tasks = await storage.getTasks();
+                const tagSet = new Set<string>(['urgent', 'later', 'waiting', 'idea']);
+                tasks.forEach(t => t.tags?.forEach(tag => tagSet.add(tag)));
+                setAllTags(Array.from(tagSet));
+            } catch (e) {
+                console.error("Failed to load tags", e);
+            }
+        };
+        loadTags();
     }, []);
 
     useEffect(() => {
         textRef.current = text;
     }, [text]);
+
+    useEffect(() => {
+        const parseInput = (inputText: string) => {
+            let newProjectId = '';
+            let newPriority: 'high' | 'medium' | 'low' | null = null;
+            let newDate: string | null = null;
+            const extractedTags: string[] = [];
+
+            // Projects (#)
+            const projectRegex = /#(\w+)/g;
+            let match;
+            while ((match = projectRegex.exec(inputText)) !== null) {
+                const word = match[1];
+                const project = projects.find(p => p.name.toLowerCase() === word.toLowerCase());
+                if (project) {
+                    newProjectId = project.id;
+                } else {
+                    extractedTags.push(word);
+                }
+            }
+
+            // Tags (@)
+            const tagRegex = /@(\w+)/g;
+            while ((match = tagRegex.exec(inputText)) !== null) {
+                extractedTags.push(match[1]);
+            }
+
+            // Priority (!)
+            const priorityRegex = /!(high|med|low|1|2|3)/i;
+            const pMatch = inputText.match(priorityRegex);
+            if (pMatch) {
+                const p = pMatch[1].toLowerCase();
+                if (p === 'high' || p === '1') newPriority = 'high';
+                else if (p === 'med' || p === '2') newPriority = 'medium';
+                else if (p === 'low' || p === '3') newPriority = 'low';
+            }
+
+            // Date
+            const dateRegex = /\b(today|tomorrow|next week|mon|tue|wed|thu|fri|sat|sun)\b/gi;
+            const dMatch = inputText.match(dateRegex);
+            if (dMatch) {
+                newDate = dMatch[0];
+            }
+
+            if (newProjectId && newProjectId !== selectedProjectId) setSelectedProjectId(newProjectId);
+            setParsedPriority(newPriority);
+            setParsedDate(newDate);
+        };
+        parseInput(text);
+    }, [text, projects, selectedProjectId]);
 
     useEffect(() => {
         return () => {
@@ -418,6 +494,45 @@ export const QuickCapturePanel: React.FC = () => {
         }
     };
 
+    const renderOverlay = () => {
+        if (!text) return null;
+        const regex = /(#\w+)|(@\w+)|(!(?:high|med|low|1|2|3))|(\b(?:today|tomorrow|next week|mon|tue|wed|thu|fri|sat|sun)\b)/gi;
+        const parts = [];
+        let lastIndex = 0;
+        let match;
+
+        while ((match = regex.exec(text)) !== null) {
+            if (match.index > lastIndex) {
+                parts.push(<span key={`text-${lastIndex}`}>{text.substring(lastIndex, match.index)}</span>);
+            }
+            const fullMatch = match[0];
+            let className = "";
+            if (match[1]) { // #Project
+                const word = match[1].substring(1);
+                const isProject = projects.some(p => p.name.toLowerCase() === word.toLowerCase());
+                className = isProject ? "text-blue-400 font-bold" : "text-blue-300";
+            } else if (match[2]) { // @Tag
+                className = "text-purple-400 font-bold";
+            } else if (match[3]) { // !Priority
+                className = "text-red-400 font-bold";
+            } else if (match[4]) { // Date
+                className = "text-green-400 font-bold";
+            }
+            parts.push(<span key={`match-${match.index}`} className={className}>{fullMatch}</span>);
+            lastIndex = regex.lastIndex;
+        }
+        if (lastIndex < text.length) {
+            parts.push(<span key={`text-${lastIndex}`}>{text.substring(lastIndex)}</span>);
+        }
+        if (text.endsWith('\n')) parts.push(<span key="newline">{'\n'}</span>);
+
+        return (
+            <div className={`absolute inset-0 pointer-events-none whitespace-pre-wrap break-words p-8 text-lg leading-relaxed font-mono ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-800 dark:text-gray-200'}`}>
+                {parts}
+            </div>
+        );
+    };
+
     const handleSmartEnhance = async (type: string = 'enhance') => {
         if (!text.trim()) return;
         setShowPrompts(false);
@@ -489,8 +604,69 @@ export const QuickCapturePanel: React.FC = () => {
         }
     };
 
+    const getFilteredItems = () => {
+        if (autocomplete.type === 'project') {
+            return projects.filter(p => p.name.toLowerCase().includes(autocomplete.query.toLowerCase()));
+        }
+        if (autocomplete.type === 'tag') {
+            return allTags.filter(t => t.toLowerCase().includes(autocomplete.query.toLowerCase()));
+        }
+        return [];
+    };
+
+    const applyAutocomplete = (item?: any) => {
+        const items = getFilteredItems();
+        const selected = item || items[autocomplete.selectedIndex];
+        if (!selected) return;
+        
+        const name = autocomplete.type === 'project' ? (selected as Project).name : (selected as string);
+        const prefix = autocomplete.type === 'project' ? '#' : '@';
+        
+        const before = text.substring(0, autocomplete.cursorIndex);
+        // Remove the query part after the trigger
+        const after = text.substring(textareaRef.current?.selectionEnd || 0);
+        
+        const newText = `${before}${prefix}${name} ${after}`;
+        setText(newText);
+        setAutocomplete(prev => ({ ...prev, isOpen: false }));
+        
+        // Restore focus and cursor
+        setTimeout(() => {
+            if (textareaRef.current) {
+                const newCursorPos = before.length + prefix.length + name.length + 1;
+                textareaRef.current.focus();
+                textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+            }
+        }, 0);
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (autocomplete.isOpen) {
+            const items = getFilteredItems();
+            if (items.length > 0) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setAutocomplete(prev => ({ ...prev, selectedIndex: (prev.selectedIndex + 1) % items.length }));
+                    return;
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setAutocomplete(prev => ({ ...prev, selectedIndex: (prev.selectedIndex - 1 + items.length) % items.length }));
+                    return;
+                } else if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    applyAutocomplete();
+                    return;
+                }
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                setAutocomplete(prev => ({ ...prev, isOpen: false }));
+                return;
+            }
+        }
+
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
             handleCapture();
         }
     };
@@ -818,17 +994,69 @@ export const QuickCapturePanel: React.FC = () => {
                         }}
                     />
                 ) : (
-                    <textarea
-                        ref={textareaRef}
-                        value={text}
-                        onChange={e => setText(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder={isEnhancing ? "AI is rewriting..." : "Start writing..."}
-                        className={`flex-1 w-full p-8 bg-transparent border-none focus:ring-0 resize-none text-lg leading-relaxed font-mono outline-none ${isCyberpunk ? 'text-[#00f0ff] placeholder-[#00f0ff]/30' : 'text-gray-800 dark:text-gray-200 placeholder-gray-400'} ${isEnhancing ? 'opacity-50 animate-pulse' : ''}`}
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                    />
+                    <div className="relative flex-1 w-full h-full">
+                        {renderOverlay()}
+                        
+                        {/* Autocomplete Dropdown */}
+                        {autocomplete.isOpen && getFilteredItems().length > 0 && (
+                            <div className={`absolute z-50 left-8 top-16 w-64 max-h-48 overflow-y-auto rounded-xl shadow-2xl border animate-fade-in ${isCyberpunk ? 'bg-black border-[#00f0ff] text-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                                <div className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider opacity-50 border-b ${isCyberpunk ? 'border-[#00f0ff]/20' : 'border-gray-100 dark:border-gray-700'}`}>
+                                    {autocomplete.type === 'project' ? 'Projects' : 'Tags'}
+                                </div>
+                                {getFilteredItems().map((item, i) => (
+                                    <button
+                                        key={i}
+                                        onClick={() => applyAutocomplete(item)}
+                                        className={`w-full text-left px-4 py-2 text-sm truncate transition-colors ${i === autocomplete.selectedIndex ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300') : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                    >
+                                        {autocomplete.type === 'project' ? (item as Project).name : item}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <textarea
+                            ref={textareaRef}
+                            value={text}
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                setText(val);
+                                
+                                const cursor = e.target.selectionEnd;
+                                const textBefore = val.substring(0, cursor);
+                                
+                                // Match #word or @word at the end of the string (or preceded by space)
+                                const projectMatch = textBefore.match(/(?:^|\s)#([\w-]*)$/);
+                                const tagMatch = textBefore.match(/(?:^|\s)@([\w-]*)$/);
+
+                                if (projectMatch) {
+                                    setAutocomplete({
+                                        isOpen: true,
+                                        type: 'project',
+                                        query: projectMatch[1],
+                                        selectedIndex: 0,
+                                        cursorIndex: projectMatch.index! + (projectMatch[0].startsWith(' ') ? 1 : 0)
+                                    });
+                                } else if (tagMatch) {
+                                    setAutocomplete({
+                                        isOpen: true,
+                                        type: 'tag',
+                                        query: tagMatch[1],
+                                        selectedIndex: 0,
+                                        cursorIndex: tagMatch.index! + (tagMatch[0].startsWith(' ') ? 1 : 0)
+                                    });
+                                } else {
+                                    setAutocomplete(prev => ({ ...prev, isOpen: false }));
+                                }
+                            }}
+                            onKeyDown={handleKeyDown}
+                            placeholder={isEnhancing ? "AI is rewriting..." : "Start writing..."}
+                            className={`absolute inset-0 w-full h-full p-8 bg-transparent border-none focus:ring-0 resize-none text-lg leading-relaxed font-mono outline-none text-transparent ${isCyberpunk ? 'caret-[#00f0ff] placeholder-[#00f0ff]/30' : 'caret-gray-900 dark:caret-white placeholder-gray-400'} ${isEnhancing ? 'opacity-50 animate-pulse' : ''}`}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                        />
+                    </div>
                 )}
             </div>
 

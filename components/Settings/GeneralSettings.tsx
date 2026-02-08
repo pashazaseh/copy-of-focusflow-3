@@ -34,8 +34,6 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     const isCyberpunk = appTheme === 'cyberpunk';
     const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
     const [draggingWidgetIndex, setDraggingWidgetIndex] = useState<number | null>(null);
-    const [shortcut, setShortcut] = useState(() => localStorage.getItem('focusflow_quick_capture_shortcut') || 'CommandOrControl+Shift+O');
-    const [isRecording, setIsRecording] = useState(false);
 
     const handleDragStart = (e: React.DragEvent, index: number) => {
         setDraggingIndex(index);
@@ -106,75 +104,6 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     const handleResetConfig = () => {
         const defaultConf = NAV_ITEMS_DEF.map(item => ({ view: item.view, isVisible: true }));
         onUpdateNavConfig(defaultConf);
-    };
-
-    useEffect(() => {
-        if (!isRecording) return;
-
-        const handleRecordKeyDown = async (e: KeyboardEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            if (e.key === 'Escape') {
-                setIsRecording(false);
-                return;
-            }
-            
-            if (e.key === 'Backspace' || e.key === 'Delete') {
-                 setShortcut('');
-                 localStorage.setItem('focusflow_quick_capture_shortcut', '');
-                 (window.electronAPI as any)?.updateGlobalShortcut?.('');
-                 setIsRecording(false);
-                 return;
-            }
-
-            // Ignore standalone modifiers
-            if (['Meta', 'Control', 'Alt', 'Shift'].includes(e.key)) return;
-
-            const modifiers = [];
-            if (e.metaKey) modifiers.push('CommandOrControl');
-            if (e.ctrlKey) modifiers.push('Control');
-            if (e.altKey) modifiers.push('Alt');
-            if (e.shiftKey) modifiers.push('Shift');
-
-            let key = e.key;
-            
-            if (key === 'Dead') {
-                if (e.code.startsWith('Key')) key = e.code.slice(3);
-                else if (e.code.startsWith('Digit')) key = e.code.slice(5);
-                else return;
-            }
-
-            if (key === ' ') key = 'Space';
-            else if (key === '+') key = 'Plus';
-            else if (key === 'ArrowUp') key = 'Up';
-            else if (key === 'ArrowDown') key = 'Down';
-            else if (key === 'ArrowLeft') key = 'Left';
-            else if (key === 'ArrowRight') key = 'Right';
-            else if (key === 'Escape') key = 'Esc';
-            else if (key.length === 1) key = key.toUpperCase();
-
-            const finalShortcut = [...modifiers, key].join('+');
-            
-            const success = await (window.electronAPI as any)?.updateGlobalShortcut?.(finalShortcut);
-            if (success) {
-                setShortcut(finalShortcut);
-                localStorage.setItem('focusflow_quick_capture_shortcut', finalShortcut);
-                setIsRecording(false);
-            } else {
-                alert(`Shortcut "${finalShortcut}" could not be registered. It may be in use by another application.`);
-            }
-        };
-
-        window.addEventListener('keydown', handleRecordKeyDown);
-        return () => window.removeEventListener('keydown', handleRecordKeyDown);
-    }, [isRecording]);
-
-    const handleTestQuickCapture = () => {
-        console.log('Triggering Quick Capture...');
-        if (window.electronAPI?.openQuickCapture) {
-            window.electronAPI.openQuickCapture();
-        }
     };
 
     return (
@@ -357,34 +286,6 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                             </select>
                         </div>
                     )}
-                </div>
-            </div>
-
-            <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} rounded-2xl p-6 border shadow-sm`}>
-                <h3 className={`text-xl font-bold mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Quick Capture</h3>
-                <div className={`p-4 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-700/50'}`}>
-                    <div className="flex justify-between items-center mb-2">
-                        <p className={`font-semibold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Global Shortcut</p>
-                        <button
-                            onClick={() => setIsRecording(true)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold w-48 text-center border focus:outline-none focus:ring-2 transition-all ${
-                                isRecording 
-                                    ? 'bg-red-100 text-red-600 border-red-300 ring-red-200 animate-pulse' 
-                                    : (isCyberpunk 
-                                        ? 'bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30 focus:ring-[#00f0ff]' 
-                                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 focus:ring-blue-500')
-                            }`}
-                        >
-                            {isRecording ? 'Press keys...' : (shortcut || 'Click to Record')}
-                        </button>
-                        {isRecording && <div className="fixed inset-0 z-40 cursor-default" onClick={() => setIsRecording(false)} />}
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                        Instantly capture ideas, tasks, or notes from anywhere on your computer. Use standard Electron Accelerator format (e.g. CommandOrControl+Shift+O).
-                    </p>
-                    <p className="mt-3 text-right">
-                        <button onClick={handleTestQuickCapture} className={`text-xs font-bold hover:underline ${isCyberpunk ? 'text-[#00f0ff]' : 'text-blue-600 dark:text-blue-400'}`}>Test Trigger</button>
-                    </p>
                 </div>
             </div>
         </>

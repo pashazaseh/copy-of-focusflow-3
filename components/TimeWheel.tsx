@@ -152,11 +152,11 @@ export const TimeWheel: React.FC<TimeWheelProps> = ({ items, selectedValue, onCh
                     </div>
                 ))}
             </div>
-        </div>
-            <div className={`flex flex-col items-center justify-center text-gray-700 dark:text-gray-600 opacity-40 group-hover:opacity-100 transition-all duration-300 pointer-events-none ${isRightLabel ? '-order-1 mr-1' : ''} ${isOverlay ? 'absolute left-0 top-1/2 -translate-y-1/2 z-20' : ''} ${isTopLabel ? 'absolute -right-1 top-1/2 -translate-y-1/2' : ''}`}>
+            <div className={`flex flex-col items-center justify-center text-gray-700 dark:text-gray-600 opacity-40 group-hover:opacity-100 transition-all duration-300 pointer-events-none absolute top-1/2 -translate-y-1/2 z-20 ${isRightLabel ? '-left-2' : (isOverlay ? 'left-0' : '-right-1')}`}>
                 <svg className="w-2.5 h-2.5 group-hover:-translate-y-0.5 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" /></svg>
                 <svg className="w-2.5 h-2.5 -mt-1 group-hover:translate-y-0.5 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
             </div>
+        </div>
 
             {isRightLabel && !isOverlay && (icon ? (
                 <div className="text-gray-500 dark:text-gray-400 transition-colors group-hover:text-white" title={label}>{icon}</div>

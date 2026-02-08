@@ -33,17 +33,17 @@ export const SettingsPanel = ({
     isDarkMode, 
     onToggleTheme, 
     menuBarConfig, 
-    onUpdateMenuBarConfig,
-    projects,
-    onCreateProject,
-    onDeleteProject,
-    onUpdateProjects,
-    activeTab,
-    onTabChange,
-    sidebarConfig,
-    onUpdateSidebarConfig,
-    appTheme,
-    setAppTheme
+    onUpdateMenuBarConfig, 
+    projects, 
+    onCreateProject, 
+    onDeleteProject, 
+    onUpdateProjects, 
+    activeTab, 
+    onTabChange, 
+    sidebarConfig, 
+    onUpdateSidebarConfig, 
+    appTheme, 
+    setAppTheme 
 }: SettingsPanelProps) => {
     const { countdowns } = useCountdowns();
     const isCyberpunk = appTheme === 'cyberpunk';
@@ -100,20 +100,22 @@ export const SettingsPanel = ({
                         <Suspense fallback={<div className="flex justify-center p-10"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 dark:border-white"></div></div>}>
                             {/* === GENERAL TAB === */}
                             {activeTab === 'general' && (
-                                <GeneralSettings 
-                                    navConfig={navConfig}
-                                    onUpdateNavConfig={onUpdateNavConfig}
-                                    isDarkMode={isDarkMode}
-                                    onToggleTheme={onToggleTheme}
-                                    appTheme={appTheme}
-                                    setAppTheme={setAppTheme}
-                                    inventory={inventory}
-                                    sidebarConfig={sidebarConfig}
-                                    onUpdateSidebarConfig={onUpdateSidebarConfig}
-                                    menuBarConfig={menuBarConfig}
-                                    onUpdateMenuBarConfig={onUpdateMenuBarConfig}
-                                    countdowns={countdowns}
-                                />
+                                <>
+                                    <GeneralSettings 
+                                        navConfig={navConfig}
+                                        onUpdateNavConfig={onUpdateNavConfig}
+                                        isDarkMode={isDarkMode}
+                                        onToggleTheme={onToggleTheme}
+                                        appTheme={appTheme}
+                                        setAppTheme={setAppTheme}
+                                        inventory={inventory}
+                                        sidebarConfig={sidebarConfig}
+                                        onUpdateSidebarConfig={onUpdateSidebarConfig}
+                                        menuBarConfig={menuBarConfig}
+                                        onUpdateMenuBarConfig={onUpdateMenuBarConfig}
+                                        countdowns={countdowns}
+                                    />
+                                </>
                             )}
 
                             {/* === PROJECTS TAB === */}

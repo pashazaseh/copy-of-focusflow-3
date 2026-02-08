@@ -731,6 +731,20 @@ function setupIpcHandlers() {
   ipcMain.on('play-sound-effect', () => {
     shell.beep();
   });
+
+  ipcMain.on('open-external', (event, url) => {
+    shell.openExternal(url);
+  });
+
+  ipcMain.on('install-update', (event, filePath) => {
+    shell.openPath(filePath);
+  });
+
+  ipcMain.handle('select-update-file', async () => {
+    const result = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Installers', extensions: ['dmg', 'pkg', 'zip'] }] });
+    if (result.canceled) return null;
+    return result.filePaths[0];
+  });
 }
 
 function createWindow() {
