@@ -18,7 +18,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [selectedProject, setSelectedProject] = useState(currentProjectId);
     const [filterPriority, setFilterPriority] = useState<'all' | 'high' | 'medium' | 'low'>('all');
-    const [sortBy, setSortBy] = useState<'default' | 'dueDate'>('default');
+    const [sortBy, setSortBy] = useState<'default' | 'dueDate' | 'priority' | 'oldest' | 'newest'>('default');
     
     // TickTick State
     const [isTickTickModalOpen, setIsTickTickModalOpen] = useState(false);
@@ -39,6 +39,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
     const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
     const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
     const [subtaskInputs, setSubtaskInputs] = useState<Record<string, string>>({});
+    const [draggingSubtask, setDraggingSubtask] = useState<{ taskId: string, index: number } | null>(null);
 
     // Move filtering logic up so it can be used by handlers
     const filteredTasks = tasks.filter(t => {
@@ -50,6 +51,18 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
             if (!a.dueDate) return 1;
             if (!b.dueDate) return -1;
             return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+        }
+        if (sortBy === 'priority') {
+            const pMap: Record<string, number> = { high: 3, medium: 2, low: 1 };
+            const pA = pMap[a.priority || ''] || 0;
+            const pB = pMap[b.priority || ''] || 0;
+            return pB - pA;
+        }
+        if (sortBy === 'oldest') {
+            return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+        }
+        if (sortBy === 'newest') {
+            return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
         }
         return 0;
     });
@@ -196,6 +209,45 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
             setIsTickTickModalOpen(false);
             setManualAuthCode('');
         }
+    };
+
+    const handleSubtaskDragStart = (e: React.DragEvent, taskId: string, index: number) => {
+        e.stopPropagation();
+        setDraggingSubtask({ taskId, index });
+        e.dataTransfer.effectAllowed = "move";
+    };
+
+    const handleSubtaskDragOver = (e: React.DragEvent, taskId: string, index: number) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (!draggingSubtask || draggingSubtask.taskId !== taskId || draggingSubtask.index === index) return;
+
+        const taskIndex = tasks.findIndex(t => t.id === taskId);
+        if (taskIndex === -1) return;
+
+        const task = tasks[taskIndex];
+        const newSubtasks = [...(task.subtasks || [])];
+        const draggedItem = newSubtasks[draggingSubtask.index];
+        
+        newSubtasks.splice(draggingSubtask.index, 1);
+        newSubtasks.splice(index, 0, draggedItem);
+
+        const newTasks = [...tasks];
+        newTasks[taskIndex] = { ...task, subtasks: newSubtasks };
+        
+        setTasks(newTasks);
+        setDraggingSubtask({ taskId, index });
+    };
+
+    const handleSubtaskDragEnd = async () => {
+        if (draggingSubtask) {
+             const task = tasks.find(t => t.id === draggingSubtask.taskId);
+             if (task) {
+                 await storage.saveTask(task);
+             }
+        }
+        setDraggingSubtask(null);
     };
 
     const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -355,29 +407,6 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                         </div>
                         
                         <div className="flex flex-wrap items-center gap-3">
-                            {/* Filters Group */}
-                            <div className={`flex p-1 rounded-xl ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm'}`}>
-                                <select
-                                    value={filterPriority}
-                                    onChange={(e) => setFilterPriority(e.target.value as any)}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold bg-transparent border-none focus:ring-0 cursor-pointer outline-none ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-600 dark:text-gray-300'}`}
-                                >
-                                    <option value="all">All Priorities</option>
-                                    <option value="high">High Priority</option>
-                                    <option value="medium">Medium Priority</option>
-                                    <option value="low">Low Priority</option>
-                                </select>
-                                <div className={`w-px my-1 ${isCyberpunk ? 'bg-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-700'}`}></div>
-                                <select
-                                    value={sortBy}
-                                    onChange={(e) => setSortBy(e.target.value as any)}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold bg-transparent border-none focus:ring-0 cursor-pointer outline-none ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-600 dark:text-gray-300'}`}
-                                >
-                                    <option value="default">Default Sort</option>
-                                    <option value="dueDate">Sort by Date</option>
-                                </select>
-                            </div>
-
                             {/* Actions Group */}
                             <div className="flex gap-2">
                                 <div className="relative">
@@ -388,32 +417,71 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                     </button>
                                     {isCustomizationMenuOpen && (
-                                        <div className={`absolute right-0 mt-2 w-48 rounded-xl shadow-lg py-1 z-20 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'}`}>
-                                            <a
-                                                href="#"
+                                        <div className={`absolute right-0 mt-2 w-56 rounded-xl shadow-lg py-2 z-20 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'}`}>
+                                            
+                                            {/* Sort Options */}
+                                            <div className="px-4 py-1 text-[10px] font-bold uppercase tracking-wider opacity-50">Sort By</div>
+                                            {[
+                                                { label: 'Custom (Drag & Drop)', value: 'default' },
+                                                { label: 'Due Date', value: 'dueDate' },
+                                                { label: 'Priority', value: 'priority' },
+                                                { label: 'Newest to Oldest', value: 'newest' },
+                                                { label: 'Oldest to Newest', value: 'oldest' },
+                                            ].map(opt => (
+                                                <button
+                                                    key={opt.value}
+                                                    onClick={() => { setSortBy(opt.value as any); setIsCustomizationMenuOpen(false); }}
+                                                    className={`w-full text-left px-4 py-1.5 text-sm flex items-center justify-between ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                                >
+                                                    {opt.label}
+                                                    {sortBy === opt.value && <span>✓</span>}
+                                                </button>
+                                            ))}
+
+                                            <div className={`h-px my-2 ${isCyberpunk ? 'bg-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-700'}`}></div>
+
+                                            {/* Filter Options */}
+                                            <div className="px-4 py-1 text-[10px] font-bold uppercase tracking-wider opacity-50">Filter Priority</div>
+                                            {[
+                                                { label: 'All Priorities', value: 'all' },
+                                                { label: 'High Priority', value: 'high' },
+                                                { label: 'Medium Priority', value: 'medium' },
+                                                { label: 'Low Priority', value: 'low' },
+                                            ].map(opt => (
+                                                <button
+                                                    key={opt.value}
+                                                    onClick={() => { setFilterPriority(opt.value as any); setIsCustomizationMenuOpen(false); }}
+                                                    className={`w-full text-left px-4 py-1.5 text-sm flex items-center justify-between ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                                >
+                                                    {opt.label}
+                                                    {filterPriority === opt.value && <span>✓</span>}
+                                                </button>
+                                            ))}
+
+                                            <div className={`h-px my-2 ${isCyberpunk ? 'bg-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-700'}`}></div>
+
+                                            <button
                                                 onClick={(e) => {
                                                     e.preventDefault();
                                                     setIsSelectMode(!isSelectMode);
                                                     setIsCustomizationMenuOpen(false);
-                                                    if (isSelectMode) { // If turning off, clear selection
-                                                        setSelectedTaskIds(new Set());
-                                                    }
+                                                    if (isSelectMode) setSelectedTaskIds(new Set());
                                                 }}
-                                                className={`block px-4 py-2 text-sm ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                                className={`w-full text-left px-4 py-2 text-sm ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                                             >
                                                 {isSelectMode ? 'Cancel Batch Edit' : 'Batch Edit'}
-                                            </a>
+                                            </button>
+                                            
                                             {isSelectMode && (
-                                                 <a
-                                                    href="#"
+                                                 <button
                                                     onClick={(e) => {
                                                         e.preventDefault();
                                                         toggleSelectAll();
                                                     }}
-                                                    className={`block px-4 py-2 text-sm ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                                    className={`w-full text-left px-4 py-2 text-sm ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                                                 >
                                                     {selectedTaskIds.size === activeTasks.length && activeTasks.length > 0 ? 'Deselect All' : 'Select All'}
-                                                </a>
+                                                </button>
                                             )}
                                         </div>
                                     )}
@@ -474,6 +542,10 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                             </div>
                         )}
                         {activeTasks.map((task, index) => {
+                            const totalSubtasks = task.subtasks?.length || 0;
+                            const completedSubtasks = task.subtasks?.filter(st => st.isCompleted).length || 0;
+                            const subtaskProgress = totalSubtasks > 0 ? (completedSubtasks / totalSubtasks) * 100 : 0;
+
                             return (
                                 <div
                                     key={task.id}
@@ -506,6 +578,18 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                                         <div className="flex items-center gap-2">
                                             <p className={`text-sm font-medium transition-all ${isCyberpunk ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{task.title}</p>
                                         </div>
+                                        
+                                        {totalSubtasks > 0 && (
+                                            <div className="flex items-center gap-2 mt-1.5">
+                                                <div className={`h-1 w-24 rounded-full overflow-hidden ${isCyberpunk ? 'bg-[#00f0ff]/10' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                                                    <div 
+                                                        className={`h-full rounded-full transition-all duration-500 ${isCyberpunk ? 'bg-[#00f0ff]' : 'bg-blue-500'}`} 
+                                                        style={{ width: `${subtaskProgress}%` }}
+                                                    ></div>
+                                                </div>
+                                                <span className={`text-[10px] font-mono ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-400'}`}>{completedSubtasks}/{totalSubtasks}</span>
+                                            </div>
+                                        )}
                                         
                                         <div className="flex items-center justify-between mt-1">
                                             <div className="flex items-center gap-3">
@@ -585,6 +669,50 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                                         </button>
                                     </div>
                                     </div>
+
+                                    {/* Subtasks */}
+                                    {expandedTaskIds.has(task.id) && (
+                                        <div className={`px-4 pb-4 pt-2 border-t ${isCyberpunk ? 'border-[#00f0ff]/10 bg-[#00f0ff]/5' : 'border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30'}`}>
+                                            <div className="space-y-2">
+                                                {task.subtasks?.map((st, index) => (
+                                                    <div 
+                                                        key={st.id} 
+                                                        className={`flex items-center gap-3 group/sub ${draggingSubtask?.taskId === task.id && draggingSubtask?.index === index ? 'opacity-50' : ''}`}
+                                                        draggable
+                                                        onDragStart={(e) => handleSubtaskDragStart(e, task.id, index)}
+                                                        onDragOver={(e) => handleSubtaskDragOver(e, task.id, index)}
+                                                        onDragEnd={handleSubtaskDragEnd}
+                                                    >
+                                                        <div className={`cursor-move opacity-0 group-hover/sub:opacity-100 transition-opacity -ml-2 ${isCyberpunk ? 'text-[#00f0ff]/40' : 'text-gray-300 dark:text-gray-600'}`}>
+                                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => toggleSubtaskCompletion(task.id, st.id)}
+                                                            className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${st.isCompleted ? (isCyberpunk ? 'bg-[#00f0ff] border-[#00f0ff] text-black' : 'bg-blue-500 border-blue-500 text-white') : (isCyberpunk ? 'border-[#00f0ff]/40 hover:border-[#00f0ff]' : 'border-gray-300 dark:border-gray-600 hover:border-blue-500')}`}
+                                                        >
+                                                            {st.isCompleted && <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                                        </button>
+                                                        <span className={`text-xs flex-1 ${st.isCompleted ? 'line-through opacity-50' : (isCyberpunk ? 'text-[#00f0ff]/80' : 'text-gray-700 dark:text-gray-300')}`}>{st.title}</span>
+                                                        <button onClick={() => handleDeleteSubtask(task.id, st.id)} className="opacity-0 group-hover/sub:opacity-100 text-gray-400 hover:text-red-500 transition-opacity">
+                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                                <form onSubmit={(e) => handleAddSubtask(e, task.id)} className="flex items-center gap-2 mt-2">
+                                                    <div className="w-4 h-4 flex items-center justify-center">
+                                                        <svg className={`w-3 h-3 ${isCyberpunk ? 'text-[#00f0ff]/40' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                                    </div>
+                                                    <input 
+                                                        type="text" 
+                                                        value={subtaskInputs[task.id] || ''}
+                                                        onChange={(e) => setSubtaskInputs(prev => ({ ...prev, [task.id]: e.target.value }))}
+                                                        placeholder="Add subtask..."
+                                                        className={`flex-1 bg-transparent border-none focus:ring-0 text-xs p-0 ${isCyberpunk ? 'text-[#00f0ff] placeholder-[#00f0ff]/30' : 'text-gray-700 dark:text-gray-300 placeholder-gray-400'}`}
+                                                    />
+                                                </form>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}

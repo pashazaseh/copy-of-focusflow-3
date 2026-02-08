@@ -13,6 +13,10 @@ interface MacWindowProps {
 export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMode, onToggleTheme, appTheme = 'default' }) => {
   const [isElectron, setIsElectron] = useState(false);
   const [platform, setPlatform] = useState('');
+  
+  // Check for special modes (Ghost, Mini-Capture, Quick) that handle their own window frames/transparency
+  const mode = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('mode') : null;
+  const isSpecialMode = mode === 'ghost' || mode === 'mini-capture' || mode === 'quick';
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.electronAPI) {
@@ -29,6 +33,10 @@ export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMod
         });
     }
   }, [isDarkMode, isElectron, platform]);
+
+  if (isSpecialMode) {
+      return <>{children}</>;
+  }
 
   const handleClose = () => window.electronAPI?.close();
   const handleMinimize = () => window.electronAPI?.minimize();

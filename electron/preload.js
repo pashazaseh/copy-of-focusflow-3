@@ -44,4 +44,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('file-changed', handler);
   },
   setDoNotDisturb: (enable) => ipcRenderer.invoke('set-do-not-disturb', enable),
+  toggleGhostMode: (state) => ipcRenderer.send('toggle-ghost-mode', state),
+  setAlwaysOnTop: (flag) => ipcRenderer.send('set-always-on-top', flag),
+  onSyncTimerState: (callback) => {
+    const handler = (event, state) => callback(state);
+    ipcRenderer.on('sync-timer-state', handler);
+    return () => ipcRenderer.removeListener('sync-timer-state', handler);
+  },
+  getTimerState: () => ipcRenderer.send('get-timer-state'),
+  playSoundEffect: () => ipcRenderer.send('play-sound-effect'),
 });

@@ -218,6 +218,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('mode') === 'ghost') {
+          // Force view switch on next tick to ensure App is ready
+          setTimeout(() => onChangeView(ViewMode.TIMER), 0);
+          
+          // Ensure body is transparent for the shaped window
+          document.body.style.backgroundColor = 'transparent';
+          document.documentElement.style.backgroundColor = 'transparent';
+      }
+
+      // Listen for ghost mode exit to switch back to timer view
+      if (window.electronAPI?.onSyncTimerState) {
+          const cleanup = window.electronAPI.onSyncTimerState(() => {
+              onChangeView(ViewMode.TIMER);
+          });
+          return cleanup;
+      }
+  }, []);
+
+  // Don't render the sidebar UI in ghost mode
+  if (new URLSearchParams(window.location.search).get('mode') === 'ghost') return null;
+
   const handleCreate = (e: React.FormEvent) => {
       e.preventDefault();
       if(newProjectName.trim()) {

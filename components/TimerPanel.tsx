@@ -3,6 +3,7 @@ import * as storage from '../services/storageService';
 import { TimerSettings, SessionRecord, Project, MenuBarConfig, Transaction, Task } from '../types';
 import { playAlarm } from '../services/audioService';
 import { useTheme } from '../AppContext';
+import { TimeWheel } from './TimeWheel';
 
 interface TimerPanelProps {
     onSaveSession: (hours: number, note?: string, projectId?: string) => void;
@@ -13,6 +14,8 @@ interface TimerPanelProps {
     onConsumeExternalStart?: () => void;
     currentGems: number;
     addTransaction: (t: Transaction) => void;
+    // Optional prop to force ghost mode style if passed from parent (though we use URL param mostly)
+    isGhostMode?: boolean;
 }
 
 type TimerMode = 'POMO' | 'STOPWATCH';
@@ -21,7 +24,7 @@ type TimerPhase = 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
 export const TimerPanel: React.FC<TimerPanelProps> = ({ 
     onSaveSession, projectId, projects, menuBarConfig, externalStart, onConsumeExternalStart, currentGems: propGems, addTransaction 
 }) => {
-// --- Core State ---
+  // --- Core State ---
   const { appTheme } = useTheme();
   
   const [mode, setMode] = useState<TimerMode>('POMO');
@@ -32,15 +35,75 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
   const [sessionLabel, setSessionLabel] = useState('');
   
   const [selectedProjectId, setSelectedProjectId] = useState(projectId);
-  const [settings, setSettings] = useState<TimerSettings>({ pomoDuration: 25, shortBreakDuration: 5, longBreakDuration: 15, pomosPerLongBreak: 4, autoStartNextPomo: false, autoStartBreak: false, quickDurations: [25, 45, 60], shortBreakPresets: [5, 10, 15] });
+  const [settings, setSettings] = useState<TimerSettings>({ pomoDuration: 25, shortBreakDuration: 5, longBreakDuration: 15, pomosPerLongBreak: 4, autoStartNextPomo: false, autoStartBreak: false, quickDurations: [15, 25, 30, 45, 60, 90], shortBreakPresets: [5, 10, 15, 20, 30] });
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string>('');
   const [pomosCompleted, setPomosCompleted] = useState(0); 
+  const [workDuration, setWorkDuration] = useState(25);
+  const [restDuration, setRestDuration] = useState(5);
+
+  // Ghost Mode State
+  const [isGhostMode, setIsGhostMode] = useState(() => new URLSearchParams(window.location.search).get('mode') === 'ghost');
+  const [enableGhostButton, setEnableGhostButton] = useState(() => localStorage.getItem('focusflow_enable_ghost_btn') !== 'false');
+  const [isPinned, setIsPinned] = useState(true);
 
   // Wager State
   const [wager, setWager] = useState(0);
   const [isWagerActive, setIsWagerActive] = useState(false);
+  const [wagerAmount, setWagerAmount] = useState(50);
+  const [isWagerMenuOpen, setIsWagerMenuOpen] = useState(false);
+  const [wagerWinAmount, setWagerWinAmount] = useState<number | null>(null);
+
+  // Dock Visibility
+  const [isDockVisible, setIsDockVisible] = useState(false);
+  const [isNoteOpen, setIsNoteOpen] = useState(false);
+  const [isInteractingWithWheel, setIsInteractingWithWheel] = useState(false);
+  const [isProjectSelectorOpen, setIsProjectSelectorOpen] = useState(false);
+  const [isTaskSelectorOpen, setIsTaskSelectorOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+      const endInteraction = () => setIsInteractingWithWheel(false);
+      window.addEventListener('mouseup', endInteraction);
+      window.addEventListener('touchend', endInteraction);
+      return () => {
+          window.removeEventListener('mouseup', endInteraction);
+          window.removeEventListener('touchend', endInteraction);
+      };
+  }, []);
+
+  useEffect(() => {
+      let timeout: NodeJS.Timeout;
+      const handleMouseMove = (e: MouseEvent) => {
+          if (!containerRef.current) return;
+          
+          if (isInteractingWithWheel) {
+              setIsDockVisible(true);
+              clearTimeout(timeout);
+              return;
+          }
+
+          const rect = containerRef.current.getBoundingClientRect();
+          const relativeX = e.clientX - rect.left;
+          const threshold = rect.width * 0.25;
+
+          if (relativeX >= 0 && relativeX < threshold) {
+              setIsDockVisible(true);
+              clearTimeout(timeout);
+          } else {
+              clearTimeout(timeout);
+              if (!isWagerMenuOpen && !isProjectSelectorOpen && !isTaskSelectorOpen && !isNoteOpen) {
+                  timeout = setTimeout(() => setIsDockVisible(false), 500);
+              }
+          }
+      };
+      window.addEventListener('mousemove', handleMouseMove);
+      return () => {
+          window.removeEventListener('mousemove', handleMouseMove);
+          clearTimeout(timeout);
+      };
+  }, [isInteractingWithWheel, isWagerMenuOpen, isProjectSelectorOpen, isTaskSelectorOpen, isNoteOpen]);
 
   // --- UI State ---
   const [showSidebar, setShowSidebar] = useState(false);
@@ -58,6 +121,8 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
   const [editStartTime, setEditStartTime] = useState('');
   const [editEndTime, setEditEndTime] = useState('');
 
+  const [newPresetWork, setNewPresetWork] = useState('');
+  const [newPresetRest, setNewPresetRest] = useState('');
   // Settings Modal Temp State
   const [tempSettings, setTempSettings] = useState<TimerSettings>(settings);
 
@@ -77,6 +142,8 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
   const endTimeRef = useRef<number | null>(null); 
   const startTimeRef = useRef<number | null>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
+  const wagerMenuRef = useRef<HTMLDivElement>(null);
+  const hasSynced = useRef(false);
   const isMounted = useRef(true);
 
   // State Ref to prevent stale closures in setInterval
@@ -88,6 +155,24 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
 
   // Use gems from props
   const currentGems = propGems;
+
+  const currentProjectName = projects.find(p => p.id === selectedProjectId)?.name;
+  const currentTaskTitle = tasks.find(t => t.id === selectedTaskId)?.title;
+
+  const maxWager = Math.min(500, Math.max(1, currentGems));
+
+  const wagerSteps = useMemo(() => {
+      const steps = [1, 5, 10, 25, 50, 100, 250, 500];
+      const available = steps.filter(s => s <= currentGems);
+      return available.length > 0 ? available : [0];
+  }, [currentGems]);
+
+  useEffect(() => {
+      if (wagerAmount > maxWager) {
+          setWagerAmount(maxWager);
+      }
+  }, [maxWager, wagerAmount]);
+
 useEffect(() => {
       isMounted.current = true;
       return () => { isMounted.current = false; };
@@ -113,10 +198,18 @@ useEffect(() => {
           const [sSessions, sSettings, sTasks] = await Promise.all([storage.getSessions(), storage.getTimerSettings(), storage.getTasks()]);
           if (isMounted.current) {
               setSessions(sSessions);
-              setSettings(sSettings);
-              const duration = sSettings.pomoDuration * 60;
-              setInitialTime(duration);
-              setTimeLeft(duration);
+              setSettings({
+                  ...sSettings,
+                  quickDurations: sSettings.quickDurations && sSettings.quickDurations.length > 0 ? sSettings.quickDurations : [15, 25, 30, 45, 60, 90],
+                  shortBreakPresets: sSettings.shortBreakPresets && sSettings.shortBreakPresets.length > 0 ? sSettings.shortBreakPresets : [5, 10, 15, 20, 30]
+              });
+              setWorkDuration(sSettings.pomoDuration);
+              setRestDuration(sSettings.shortBreakDuration);
+              if (!isGhostMode && !hasSynced.current) {
+                  const duration = sSettings.pomoDuration * 60;
+                  setInitialTime(duration);
+                  setTimeLeft(duration);
+              }
               setTasks(sTasks);
           }
       }, 10);
@@ -124,6 +217,9 @@ useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
           if (historyMenuRef.current && !historyMenuRef.current.contains(event.target as Node)) {
               setIsHistoryMenuOpen(false);
+          }
+          if (wagerMenuRef.current && !wagerMenuRef.current.contains(event.target as Node)) {
+              setIsWagerMenuOpen(false);
           }
       };
       document.addEventListener('mousedown', handleClickOutside);
@@ -136,6 +232,48 @@ useEffect(() => {
           document.removeEventListener('mousedown', handleClickOutside);
           window.removeEventListener('focusflow-task-update', handleTaskUpdate);
       };
+  }, []);
+
+  // --- Sync State (Ghost Mode) ---
+  useEffect(() => {
+      if (window.electronAPI?.onSyncTimerState) {
+          const cleanup = window.electronAPI.onSyncTimerState((state: any) => {
+              hasSynced.current = true;
+              if (state.timeLeft !== undefined) setTimeLeft(state.timeLeft);
+              if (state.initialTime !== undefined) setInitialTime(state.initialTime);
+              if (state.isActive !== undefined) setIsActive(state.isActive);
+              if (state.mode !== undefined) setMode(state.mode);
+              if (state.phase !== undefined) setPhase(state.phase);
+              if (state.sessionLabel !== undefined) setSessionLabel(state.sessionLabel);
+              if (state.selectedProjectId !== undefined) setSelectedProjectId(state.selectedProjectId);
+              
+              // Synchronize Timer Engine Refs to prevent drift/desync
+              if (state.isActive) {
+                  const targetMode = state.mode || 'POMO';
+                  if (targetMode === 'POMO') {
+                      const durationMS = (state.timeLeft || 0) * 1000;
+                      endTimeRef.current = Date.now() + durationMS;
+                      startTimeRef.current = null;
+                  } else {
+                      const elapsedMS = (state.timeLeft || 0) * 1000;
+                      startTimeRef.current = Date.now() - elapsedMS;
+                      endTimeRef.current = null;
+                  }
+              } else {
+                  endTimeRef.current = null;
+                  startTimeRef.current = null;
+              }
+
+              // Restart timer interval if it was active
+              if (state.isActive) setIsActive(true);
+          });
+
+          if (window.electronAPI.getTimerState) {
+              window.electronAPI.getTimerState();
+          }
+
+          return cleanup;
+      }
   }, []);
 
   // Update selected project if prop changes
@@ -223,6 +361,10 @@ const handleTimerComplete = async () => {
       if (timerRef.current) clearInterval(timerRef.current);
       endTimeRef.current = null;
       triggerAlarm();
+      
+      if (isGhostMode) {
+          window.electronAPI?.playSoundEffect?.();
+      }
 
       if (Notification.permission === "granted") {
           new Notification("Timer Finished!", {
@@ -233,15 +375,10 @@ const handleTimerComplete = async () => {
 
       // Handle Wager Win
       if (currentData.isWagerActive && currentData.wager > 0) {
-          const roll = Math.random();
-          let multiplier = 2;
-          let type = '';
-
-          if (roll > 0.95) { multiplier = 5; type = ' (JACKPOT!)'; }
-          else if (roll > 0.85) { multiplier = 3; type = ' (CRITICAL!)'; }
-          else if (roll > 0.60) { multiplier = 2.5; type = ' (Great!)'; }
-
+          const durationInMinutes = currentData.initialTime / 60;
+          const multiplier = 1 + (durationInMinutes / 120);
           const reward = Math.floor(currentData.wager * multiplier);
+          const type = multiplier >= 2 ? ' (Double!)' : multiplier >= 1.5 ? ' (Solid)' : '';
 
           const newBonus = (parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0) + reward;
           localStorage.setItem('focusflow_bonus_gems', newBonus.toString());
@@ -253,11 +390,14 @@ const handleTimerComplete = async () => {
               date: new Date().toISOString(),
               type: 'WIN',
               amount: reward,
-              description: `Focus Wager Won (${multiplier}x${type})`
+              description: `Focus Wager Won (${multiplier.toFixed(2)}x)`
           });
           setIsWagerActive(false);
           setWager(0);
-          alert(`WAGER WON!${type} You earned ${reward} Gems!`);
+          if (isMounted.current) setWagerWinAmount(reward);
+          setTimeout(() => {
+              if (isMounted.current) setWagerWinAmount(null);
+          }, 5000);
       }
 
       const now = new Date();
@@ -416,6 +556,50 @@ const handleTimerComplete = async () => {
       setIsActive(!isActive);
   };
 
+  const handleToggleGhostMode = () => {
+      const state = {
+          timeLeft,
+          initialTime,
+          isActive,
+          mode,
+          phase,
+          sessionLabel,
+          selectedProjectId
+      };
+      window.electronAPI?.toggleGhostMode(state);
+  };
+
+  const togglePin = () => {
+      const newState = !isPinned;
+      setIsPinned(newState);
+      window.electronAPI?.setAlwaysOnTop(newState);
+  };
+
+  const handleWorkDurationChange = (val: number) => {
+      setWorkDuration(val);
+      const newSettings = { ...settings, pomoDuration: val };
+      setSettings(newSettings);
+      storage.saveTimerSettings(newSettings);
+      
+      if (!isActive && mode === 'POMO' && phase === 'FOCUS') {
+          setTimeLeft(val * 60);
+          setInitialTime(val * 60);
+      }
+  };
+
+  const handleRestDurationChange = (val: number) => {
+      setRestDuration(val);
+      const newSettings = { ...settings, shortBreakDuration: val };
+      setSettings(newSettings);
+      storage.saveTimerSettings(newSettings);
+      // Note: We don't auto-update timeLeft for breaks here to avoid disrupting flow, unless explicitly needed.
+  };
+
+  const handleLockInBet = () => {
+      setWager(wagerAmount);
+      setIsWagerMenuOpen(false);
+  };
+
   const triggerAlarm = () => { 
       const savedVol = localStorage.getItem('focusflow_timer_volume');
       const vol = savedVol ? parseFloat(savedVol) : 0.5;
@@ -442,7 +626,37 @@ const handleTimerComplete = async () => {
       setIsSettingsOpen(false);
   };
 
+  const toggleGhostButtonSetting = (checked: boolean) => {
+      setEnableGhostButton(checked);
+      localStorage.setItem('focusflow_enable_ghost_btn', String(checked));
+  };
+
   const handleSettingChange = (k: keyof TimerSettings, v: any) => setTempSettings((p: TimerSettings) => ({...p, [k]: v}));
+
+  const addPreset = (type: 'work' | 'rest') => {
+      const val = parseInt(type === 'work' ? newPresetWork : newPresetRest);
+      if (!isNaN(val) && val > 0) {
+          if (type === 'work') {
+              if (!tempSettings.quickDurations.includes(val)) {
+                  setTempSettings(s => ({ ...s, quickDurations: [...(s.quickDurations || []), val].sort((a,b) => a-b) }));
+              }
+              setNewPresetWork('');
+          } else {
+              if (!tempSettings.shortBreakPresets.includes(val)) {
+                  setTempSettings(s => ({ ...s, shortBreakPresets: [...(s.shortBreakPresets || []), val].sort((a,b) => a-b) }));
+              }
+              setNewPresetRest('');
+          }
+      }
+  };
+
+  const removePreset = (type: 'work' | 'rest', val: number) => {
+      if (type === 'work') {
+          setTempSettings(s => ({ ...s, quickDurations: (s.quickDurations || []).filter(d => d !== val) }));
+      } else {
+          setTempSettings(s => ({ ...s, shortBreakPresets: (s.shortBreakPresets || []).filter(d => d !== val) }));
+      }
+  };
   
   // --- Add Session Logic ---
   const handleSaveManualSession = async () => {
@@ -649,19 +863,84 @@ const handleTimerComplete = async () => {
   const themeColor = mode === 'STOPWATCH' ? 'text-orange-500' : isUrgent ? 'text-red-500' : phase === 'FOCUS' ? 'text-blue-500' : 'text-green-500';
   const shouldAnimate = progress !== 0;
 
-  const handleQuickAction = (minutes: number) => {
-    setMode('POMO');
-    setPhase('FOCUS');
-    const seconds = minutes * 60;
-    setInitialTime(seconds);
-    setTimeLeft(seconds);
-    setIsActive(false);
-  };
-
   const isCyberpunk = appTheme === 'cyberpunk';
+
+  // --- GHOST MODE RENDER ---
+  if (isGhostMode) {
+      const ghostRadius = 70; 
+      const ghostCircumference = 2 * Math.PI * ghostRadius;
+      const ghostDashOffset = ghostCircumference * (1 - progress);
+
+      return (
+          <div className="fixed inset-0 w-full h-full flex items-center justify-center bg-transparent" style={{ WebkitAppRegion: 'drag' } as any}>
+              
+              {/* Window Controls - Visible on Hover */}
+              <div className="absolute top-0 left-0 w-full p-3 flex justify-between opacity-0 hover:opacity-100 transition-opacity duration-300 z-50" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                  <button 
+                      onClick={togglePin}
+                      className={`p-2 rounded-full transition-all hover:scale-110 backdrop-blur-md ${isCyberpunk ? 'text-[#00f0ff] bg-black/60 hover:bg-[#00f0ff]/20' : 'text-white bg-black/20 hover:bg-black/40'}`}
+                      title={isPinned ? "Unpin" : "Pin"}
+                  >
+                      <svg className="w-4 h-4" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                  </button>
+                  <button 
+                      onClick={handleToggleGhostMode}
+                      className={`p-2 rounded-full transition-all hover:scale-110 backdrop-blur-md ${isCyberpunk ? 'text-[#00f0ff] bg-black/60 hover:bg-[#00f0ff]/20' : 'text-white bg-black/20 hover:bg-black/40'}`}
+                      title="Exit"
+                  >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                  </button>
+              </div>
+
+              {/* Floating Timer Ring */}
+              <div className="relative group">
+                  {/* Ambient Glow */}
+                  <div className={`absolute inset-0 rounded-full blur-2xl opacity-20 ${isActive ? 'animate-pulse' : ''} ${isCyberpunk ? 'bg-[#00f0ff]' : 'bg-blue-500'}`} style={{ transform: 'scale(0.85)' }}></div>
+
+                  <svg className="w-[160px] h-[160px] transform -rotate-90 drop-shadow-2xl">
+                      {/* Track */}
+                      <circle cx="80" cy="80" r={ghostRadius} className={isCyberpunk ? "stroke-[#00f0ff]/10" : "stroke-white/10"} strokeWidth="8" fill="transparent" />
+                      {/* Progress */}
+                      <circle 
+                        cx="80" cy="80" r={ghostRadius} 
+                        stroke="currentColor" 
+                        strokeWidth="8" 
+                        fill="transparent" 
+                        strokeDasharray={ghostCircumference} 
+                        strokeDashoffset={ghostDashOffset} 
+                        strokeLinecap="round" 
+                        className={`transition-all duration-1000 ease-linear ${isCyberpunk ? 'text-[#00f0ff]' : (isActive ? 'text-white' : 'text-white/50')}`}
+                        style={{ filter: isCyberpunk ? 'drop-shadow(0 0 10px #00f0ff)' : 'drop-shadow(0 0 8px rgba(255,255,255,0.6))' }}
+                      />
+                  </svg>
+                  
+                  {/* Center Time Display */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
+                      <div className={`text-5xl font-black tracking-tighter tabular-nums select-none ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_15px_rgba(0,240,255,0.8)]' : 'text-white drop-shadow-lg'}`}>
+                          {formatTime(timeLeft)}
+                      </div>
+                      
+                      {/* Play/Pause Controls (Visible on Hover) */}
+                      <div className="absolute bottom-8 flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                          <button onClick={toggleTimer} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 shadow-lg ${isCyberpunk ? 'bg-[#00f0ff] text-black' : 'bg-white text-black'}`}>
+                              {isActive ? <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
+                          </button>
+                          <button onClick={resetTimer} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 ${isCyberpunk ? 'bg-black/60 text-[#00f0ff]' : 'bg-black/40 text-white'}`}>
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      );
+  }
+
 return (
-    <div className={`flex h-full w-full overflow-hidden relative transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white'}`}>
+    <div ref={containerRef} className={`flex h-full w-full overflow-hidden relative transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white'}`}>
         
+        {/* Dock Hover Indicator */}
+        <div className={`absolute left-0 top-1/2 transform -translate-y-1/2 w-1.5 h-32 rounded-r-full transition-all duration-500 pointer-events-none z-40 ${isDockVisible ? 'opacity-0 -translate-x-full' : 'opacity-100 translate-x-0'} ${isCyberpunk ? 'bg-[#00f0ff] shadow-[0_0_15px_#00f0ff]' : 'bg-white/40 shadow-[0_0_15px_rgba(255,255,255,0.4)]'}`}></div>
+
         {/* --- SETTINGS MODAL --- */}
         {isSettingsOpen && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in p-4">
@@ -681,6 +960,32 @@ return (
                             <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Automation</h3>
                             <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><span className="text-sm font-medium text-gray-300">Auto-start next Pomo</span><div className="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in"><input type="checkbox" checked={tempSettings.autoStartNextPomo} onChange={e => handleSettingChange('autoStartNextPomo', e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer peer checked:right-0 right-5"/><div className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${tempSettings.autoStartNextPomo ? 'bg-blue-600' : 'bg-gray-600'}`}></div></div></div>
                             <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><span className="text-sm font-medium text-gray-300">Auto-start Break</span><div className="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in"><input type="checkbox" checked={tempSettings.autoStartBreak} onChange={e => handleSettingChange('autoStartBreak', e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer peer checked:right-0 right-5"/><div className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${tempSettings.autoStartBreak ? 'bg-blue-600' : 'bg-gray-600'}`}></div></div></div>
+                        </div>
+                        <div className="space-y-2">
+                            <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Work Presets</h3>
+                            <div className="flex flex-wrap gap-2 mb-2">
+                                {(tempSettings.quickDurations || []).map(d => (
+                                    <span key={d} className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs font-bold flex items-center gap-1">
+                                        {d}m <button onClick={() => removePreset('work', d)} className="hover:text-white">×</button>
+                                    </span>
+                                ))}
+                            </div>
+                            <div className="flex gap-2"><input type="number" value={newPresetWork} onChange={e => setNewPresetWork(e.target.value)} placeholder="Add min..." className="w-full bg-[#2c2c2e] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none border border-white/10" onKeyDown={e => e.key === 'Enter' && addPreset('work')} /><button onClick={() => addPreset('work')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold">Add</button></div>
+                        </div>
+                        <div className="space-y-2">
+                            <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Rest Presets</h3>
+                            <div className="flex flex-wrap gap-2 mb-2">
+                                {(tempSettings.shortBreakPresets || []).map(d => (
+                                    <span key={d} className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs font-bold flex items-center gap-1">
+                                        {d}m <button onClick={() => removePreset('rest', d)} className="hover:text-white">×</button>
+                                    </span>
+                                ))}
+                            </div>
+                            <div className="flex gap-2"><input type="number" value={newPresetRest} onChange={e => setNewPresetRest(e.target.value)} placeholder="Add min..." className="w-full bg-[#2c2c2e] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none border border-white/10" onKeyDown={e => e.key === 'Enter' && addPreset('rest')} /><button onClick={() => addPreset('rest')} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold">Add</button></div>
+                        </div>
+                        <div className="space-y-2">
+                            <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Features</h3>
+                            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><span className="text-sm font-medium text-gray-300">Enable Ghost Mode Button</span><div className="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in"><input type="checkbox" checked={enableGhostButton} onChange={e => toggleGhostButtonSetting(e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer peer checked:right-0 right-5"/><div className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${enableGhostButton ? 'bg-blue-600' : 'bg-gray-600'}`}></div></div></div>
                         </div>
                     </div>
                 </div>
@@ -709,6 +1014,47 @@ return (
             </div>
         )}
 
+        {/* --- PROJECT SELECTOR MODAL --- */}
+        {isProjectSelectorOpen && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4" onClick={() => setIsProjectSelectorOpen(false)}>
+                <div className={`w-[350px] rounded-2xl shadow-2xl border flex flex-col animate-scale-in max-h-[60vh] ${isCyberpunk ? 'bg-black border-[#00f0ff]/50 text-[#00f0ff]' : 'bg-[#1c1c1e] border-gray-700/50 text-white'}`} onClick={e => e.stopPropagation()}>
+                    <div className={`px-4 py-3 border-b font-bold ${isCyberpunk ? 'border-[#00f0ff]/20' : 'border-white/10'}`}>Select Project</div>
+                    <div className="p-2 overflow-y-auto custom-scrollbar">
+                        <button onClick={() => { setSelectedProjectId('all'); setIsProjectSelectorOpen(false); }} className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${selectedProjectId === 'all' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-blue-600') : (isCyberpunk ? 'hover:bg-[#00f0ff]/10' : 'hover:bg-white/5')}`}>All Projects</button>
+                        <button onClick={() => { setSelectedProjectId(''); setIsProjectSelectorOpen(false); }} className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${selectedProjectId === '' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-blue-600') : (isCyberpunk ? 'hover:bg-[#00f0ff]/10' : 'hover:bg-white/5')}`}>No Project</button>
+                        <div className={`h-px my-1 ${isCyberpunk ? 'bg-[#00f0ff]/20' : 'bg-white/10'}`}></div>
+                        {projects.map(p => (
+                            <button key={p.id} onClick={() => { setSelectedProjectId(p.id); setIsProjectSelectorOpen(false); }} className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${selectedProjectId === p.id ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-blue-600') : (isCyberpunk ? 'hover:bg-[#00f0ff]/10' : 'hover:bg-white/5')}`}>
+                                {p.name}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* --- TASK SELECTOR MODAL --- */}
+        {isTaskSelectorOpen && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4" onClick={() => setIsTaskSelectorOpen(false)}>
+                <div className={`w-[350px] rounded-2xl shadow-2xl border flex flex-col animate-scale-in max-h-[60vh] ${isCyberpunk ? 'bg-black border-[#00f0ff]/50 text-[#00f0ff]' : 'bg-[#1c1c1e] border-gray-700/50 text-white'}`} onClick={e => e.stopPropagation()}>
+                    <div className={`px-4 py-3 border-b font-bold ${isCyberpunk ? 'border-[#00f0ff]/20' : 'border-white/10'}`}>Select Task</div>
+                    <div className="p-2 overflow-y-auto custom-scrollbar">
+                        <button onClick={() => { setSelectedTaskId(''); setSessionLabel(''); setIsTaskSelectorOpen(false); }} className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${selectedTaskId === '' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-blue-600') : (isCyberpunk ? 'hover:bg-[#00f0ff]/10' : 'hover:bg-white/5')}`}>No Task</button>
+                        <div className={`h-px my-1 ${isCyberpunk ? 'bg-[#00f0ff]/20' : 'bg-white/10'}`}></div>
+                        {activeTasks.length === 0 ? (
+                            <div className="px-3 py-2 text-sm opacity-50">No active tasks found.</div>
+                        ) : (
+                            activeTasks.map(t => (
+                                <button key={t.id} onClick={() => { setSelectedTaskId(t.id); setSessionLabel(t.title); setIsTaskSelectorOpen(false); }} className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${selectedTaskId === t.id ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-blue-600') : (isCyberpunk ? 'hover:bg-[#00f0ff]/10' : 'hover:bg-white/5')}`}>
+                                    {t.title}
+                                </button>
+                            ))
+                        )}
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* --- EDIT MODAL --- */}
         {isEditModalOpen && (
              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4">
@@ -723,60 +1069,7 @@ return (
              </div>
         )}
 {/* LEFT COLUMN: Timer Display */}
-        <div className="flex-1 flex flex-col items-center justify-center p-8 relative transition-colors duration-300 group">
-            {/* Top Header */}
-            <div className={`absolute top-8 left-0 right-0 flex flex-col items-center z-20 transition-opacity duration-300 ${isActive ? 'opacity-20 hover:opacity-100' : 'opacity-100'}`}>
-                <div className={`pointer-events-auto flex flex-col items-center gap-2 max-w-xs p-4 rounded-xl ${isCyberpunk ? 'border border-[#00f0ff]/30' : ''}`}>
-                    <div className="relative group">
-                        <select
-                            value={selectedProjectId}
-                            onChange={(e) => {
-                                setSelectedProjectId(e.target.value);
-                                setSelectedTaskId('');
-                                setSessionLabel('');
-                            }}
-                            disabled={isActive}
-                            className={`appearance-none pl-3 pr-8 py-1 bg-transparent text-lg font-bold cursor-pointer focus:ring-0 transition-colors text-center ${isCyberpunk ? 'text-[#00f0ff] hover:text-[#00f0ff]/80' : 'text-gray-900 dark:text-white hover:text-gray-600 dark:hover:text-gray-300'} ${isActive ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
-                            <option value="all">All Projects</option>
-                            <option value="">No Project</option>
-                            {projects.map((p: Project) => (<option key={p.id} value={p.id}>{p.name}</option>))}
-                        </select>
-                        {!isActive && <div className={`absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-400'}`}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></div>}
-                    </div>
-                     <div className="relative group w-full">
-                         <select value={selectedTaskId} onChange={handleTaskSelect} disabled={isActive || activeTasks.length === 0} className={`appearance-none pl-3 pr-8 py-1 bg-transparent text-sm font-medium cursor-pointer focus:ring-0 transition-colors w-full truncate text-center ${isCyberpunk ? 'text-[#00f0ff]/80 hover:text-[#00f0ff]' : 'text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white'} ${isActive || activeTasks.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                             {activeTasks.length === 0 ? (
-                                <option value="" disabled>-- No Tasks Available --</option>
-                             ) : (
-                                <>
-                                 <option value="">-- Select Task --</option>
-                                 {activeTasks.map((t: Task) => <option key={t.id} value={t.id}>{t.title}</option>)}
-                                </>
-                             )}
-                         </select>
-                     </div>
-                    <input
-                        type="text"
-                        value={sessionLabel}
-                        onChange={(e) => setSessionLabel(e.target.value)}
-                        placeholder={isCyberpunk ? "MISSION OBJECTIVE" : "What are you working on?"}
-                        className={`w-full bg-transparent p-0 text-sm focus:ring-0 transition-colors text-center ${isCyberpunk ? 'text-[#00f0ff]/80 placeholder-[#00f0ff]/30 border-b border-transparent focus:border-[#00f0ff]/30' : 'text-gray-600 dark:text-gray-300 placeholder-gray-400 border-b border-transparent focus:border-gray-300'}`}
-                        disabled={isActive}
-                    />
-                </div>
-            </div>
-
-             {/* Bottom Dock */}
-            <div className={`absolute bottom-8 right-8 flex gap-2 z-30 backdrop-blur-md bg-black/30 p-2 rounded-2xl transition-opacity duration-300 ${isActive ? 'opacity-20 hover:opacity-100' : 'opacity-100'} ${isCyberpunk ? 'border border-[#00f0ff]/30' : ''}`}>
-                <button onClick={openSettings} className={`p-3 rounded-xl transition-all ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                </button>
-                <button onClick={() => setShowSidebar(!showSidebar)} className={`p-3 rounded-xl transition-all ${showSidebar ? (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/10' : 'text-blue-600 bg-blue-50 dark:bg-blue-900/20') : (isCyberpunk ? 'text-[#00f0ff]/60 hover:text-[#00f0ff]' : 'text-gray-400 hover:text-gray-900 dark:hover:text-white')}`}>
-                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10H3"/><path d="M21 6H3"/><path d="M21 14H3"/><path d="M21 18H3"/></svg>
-                </button>
-            </div>
-
+        <div className="flex-1 flex flex-col items-center justify-center p-8 pb-32 pl-24 relative transition-colors duration-300 group">
              {/* Main Content Centered */}
              <div className="flex flex-col items-center justify-center w-full max-w-xl z-10">
                  
@@ -830,20 +1123,6 @@ return (
                      </div>
                  </div>
 
-                {/* Quick Actions */}
-                 <div className="flex items-center gap-2 mb-10">
-                     {(settings.quickDurations || [15, 25, 45, 60]).map((mins: number) => (
-                         <button
-                             key={mins}
-                             onClick={() => handleQuickAction(mins)}
-                             disabled={isActive}
-                             className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all border ${isActive ? 'opacity-50 cursor-not-allowed' : ''} ${isCyberpunk ? 'bg-transparent border-[#00f0ff]/30 text-[#00f0ff]/80 hover:bg-[#00f0ff]/10 hover:text-[#00f0ff]' : 'bg-transparent border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-gray-400'}`}
-                         >
-                             {mins}
-                         </button>
-                     ))}
-                 </div>
-
                  {/* Main Controls */}
                  <div className="flex items-center gap-6">
                      <button onClick={resetTimer} className={`p-4 rounded-full transition-all active:scale-95 shadow-sm hover:shadow-md ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'bg-gray-100 dark:bg-[#1c1c1e] hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
@@ -855,16 +1134,192 @@ return (
                      </button>
                      {mode === 'STOPWATCH' && (isActive || timeLeft > 0) ? (<button onClick={handleStopwatchFinish} className="p-4 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-500 rounded-full hover:bg-green-200 dark:hover:bg-green-900/50 transition-all active:scale-95" title="Save & Finish"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></button>) : <div className="w-14 h-14"></div>}
                  </div>
-
-                 {/* Wager Controls */}
-                 {mode === 'POMO' && phase === 'FOCUS' && !isActive && (
-                     <div className={`mt-8 flex flex-col items-center animate-fade-in ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-600 dark:text-gray-300'}`}>
-                         <div className="flex items-center gap-2 mb-2"><span className="text-xs font-bold uppercase tracking-wider">Wager Gems</span><span className="text-xs opacity-60">(Win 2x)</span></div>
-                         <div className="flex items-center gap-2">{[0, 10, 50, 100].map((amount: number) => (<button key={amount} onClick={() => setWager(amount)} disabled={currentGems < amount} className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all ${wager === amount ? (isCyberpunk ? 'bg-[#00f0ff] text-black border-[#00f0ff]' : 'bg-blue-600 text-white border-blue-600') : (isCyberpunk ? 'bg-black border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-blue-400')} ${currentGems < amount ? 'opacity-50 cursor-not-allowed' : ''}`}>{amount === 0 ? 'None' : amount} 💎</button>))}</div>
-                         {wager > 0 && <p className="text-[10px] mt-1 text-orange-500 font-bold">Risk: Lose {wager} if stopped early!</p>}
-                     </div>
-                 )}
              </div>
+
+            {/* NEW DOCK RIBBON */}
+            <div className={`absolute left-6 top-1/2 transform -translate-y-1/2 w-16 h-auto min-h-[400px] py-6 bg-[#0a0a0a]/40 backdrop-blur-2xl border border-white/5 rounded-full flex flex-col items-center justify-between gap-6 shadow-2xl z-50 transition-all duration-500 ease-in-out hover:bg-[#0a0a0a]/60 ${(isDockVisible || isWagerMenuOpen || isProjectSelectorOpen || isTaskSelectorOpen || isNoteOpen) ? 'translate-x-0 opacity-100' : '-translate-x-40 opacity-0 pointer-events-none'}`}>
+                
+                {/* Top: Wager & Note */}
+                <div className={`flex flex-col items-center gap-4 w-full pb-4 border-b ${isCyberpunk ? 'border-[#00f0ff]/20' : 'border-white/10'}`}>
+                    <div className="relative" ref={wagerMenuRef}>
+                        <button
+                            onClick={() => setIsWagerMenuOpen(!isWagerMenuOpen)}
+                            disabled={isActive}
+                            className={`p-2 rounded-lg transition-all ${isActive ? 'opacity-50 cursor-not-allowed' : ''} ${isWagerActive || wager > 0 ? 'text-amber-400 bg-amber-400/10 shadow-[0_0_10px_rgba(251,191,36,0.2)]' : 'text-amber-400/60 hover:text-amber-400 hover:bg-amber-400/10'}`}
+                            title="Wager"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        </button>
+                        {isWagerMenuOpen && (
+                            <div className="fixed left-24 top-0 w-16 h-full bg-[#050505]/95 backdrop-blur-3xl border border-amber-500/30 rounded-full shadow-[0_0_50px_-10px_rgba(245,158,11,0.2)] flex flex-col items-center justify-between py-6 z-50 origin-left animate-in slide-in-from-left-4 fade-in duration-300">
+                                
+                                {/* Connection Line */}
+                                <div className="absolute -left-8 top-[60px] w-8 h-[1px] bg-amber-500/50">
+                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,1)]"></div>
+                                </div>
+
+                                {/* Top: Potential Win */}
+                                <div className="flex flex-col items-center justify-center w-full h-24 border-b border-amber-500/20 mb-2 gap-1">
+                                    <span className="font-mono text-[9px] text-green-400/60 tracking-[0.2em] uppercase rotate-180" style={{ writingMode: 'vertical-rl' }}>POTENTIAL WIN</span>
+                                    <div className="font-mono font-bold text-lg text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.5)] flex flex-col items-center">
+                                        <span>{Math.floor(wagerAmount * (1 + (initialTime / 60) / 120))}</span>
+                                        <span className="text-xs text-green-500/50">💎</span>
+                                    </div>
+                                </div>
+
+                                {/* Middle: Vertical Ruler Slider */}
+                                <div className="relative flex-1 w-full flex justify-center my-2 group">
+                                    {/* Ruler Track Marks */}
+                                    <div className="absolute inset-y-0 w-10 h-full bg-transparent flex justify-center pointer-events-none opacity-60 group-hover:opacity-100 transition-opacity">
+                                        <div className="w-full h-full border-r border-amber-500/20"
+                                            style={{
+                                                backgroundImage: 'repeating-linear-gradient(to bottom, rgba(245,158,11,0.3) 0px, rgba(245,158,11,0.3) 1px, transparent 1px, transparent 10px)'
+                                            }}
+                                        ></div>
+                                    </div>
+
+                                    {/* Invisible Native Input */}
+                                    <input
+                                        type="range"
+                                        min={1}
+                                        max={maxWager}
+                                        step={1}
+                                        value={wagerAmount}
+                                        onChange={(e) => setWagerAmount(parseInt(e.target.value))}
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                                        style={{ WebkitAppearance: 'slider-vertical' }}
+                                    />
+                                    
+                                    {/* Custom Thumb */}
+                                    <div 
+                                        className="absolute left-1/2 -translate-x-1/2 w-8 h-8 bg-amber-500 rounded-full shadow-[0_0_20px_rgba(245,158,11,0.8)] border-2 border-amber-100 pointer-events-none z-10 transition-transform duration-75 ease-out flex items-center justify-center"
+                                        style={{ 
+                                            bottom: `calc(${((wagerAmount - 1) / (maxWager - 1 || 1)) * 100}% - 16px)` 
+                                        }}
+                                    >
+                                        <div className="w-2 h-2 bg-white/50 rounded-full blur-[1px]" />
+                                    </div>
+                                </div>
+
+                                {/* Bottom: Bet Amount & Lock */}
+                                <div className="flex flex-col items-center justify-center w-full h-32 border-t border-amber-500/20 pt-4 gap-4">
+                                    <div className="flex flex-col items-center gap-0.5">
+                                        <span className="font-mono text-[9px] text-amber-500/60 tracking-[0.2em] uppercase">BET</span>
+                                        <span className="font-mono text-lg font-bold text-amber-400 drop-shadow-md">
+                                            {wagerAmount}
+                                        </span>
+                                    </div>
+
+                                    <button 
+                                        onClick={handleLockInBet}
+                                        className="h-12 w-12 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-black flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition-all group"
+                                        title="Lock In Bet"
+                                    >
+                                        <svg className="w-5 h-5 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="relative">
+                        <button 
+                            onClick={() => setIsNoteOpen(!isNoteOpen)}
+                            className={`p-2 rounded-lg transition-colors ${isNoteOpen ? (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/20' : 'text-white bg-white/20') : (isCyberpunk ? 'text-[#00f0ff]/60 hover:text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-white/60 hover:text-white hover:bg-white/10')}`} 
+                            title={sessionLabel || "Add Note"}
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        </button>
+                        {/* Sliding Note Panel */}
+                        <div className={`absolute top-0 left-20 w-64 bg-[#0a0a0a]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl transition-all duration-300 origin-left ${isNoteOpen ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 -translate-x-4 scale-95 pointer-events-none'}`}>
+                            <h4 className={`text-xs font-bold uppercase tracking-wider mb-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-400'}`}>Session Note</h4>
+                            <textarea 
+                                value={sessionLabel}
+                                onChange={(e) => setSessionLabel(e.target.value)}
+                                placeholder="What are you working on?"
+                                className={`w-full bg-transparent border-none focus:ring-0 p-0 text-sm resize-none h-20 ${isCyberpunk ? 'text-[#00f0ff] placeholder-[#00f0ff]/30' : 'text-white placeholder-gray-500'}`}
+                                autoFocus={isNoteOpen}
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Middle: Time Wheels */}
+                <div className="flex flex-col items-center justify-center gap-4 flex-1 w-full">
+                    {/* Time Wheels */}
+                    <div className="flex flex-col items-center gap-2">
+                        <TimeWheel 
+                            items={settings.quickDurations || [15, 25, 30, 45, 60, 90]} 
+                            selectedValue={workDuration} 
+                            onChange={handleWorkDurationChange} 
+                            label="Focus"
+                            icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
+                            labelPosition="right"
+                            icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
+                            labelPosition="top"
+                            className="w-14"
+                            onInteractionStart={() => setIsInteractingWithWheel(true)}
+                            activeTextColor={isCyberpunk ? "text-[#00f0ff]" : "text-blue-400"}
+                        />
+                        <TimeWheel 
+                            items={settings.shortBreakPresets || [5, 10, 15, 20, 30]} 
+                            selectedValue={restDuration} 
+                            onChange={handleRestDurationChange} 
+                            label="Rest"
+                            icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3" /></svg>}
+                            labelPosition="right"
+                            icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3" /></svg>}
+                            labelPosition="top"
+                            onInteractionStart={() => setIsInteractingWithWheel(true)}
+                            className="w-14" 
+                            activeTextColor={isCyberpunk ? "text-[#00ff00]" : "text-green-400"} 
+                        />
+                    </div>
+                </div>
+
+                {/* Bottom: Controls */}
+                <div className={`flex flex-col items-center gap-4 w-full pt-4 border-t ${isCyberpunk ? 'border-[#00f0ff]/20' : 'border-white/10'}`}>
+                    <div className="relative group">
+                        <button 
+                            onClick={() => setIsProjectSelectorOpen(true)} 
+                            disabled={isActive}
+                            className={`p-3 rounded-xl transition-all duration-300 ${isActive ? 'opacity-50 cursor-not-allowed' : (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/10 hover:bg-[#00f0ff]/20 hover:shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'text-white/80 bg-white/5 hover:bg-white/10 hover:text-white hover:shadow-lg')}`}
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                        </button>
+                        <div className={`absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/50 text-[#00f0ff]' : 'bg-gray-900 text-white shadow-xl'}`}>
+                            {currentProjectName || 'Select Project'}
+                        </div>
+                    </div>
+                    
+                    <div className="relative group">
+                        <button 
+                            onClick={() => setIsTaskSelectorOpen(true)} 
+                            disabled={isActive}
+                            className={`p-3 rounded-xl transition-all duration-300 ${isActive ? 'opacity-50 cursor-not-allowed' : (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/10 hover:bg-[#00f0ff]/20 hover:shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'text-white/80 bg-white/5 hover:bg-white/10 hover:text-white hover:shadow-lg')}`}
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        </button>
+                        <div className={`absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/50 text-[#00f0ff]' : 'bg-gray-900 text-white shadow-xl'}`}>
+                            {currentTaskTitle || 'Select Task'}
+                        </div>
+                    </div>
+
+                    <div className="w-8 h-px bg-white/10 my-1"></div>
+
+                    <button onClick={openSettings} className={`p-2 rounded-lg transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:text-white hover:bg-[#00f0ff]/10' : 'text-white/60 hover:text-white hover:bg-white/10'}`} title="Settings">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    </button>
+                    {enableGhostButton && (
+                        <button onClick={handleToggleGhostMode} className={`p-2 rounded-lg transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:text-white hover:bg-[#00f0ff]/10' : 'text-white/60 hover:text-white hover:bg-white/10'}`} title="Ghost Mode">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                        </button>
+                    )}
+                    <button onClick={() => setShowSidebar(!showSidebar)} className={`p-2 rounded-lg transition-colors ${showSidebar ? (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/10' : 'text-blue-400 bg-blue-500/10') : (isCyberpunk ? 'text-[#00f0ff]/60 hover:text-white hover:bg-[#00f0ff]/10' : 'text-white/60 hover:text-white hover:bg-white/10')}`} title="Toggle Sidebar">
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10H3"/><path d="M21 6H3"/><path d="M21 14H3"/><path d="M21 18H3"/></svg>
+                    </button>
+                </div>
+            </div>
         </div>
 
         {/* RIGHT COLUMN: Sidebar Stats & History */}
@@ -885,6 +1340,19 @@ return (
                 </div>
              </div>
         </div>
+
+        {/* Wager Win Overlay */}
+        {wagerWinAmount !== null && (
+            <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-md animate-fade-in pointer-events-none">
+                <div className="text-9xl mb-6 animate-bounce filter drop-shadow-[0_0_30px_rgba(250,204,21,0.6)]">💎</div>
+                <h2 className={`text-7xl font-black mb-4 animate-pulse ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_30px_rgba(0,240,255,0.8)]' : 'text-transparent bg-clip-text bg-gradient-to-b from-yellow-300 to-yellow-600 drop-shadow-2xl'}`}>
+                    +{wagerWinAmount}
+                </h2>
+                <p className={`text-2xl font-bold uppercase tracking-[0.5em] ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-white/90'}`}>
+                    Wager Won
+                </p>
+            </div>
+        )}
     </div>
   );
 };

@@ -8,6 +8,7 @@ let tray = null;
 let win = null;
 let quickWin = null;
 let miniCaptureWin = null;
+let ghostWin = null;
 let defaultIcon = null;
 let transparentIcon = null;
 let isQuitting = false;
@@ -15,6 +16,8 @@ let powerSaveBlockerId = null;
 let fileWatcher = null;
 let currentGlobalShortcut = 'CommandOrControl+Shift+O';
 let lastTrayTitle = '';
+let ghostState = null;
+const ghostStatePath = path.join(app.getPath('userData'), 'ghost-window-state.json');
 
 // Ensure notifications work on Windows
 if (process.platform === 'win32') {
@@ -278,6 +281,88 @@ function triggerQuickCapture() {
   createMiniCaptureWindow();
 }
 
+function createGhostWindow(initialState) {
+  if (ghostWin && !ghostWin.isDestroyed()) {
+    ghostWin.show();
+    ghostWin.focus();
+    return;
+  }
+
+  let savedBounds = { width: 300, height: 300 };
+  try {
+    if (fs.existsSync(ghostStatePath)) {
+      savedBounds = JSON.parse(fs.readFileSync(ghostStatePath, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Failed to load ghost state', e);
+  }
+
+  ghostWin = new BrowserWindow({
+    width: savedBounds.width,
+    height: savedBounds.height,
+    x: savedBounds.x,
+    y: savedBounds.y,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: true,
+    hasShadow: false,
+    center: !savedBounds.x,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: false
+    }
+  });
+
+  if (process.platform === 'darwin') {
+    ghostWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    ghostWin.setAlwaysOnTop(true, 'screen-saver', 1);
+    ghostWin.setFullScreenable(false);
+  } else {
+    ghostWin.setAlwaysOnTop(true, 'floating');
+  }
+
+  const isDev = !app.isPackaged;
+  const url = isDev 
+    ? 'http://localhost:5173?mode=ghost' 
+    : `file://${path.join(__dirname, '../dist/index.html')}?mode=ghost`;
+  
+  ghostWin.loadURL(url);
+
+  ghostWin.once('ready-to-show', () => {
+    ghostWin.show();
+    ghostWin.focus();
+  });
+
+  // Failsafe: Show window if ready-to-show doesn't fire
+  setTimeout(() => { if (ghostWin && !ghostWin.isVisible()) ghostWin.show(); }, 500);
+
+  ghostWin.webContents.once('did-finish-load', () => {
+    // Force transparent background for the ghost window
+    ghostWin.webContents.insertCSS('html, body { background: transparent !important; overflow: hidden !important; }');
+    if (initialState) {
+      ghostWin.webContents.send('sync-timer-state', initialState);
+    }
+  });
+
+  ghostWin.on('close', () => {
+    if (ghostWin && !ghostWin.isDestroyed()) {
+      try {
+        const bounds = ghostWin.getBounds();
+        fs.writeFileSync(ghostStatePath, JSON.stringify(bounds));
+      } catch (e) {
+        console.error('Failed to save ghost state', e);
+      }
+    }
+  });
+
+  ghostWin.on('closed', () => { ghostWin = null; });
+}
+
 function setupIpcHandlers() {
   // IPC handlers for the custom traffic light buttons
   ipcMain.on('window-close', (event) => {
@@ -286,6 +371,11 @@ function setupIpcHandlers() {
     
     if (window === miniCaptureWin) {
         window.close();
+        return;
+    }
+
+    if (window === ghostWin) {
+        window.close(); // Closing ghost window usually means exiting ghost mode, handled by toggle
         return;
     }
 
@@ -596,6 +686,50 @@ function setupIpcHandlers() {
 
   ipcMain.handle('set-do-not-disturb', (event, enable) => {
     setDoNotDisturb(enable);
+  });
+
+  ipcMain.on('toggle-ghost-mode', (event, state) => {
+    ghostState = state;
+    if (ghostWin && !ghostWin.isDestroyed()) {
+      // Exit Ghost Mode
+      if (win && !win.isDestroyed()) {
+        win.show();
+        win.webContents.send('sync-timer-state', state);
+      }
+      ghostWin.close();
+    } else {
+      // Enter Ghost Mode
+      createGhostWindow(state);
+      if (win && !win.isDestroyed()) {
+        win.hide();
+      }
+    }
+  });
+
+  ipcMain.on('set-always-on-top', (event, flag) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) {
+      if (flag) {
+        if (process.platform === 'darwin') {
+          win.setAlwaysOnTop(true, 'screen-saver', 1);
+          win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        } else {
+          win.setAlwaysOnTop(true, 'floating');
+        }
+      } else {
+        win.setAlwaysOnTop(false);
+      }
+    }
+  });
+
+  ipcMain.on('get-timer-state', (event) => {
+    if (ghostState) {
+      event.sender.send('sync-timer-state', ghostState);
+    }
+  });
+
+  ipcMain.on('play-sound-effect', () => {
+    shell.beep();
   });
 }
 
