@@ -1,8 +1,14 @@
 export {};
 
 declare global {
+  var isElectron: boolean;
+  
   interface Window {
     electronAPI?: {
+      isElectron: boolean;
+      onUpdateAvailable: (callback: () => void) => () => void;
+      onUpdateDownloaded: (callback: () => void) => () => void;
+      restartApp: () => void;
       close: () => void;
       minimize: () => void;
       maximize: () => void;

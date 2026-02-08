@@ -73,12 +73,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         if (typeof window !== 'undefined') return localStorage.getItem('focusflow_update_branch') || 'main';
         return 'main';
     });
+    const [repoName, setRepoName] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_github_repo') || 'yourname/focusflow';
+        return 'yourname/focusflow';
+    });
 
     const checkForUpdates = async () => {
         setUpdateStatus('checking');
         try {
             // Try fetching from branch first
-            const branchRes = await fetch(`https://raw.githubusercontent.com/yourname/focusflow/${updateBranch}/package.json`);
+            const branchRes = await fetch(`https://raw.githubusercontent.com/${repoName}/${updateBranch}/package.json`);
             if (branchRes.ok) {
                 const data = await branchRes.json();
                 setLatestVersion(data.version);
@@ -87,7 +91,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 return;
             }
 
-            const res = await fetch('https://api.github.com/repos/yourname/focusflow/releases/latest');
+            const res = await fetch(`https://api.github.com/repos/${repoName}/releases/latest`);
             if (!res.ok) throw new Error('Failed to check');
             const data = await res.json();
             setLatestVersion(data.tag_name);
@@ -133,8 +137,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     {/* Content Area */}
                     <div className="space-y-6">
                         {activeTab === 'general' && (
+                            <GeneralSettings navConfig={navConfig} onUpdateNavConfig={onUpdateNavConfig} isDarkMode={isDarkMode} onToggleTheme={onToggleTheme} appTheme={appTheme} setAppTheme={setAppTheme} inventory={inventory} sidebarConfig={sidebarConfig} onUpdateSidebarConfig={onUpdateSidebarConfig} menuBarConfig={menuBarConfig} onUpdateMenuBarConfig={onUpdateMenuBarConfig} countdowns={countdowns} />
+                        )}
+                        {activeTab === 'projects' && <ProjectSettings projects={projects} onCreateProject={onCreateProject} onDeleteProject={onDeleteProject} onUpdateProjects={onUpdateProjects} appTheme={appTheme} />}
+                        {activeTab === 'timer' && (
                             <>
-                                <GeneralSettings navConfig={navConfig} onUpdateNavConfig={onUpdateNavConfig} isDarkMode={isDarkMode} onToggleTheme={onToggleTheme} appTheme={appTheme} setAppTheme={setAppTheme} inventory={inventory} sidebarConfig={sidebarConfig} onUpdateSidebarConfig={onUpdateSidebarConfig} menuBarConfig={menuBarConfig} onUpdateMenuBarConfig={onUpdateMenuBarConfig} countdowns={countdowns} />
+                                <TimerSettingsPanel appTheme={appTheme} />
                                 <div className={`p-6 rounded-2xl border shadow-sm ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
                                     <h3 className={`text-xl font-bold mb-4 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update App</h3>
                                     <p className={`text-sm mb-6 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>
@@ -142,6 +150,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                     </p>
                                     
                                     <div className="space-y-4">
+                                        <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                            <div>
+                                                <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>GitHub Repository</div>
+                                                <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>owner/repo name</div>
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                value={repoName}
+                                                onChange={(e) => { setRepoName(e.target.value); localStorage.setItem('focusflow_github_repo', e.target.value); }}
+                                                className={`px-3 py-1.5 rounded-lg text-sm border focus:outline-none w-48 text-right ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'}`}
+                                            />
+                                        </div>
+
                                         <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
                                             <div>
                                                 <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update Branch</div>
@@ -184,15 +205,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                 <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update from GitHub</div>
                                                 <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Download latest release</div>
                                             </div>
-                                            <button onClick={() => (window.electronAPI as any)?.openExternal('https://github.com/yourname/focusflow/releases')} className={`px-4 py-2 rounded-lg text-sm font-bold ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'}`}>Open GitHub</button>
+                                            <button onClick={() => (window.electronAPI as any)?.openExternal(`https://github.com/${repoName}/releases`)} className={`px-4 py-2 rounded-lg text-sm font-bold ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'}`}>Open GitHub</button>
                                         </div>
                                     </div>
                                 </div>
                             </>
-                        )}
-                        {activeTab === 'projects' && <ProjectSettings projects={projects} onCreateProject={onCreateProject} onDeleteProject={onDeleteProject} onUpdateProjects={onUpdateProjects} appTheme={appTheme} />}
-                        {activeTab === 'timer' && (
-                            <TimerSettingsPanel appTheme={appTheme} />
                         )}
                         {activeTab === 'integrations' && <SyncSettings appTheme={appTheme} setLastBackup={setLastBackup} />}
                         {activeTab === 'data' && <DataSettings appTheme={appTheme} lastBackup={lastBackup} setLastBackup={setLastBackup} />}

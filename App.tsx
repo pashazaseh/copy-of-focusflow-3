@@ -41,12 +41,12 @@ const parseDate = (dateStr: string) => {
 };
 
 // Toast Notification Component
-const Toast = ({ title, icon, onClose, isCyberpunk }: { title: string, icon: string, onClose: () => void, isCyberpunk: boolean }) => (
+const Toast = ({ title, subtitle = "Achievement Unlocked", icon, onClose, isCyberpunk }: { title: string, subtitle?: string, icon: string, onClose: () => void, isCyberpunk: boolean }) => (
     <div className="fixed top-24 left-1/2 transform -translate-x-1/2 z-[100] animate-fade-in-down pointer-events-none">
         <div className={`px-6 py-4 rounded-2xl shadow-2xl border flex items-center gap-4 backdrop-blur-xl pointer-events-auto transition-all ${isCyberpunk ? 'bg-black/90 border-[#00f0ff] text-[#00f0ff] shadow-[0_0_30px_rgba(0,240,255,0.4)]' : 'bg-gray-900/95 text-white border-white/10 shadow-xl'}`}>
             <div className={`text-3xl ${isCyberpunk ? 'drop-shadow-[0_0_10px_rgba(0,240,255,0.8)]' : ''}`}>{icon}</div>
             <div>
-                <p className={`text-[10px] font-bold uppercase tracking-widest mb-0.5 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-yellow-400'}`}>Achievement Unlocked</p>
+                <p className={`text-[10px] font-bold uppercase tracking-widest mb-0.5 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-yellow-400'}`}>{subtitle}</p>
                 <p className="font-bold text-base leading-none">{title}</p>
             </div>
             <button onClick={onClose} className={`ml-2 p-1 rounded-full transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20 text-[#00f0ff]/50 hover:text-[#00f0ff]' : 'hover:bg-white/20 text-gray-400 hover:text-white'}`}>
@@ -376,7 +376,7 @@ function FocusFlowContent() {
   const ITEMS_PER_PAGE = 10;
 
   // Toast State
-  const [toast, setToast] = useState<{title: string, icon: string} | null>(null);
+  const [toast, setToast] = useState<{title: string, subtitle?: string, icon: string} | null>(null);
   const prevBadgeCount = useRef<number>(-1);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
 
@@ -425,7 +425,7 @@ function FocusFlowContent() {
 
               localStorage.setItem('focusflow_last_login_date', today);
               
-              setToast({ title: `${title}: +${bonusAmount} Gems`, icon });
+              setToast({ title: `${title}: +${bonusAmount} Gems`, icon, subtitle: "Daily Bonus" });
               
               const savedVol = localStorage.getItem('focusflow_timer_volume');
               const vol = savedVol ? parseFloat(savedVol) : 0.5;
@@ -436,6 +436,25 @@ function FocusFlowContent() {
       const timer = setTimeout(checkDailyBonus, 1500);
       return () => clearTimeout(timer);
   }, [addTransaction, isViewEnabled]);
+
+  // --- Auto-Update Listeners ---
+  useEffect(() => {
+      if (!isElectron) return;
+      
+      const unsubAvailable = window.electronAPI?.onUpdateAvailable?.(() => {
+          setToast({ title: 'Downloading Update...', icon: '⬇️', subtitle: 'System Update' });
+      });
+      
+      const unsubDownloaded = window.electronAPI?.onUpdateDownloaded?.(() => {
+          setToast({ title: 'Update Ready. Restarting...', icon: '✅', subtitle: 'System Update' });
+          setTimeout(() => window.electronAPI?.restartApp(), 4000);
+      });
+
+      return () => {
+          unsubAvailable && unsubAvailable();
+          unsubDownloaded && unsubDownloaded();
+      };
+  }, [isElectron]);
 
   // Sync Global Shortcut on Mount
   useEffect(() => {
@@ -453,8 +472,6 @@ function FocusFlowContent() {
   useEffect(() => {
     if (currentView === ViewMode.TIMER || pendingQuickTimer) setTimerViewInitialized(true);
   }, [currentView, pendingQuickTimer]);
-
-  const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
   useEffect(() => {
       const projectLog = logs.find(l => l.date === selectedDate && l.projectId === currentProjectId);
@@ -886,7 +903,7 @@ function FocusFlowContent() {
 
   return (
     <div className={isElectron ? "w-screen h-screen overflow-hidden" : "min-h-screen flex items-center justify-center p-4 sm:p-8 transition-colors duration-500"}>
-      {toast && <Toast title={toast.title} icon={toast.icon} onClose={() => setToast(null)} isCyberpunk={appTheme === 'cyberpunk'} />}
+      {toast && <Toast title={toast.title} subtitle={toast.subtitle} icon={toast.icon} onClose={() => setToast(null)} isCyberpunk={appTheme === 'cyberpunk'} />}
       <MacWindow 
         isDarkMode={isDarkMode} 
         onToggleTheme={toggleTheme} 

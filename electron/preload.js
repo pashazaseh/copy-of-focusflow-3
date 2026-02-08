@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  isElectron: true,
   close: () => ipcRenderer.send('window-close'),
   minimize: () => ipcRenderer.send('window-minimize'),
   maximize: () => ipcRenderer.send('window-maximize'),
@@ -56,4 +57,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternal: (url) => ipcRenderer.send('open-external', url),
   installUpdate: (path) => ipcRenderer.send('install-update', path),
   selectUpdateFile: () => ipcRenderer.invoke('select-update-file'),
+  onUpdateAvailable: (callback) => {
+    const handler = (event) => callback();
+    ipcRenderer.on('update_available', handler);
+    return () => ipcRenderer.removeListener('update_available', handler);
+  },
+  onUpdateDownloaded: (callback) => {
+    const handler = (event) => callback();
+    ipcRenderer.on('update_downloaded', handler);
+    return () => ipcRenderer.removeListener('update_downloaded', handler);
+  },
+  restartApp: () => ipcRenderer.send('restart_app'),
 });

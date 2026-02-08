@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, powerSaveBlocker, dialog, globalShortcut, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -24,6 +25,13 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.yourname.focusflow');
 }
 
+autoUpdater.on('update-available', () => {
+  if (win && !win.isDestroyed()) win.webContents.send('update_available');
+});
+
+autoUpdater.on('update-downloaded', () => {
+  if (win && !win.isDestroyed()) win.webContents.send('update_downloaded');
+});
 
 
 // Helper to create a simple icon since we might not have assets
@@ -745,6 +753,10 @@ function setupIpcHandlers() {
     if (result.canceled) return null;
     return result.filePaths[0];
   });
+
+  ipcMain.on('restart_app', () => {
+    autoUpdater.quitAndInstall();
+  });
 }
 
 function createWindow() {
@@ -779,6 +791,10 @@ function createWindow() {
         'Cross-Origin-Opener-Policy': ['same-origin-allow-popups']
       }
     });
+  });
+
+  win.once('ready-to-show', () => {
+    autoUpdater.checkForUpdatesAndNotify();
   });
 
   // Prevent closing the app when the window is closed (minimize to tray)
