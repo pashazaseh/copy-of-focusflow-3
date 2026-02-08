@@ -1,4 +1,4 @@
-import { StudyLog, UserRank, Achievement } from '../types';
+import { StudyLog, UserRank, Achievement, Task } from '../types';
 
 export const RANKS: UserRank[] = [
     { title: 'Novice I', minHours: 0, color: 'text-gray-500' },
@@ -169,7 +169,7 @@ export const getUnlockedAchievements = (logs: StudyLog[], totalHours: number, cu
     }));
 };
 
-export const getDailyQuests = (logs: StudyLog[]) => {
+export function getDailyQuests(logs: StudyLog[]) {
     const today = new Date().toISOString().split('T')[0];
     const todaysLogs = logs.filter(l => l.date === today);
     const todayHours = todaysLogs.reduce((acc, curr) => acc + curr.hours, 0);
@@ -206,7 +206,7 @@ export const getDailyQuests = (logs: StudyLog[]) => {
             reward: 15
         }
     ];
-};
+}
 
 export const getAchievementReward = (achievement: { id: string, title: string, description: string }) => {
     const title = achievement.title.toLowerCase();
@@ -241,4 +241,11 @@ export const calculateTotalGems = (logs: StudyLog[], totalHours: number, streak:
 
     const rawBalance = Math.floor(totalHours * earningRate) + achievementGems + questGems + bonusGems - spentGems;
     return Math.max(0, rawBalance);
+};
+
+export const calculateDailyTickTickProgress = (tasks: Task[]): number => {
+    const tickTickTasks = tasks.filter(t => t.tickTickId);
+    if (tickTickTasks.length === 0) return 0;
+    const completed = tickTickTasks.filter(t => t.isCompleted).length;
+    return Math.round((completed / tickTickTasks.length) * 100);
 };

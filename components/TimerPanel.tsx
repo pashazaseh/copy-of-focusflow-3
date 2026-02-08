@@ -100,6 +100,13 @@ useEffect(() => {
       return () => { window.electronAPI?.preventAppSuspension?.(false); };
   }, [isActive]);
 
+  // --- Do Not Disturb ---
+  useEffect(() => {
+      const shouldDND = isActive && mode === 'POMO' && phase === 'FOCUS';
+      window.electronAPI?.setDoNotDisturb?.(shouldDND);
+      return () => { window.electronAPI?.setDoNotDisturb?.(false); };
+  }, [isActive, mode, phase]);
+
   // --- Initialization ---
   useEffect(() => {
       const initTimer = setTimeout(async () => {

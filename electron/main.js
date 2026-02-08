@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, powerSaveB
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const { setDoNotDisturb } = require('./dnd');
 
 let tray = null;
 let win = null;
@@ -591,6 +592,10 @@ function setupIpcHandlers() {
       fileWatcher.close();
       fileWatcher = null;
     }
+  });
+
+  ipcMain.handle('set-do-not-disturb', (event, enable) => {
+    setDoNotDisturb(enable);
   });
 }
 

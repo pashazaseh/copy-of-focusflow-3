@@ -361,19 +361,32 @@ export const getTasks = async (): Promise<Task[]> => {
 };
 
 export const saveTask = async (task: Task): Promise<Task[]> => {
-    const tasks = await getTasks();
-    const index = tasks.findIndex(t => t.id === task.id);
-    let newTasks;
-    if (index >= 0) {
-        newTasks = [...tasks];
-        newTasks[index] = task;
-    } else {
-        newTasks = [...tasks, task];
-    }
-    await dbSet(TASKS_KEY, newTasks);
-    // Dispatch event so other components know data changed
-    window.dispatchEvent(new Event('focusflow-task-update'));
-    return newTasks;
+    const tasks = await getTasks();
+    const index = tasks.findIndex(t => t.id === task.id);
+    let newTasks;
+
+    const taskToSave = { ...task };
+    const originalTask = index >= 0 ? tasks[index] : null;
+
+    // If the task is being marked as completed, set the completion date
+    if (taskToSave.isCompleted && (!originalTask || !originalTask.isCompleted)) {
+        taskToSave.completionDate = new Date().toISOString();
+    }
+    // If a task is being marked as not completed, remove the completion date
+    if (!taskToSave.isCompleted && originalTask && originalTask.isCompleted) {
+        taskToSave.completionDate = undefined;
+    }
+
+    if (index >= 0) {
+        newTasks = [...tasks];
+        newTasks[index] = taskToSave;
+    } else {
+        newTasks = [...tasks, taskToSave];
+    }
+    await dbSet(TASKS_KEY, newTasks);
+    // Dispatch event so other components know data changed
+    window.dispatchEvent(new Event('focusflow-task-update'));
+    return newTasks;
 };
 
 export const deleteTask = async (id: string): Promise<Task[]> => {

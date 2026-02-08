@@ -43,4 +43,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('file-changed', handler);
     return () => ipcRenderer.removeListener('file-changed', handler);
   },
+  setDoNotDisturb: (enable) => ipcRenderer.invoke('set-do-not-disturb', enable),
 });

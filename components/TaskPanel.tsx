@@ -3,6 +3,8 @@ import * as storage from '../services/storageService';
 import { Task, Project, Subtask } from '../types';
 import { useTheme, useProjects } from '../AppContext';
 import { getTickTickAuthUrl, exchangeCodeForToken, fetchTickTickTasks } from '../services/tickTickService';
+import { calculateDailyTickTickProgress } from '../services/gamificationService';
+import { DailyProgressBar } from './DailyProgressBar';
 
 interface TaskPanelProps {
     projects: Project[];
@@ -30,6 +32,8 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
             ? 'http://localhost:54321/callback' 
             : (typeof window !== 'undefined' && window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost');
     });
+    const [isSelectMode, setIsSelectMode] = useState(false);
+    const [isCustomizationMenuOpen, setIsCustomizationMenuOpen] = useState(false);
     const [manualAuthCode, setManualAuthCode] = useState('');
     const [draggingTaskIndex, setDraggingTaskIndex] = useState<number | null>(null);
     const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
@@ -316,6 +320,27 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
         setTasks(updated);
         window.dispatchEvent(new Event('focusflow-task-update'));
     };
+    
+    const getPriorityColor = (priority: 'high' | 'medium' | 'low' | undefined) => {
+        if (isCyberpunk) {
+            switch (priority) {
+                case 'high': return 'bg-red-500';
+                case 'medium': return 'bg-yellow-500';
+                case 'low': return 'bg-blue-500';
+                default: return 'bg-transparent';
+            }
+        } else {
+            switch (priority) {
+                case 'high': return 'bg-red-500';
+                case 'medium': return 'bg-orange-500';
+                case 'low': return 'bg-blue-500';
+                default: return 'bg-gray-300 dark:bg-gray-700';
+            }
+        }
+    };
+
+    const dailyProgress = calculateDailyTickTickProgress(tasks);
+    const hasTickTickTasks = tasks.some(t => !!t.tickTickId);
 
     return (
         <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50/50 dark:bg-gray-900'}`}>
@@ -355,9 +380,44 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
 
                             {/* Actions Group */}
                             <div className="flex gap-2">
-                                <button onClick={toggleSelectAll} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30 hover:bg-[#00f0ff]/20' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm'}`}>
-                                    {selectedTaskIds.size === activeTasks.length && activeTasks.length > 0 ? 'Deselect All' : 'Select All'}
-                                </button>
+                                <div className="relative">
+                                    <button 
+                                        onClick={() => setIsCustomizationMenuOpen(prev => !prev)}
+                                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30 hover:bg-[#00f0ff]/20' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm'}`}
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                    </button>
+                                    {isCustomizationMenuOpen && (
+                                        <div className={`absolute right-0 mt-2 w-48 rounded-xl shadow-lg py-1 z-20 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'}`}>
+                                            <a
+                                                href="#"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    setIsSelectMode(!isSelectMode);
+                                                    setIsCustomizationMenuOpen(false);
+                                                    if (isSelectMode) { // If turning off, clear selection
+                                                        setSelectedTaskIds(new Set());
+                                                    }
+                                                }}
+                                                className={`block px-4 py-2 text-sm ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                            >
+                                                {isSelectMode ? 'Cancel Batch Edit' : 'Batch Edit'}
+                                            </a>
+                                            {isSelectMode && (
+                                                 <a
+                                                    href="#"
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        toggleSelectAll();
+                                                    }}
+                                                    className={`block px-4 py-2 text-sm ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                                >
+                                                    {selectedTaskIds.size === activeTasks.length && activeTasks.length > 0 ? 'Deselect All' : 'Select All'}
+                                                </a>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                                 <button onClick={handleTickTickSync} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20'}`}>
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                                     Sync TickTick
@@ -366,11 +426,13 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                         </div>
                     </div>
 
+                    {hasTickTickTasks && <DailyProgressBar progress={dailyProgress} />}
+
                     {/* Add Task Form - Redesigned */}
-                    <form onSubmit={handleAddTask} className={`group relative p-1.5 rounded-2xl border shadow-sm transition-all focus-within:shadow-md ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 focus-within:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus-within:border-blue-500/50'}`}>
+                    <form onSubmit={handleAddTask} className={`group relative p-1.5 rounded-2xl border shadow-sm transition-all focus-within:shadow-md focus-within:scale-[1.01] focus-within:ring-2 focus-within:ring-blue-500 ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 focus-within:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus-within:border-blue-500/50'}`}>
                         <div className="flex items-center gap-2">
                             <div className={`pl-3 ${isCyberpunk ? 'text-[#00f0ff]/40' : 'text-gray-400'}`}>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
                             </div>
                             <input 
                                 type="text" 
@@ -413,15 +475,16 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                         )}
                         {activeTasks.map((task, index) => {
                             return (
-                                <div 
-                                    key={task.id} 
+                                <div
+                                    key={task.id}
                                     draggable={sortBy === 'default'}
                                     onDragStart={(e) => handleDragStart(e, index)}
                                     onDragOver={(e) => handleDragOver(e, index)}
                                     onDragEnd={handleDragEnd}
-                                    className={`group rounded-2xl border transition-all duration-200 ${isCyberpunk ? 'bg-gradient-to-b from-[#0c0c0c] to-[#0a0a0a] border-[rgba(255,255,255,0.05)] hover:border-[rgba(255,255,255,0.1)] hover:shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'bg-gradient-to-b from-white to-gray-50/80 border-gray-200/80 dark:border-[rgba(255,255,255,0.05)] dark:from-[#1a1a1a] dark:to-[#161616] hover:border-blue-300 dark:hover:border-[rgba(255,255,255,0.1)] hover:shadow-md hover:shadow-blue-500/10 dark:hover:shadow-[0_0_8px_rgba(59,130,246,0.3)]'} ${draggingTaskIndex === index ? 'opacity-50 scale-95' : ''}`}
+                                    className={`relative group rounded-2xl border transition-all duration-200 overflow-hidden ${isCyberpunk ? 'bg-gradient-to-b from-[#0c0c0c] to-[#0a0a0a] border-[rgba(255,255,255,0.05)] hover:border-[rgba(255,255,255,0.1)] hover:shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'bg-gradient-to-b from-white to-gray-50/80 border-gray-200/80 dark:border-[rgba(255,255,255,0.05)] dark:from-[#1a1a1a] dark:to-[#161616] hover:border-blue-300 dark:hover:border-[rgba(255,255,255,0.1)] hover:shadow-md hover:shadow-blue-500/10 dark:hover:shadow-[0_0_8px_rgba(59,130,246,0.3)]'} ${draggingTaskIndex === index ? 'opacity-50 scale-95' : ''}`}
                                 >
-                                    <div className="flex items-center p-3">
+                                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${getPriorityColor(task.priority)}`}></div>
+                                    <div className="flex items-center p-3 pl-4">
                                     {/* Drag Handle */}
                                     {sortBy === 'default' && (
                                         <div className={`mr-3 cursor-move opacity-0 group-hover:opacity-100 transition-opacity ${isCyberpunk ? 'text-white/40' : 'text-gray-300 dark:text-gray-600'}`}>
@@ -429,15 +492,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                                         </div>
                                     )}
 
-                                    {/* Selection Checkbox */}
-                                    <div className="relative flex items-center mr-4">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={selectedTaskIds.has(task.id)} 
-                                            onChange={() => toggleTaskSelection(task.id)}
-                                            className={`w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all ${isCyberpunk ? 'bg-black border-white/30 checked:bg-blue-500 checked:border-blue-500' : 'dark:bg-gray-700 dark:border-gray-600'}`}
-                                        />
-                                    </div>
+
 
                                     {/* Completion Circle */}
                                     <button 
@@ -449,47 +504,79 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                                     {/* Content */}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2">
-                                            <p className={`text-sm font-medium ${isCyberpunk ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{task.title}</p>
-                                            {task.priority && (
-                                                <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded-md ${
-                                                    task.priority === 'high' ? (isCyberpunk ? 'bg-red-500/20 text-red-500 border border-red-500/30' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400') :
-                                                    (isCyberpunk ? 'bg-yellow-500/20 text-yellow-500 border border-yellow-500/30' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400')
-                                                }`}>
-                                                    {task.priority}
-                                                </span>
-                                            )}
+                                            <p className={`text-sm font-medium transition-all ${isCyberpunk ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{task.title}</p>
                                         </div>
                                         
-                                        <div className="flex items-center gap-3 mt-1">
-                                            {/* Project Badge */}
-                                            <div className="relative group/proj">
-                                                <select
-                                                    value={task.projectId || ''}
-                                                    onChange={(e) => handleUpdateTaskProject(task, e.target.value)}
-                                                    className={`text-xs pl-2 pr-1 py-0.5 rounded-md cursor-pointer border-none focus:ring-0 max-w-[120px] truncate appearance-none font-normal ${isCyberpunk ? 'bg-white/10 text-white/50 hover:bg-white/20' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                >
-                                                    <option value="">No Project</option>
-                                                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                                </select>
+                                        <div className="flex items-center justify-between mt-1">
+                                            <div className="flex items-center gap-3">
+                                                {/* Project Badge */}
+                                                <div className="relative group/proj">
+                                                    <select
+                                                        value={task.projectId || ''}
+                                                        onChange={(e) => handleUpdateTaskProject(task, e.target.value)}
+                                                        className={`text-xs pl-2 pr-1 py-0.5 rounded-md cursor-pointer border-none focus:ring-0 max-w-[120px] truncate appearance-none font-normal ${isCyberpunk ? 'bg-white/10 text-white/50 hover:bg-white/20' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <option value="">No Project</option>
+                                                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                                    </select>
+                                                </div>
+
+                                                {/* Tags */}
+                                                {task.tags && task.tags.map(tag => (
+                                                    <span key={tag} className={`text-xs px-2 py-0.5 rounded-full border ${isCyberpunk ? 'border-white/20 text-white/50' : 'border-gray-300/50 text-gray-500'}`}>
+                                                        #{tag}
+                                                    </span>
+                                                ))}
                                             </div>
 
-                                            {/* Due Date */}
-                                            {task.dueDate && (
-                                                <span className={`text-xs flex items-center gap-1 ${
-                                                    new Date(task.dueDate) < new Date() && !task.isCompleted 
-                                                    ? 'text-red-500 font-medium' 
-                                                    : (isCyberpunk ? 'text-white/50' : 'text-gray-400 dark:text-gray-500')
-                                                }`}>
-                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                                    {new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                                                </span>
-                                            )}
+                                            {/* Due Date & Reminder */}
+                                            {task.dueDate && (() => {
+                                                const dueDate = new Date(task.dueDate);
+                                                const isPast = dueDate < new Date() && !task.isCompleted;
+                                                
+                                                const isToday = dueDate.toDateString() === new Date().toDateString();
+                                                
+                                                // Check if time is specified (not midnight)
+                                                const hasTime = dueDate.getHours() !== 0 || dueDate.getMinutes() !== 0;
+
+                                                let dateText = isToday ? 'Today' : dueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                                                let timeText = hasTime ? dueDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : null;
+
+                                                return (
+                                                    <span className={`text-xs flex items-center gap-1.5 ${
+                                                        isPast 
+                                                        ? 'text-red-500 font-medium' 
+                                                        : (isCyberpunk ? 'text-white/50' : 'text-gray-400 dark:text-gray-500')
+                                                    }`}>
+                                                        {timeText && (
+                                                            <>
+                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                                <span>{timeText}</span>
+                                                            </>
+                                                        )}
+                                                        {!timeText && (
+                                                             <>
+                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                                                <span>{dateText}</span>
+                                                             </>
+                                                        )}
+                                                    </span>
+                                                )
+                                            })()}
                                         </div>
                                     </div>
 
                                     {/* Actions & Expand */}
                                     <div className="flex items-center gap-1">
+                                        <div className={`transition-all duration-300 ${isSelectMode ? 'opacity-100' : 'opacity-0'}`}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={selectedTaskIds.has(task.id)} 
+                                                onChange={() => toggleTaskSelection(task.id)}
+                                                className={`w-4 h-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer ${isCyberpunk ? 'bg-black border-white/30 checked:bg-blue-500 checked:border-blue-500' : 'dark:bg-gray-700 dark:border-gray-600'}`}
+                                            />
+                                        </div>
                                         <button onClick={() => toggleTaskExpansion(task.id)} className={`p-2 rounded-lg transition-all ${isCyberpunk ? 'text-white/40 hover:text-white hover:bg-white/10' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20'}`}>
                                             <svg className={`w-4 h-4 transition-transform ${expandedTaskIds.has(task.id) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                                         </button>
@@ -498,31 +585,6 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                                         </button>
                                     </div>
                                     </div>
-
-                                    {/* Subtasks Section */}
-                                    {expandedTaskIds.has(task.id) && (
-                                        <div className={`px-4 pb-4 pl-14 space-y-2 ${isCyberpunk ? 'border-t border-[#00f0ff]/10' : 'border-t border-gray-100 dark:border-gray-700'}`}>
-                                            <div className="pt-2 space-y-2">
-                                                {task.subtasks?.map(st => (
-                                                    <div key={st.id} className="flex items-center gap-3 group/sub">
-                                                        <input type="checkbox" checked={st.isCompleted} onChange={() => toggleSubtaskCompletion(task.id, st.id)} className={`w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer ${isCyberpunk ? 'bg-black border-[#00f0ff]/50 checked:bg-[#00f0ff]' : 'dark:bg-gray-700 dark:border-gray-600'}`} />
-                                                        <span className={`text-xs flex-1 ${st.isCompleted ? 'line-through opacity-50' : ''} ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-gray-700 dark:text-gray-300'}`}>{st.title}</span>
-                                                        <button onClick={() => handleDeleteSubtask(task.id, st.id)} className="opacity-0 group-hover/sub:opacity-100 text-gray-400 hover:text-red-500"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
-                                                    </div>
-                                                ))}
-                                                <form onSubmit={(e) => handleAddSubtask(e, task.id)} className="flex items-center gap-2 mt-2">
-                                                    <div className={`w-3.5 h-3.5 rounded-full border border-dashed ${isCyberpunk ? 'border-[#00f0ff]/40' : 'border-gray-400'}`}></div>
-                                                    <input 
-                                                        type="text" 
-                                                        value={subtaskInputs[task.id] || ''} 
-                                                        onChange={(e) => setSubtaskInputs(prev => ({ ...prev, [task.id]: e.target.value }))}
-                                                        placeholder="Add subtask..." 
-                                                        className={`flex-1 bg-transparent border-none focus:ring-0 text-xs p-0 ${isCyberpunk ? 'text-[#00f0ff] placeholder-[#00f0ff]/30' : 'text-gray-900 dark:text-white placeholder-gray-400'}`}
-                                                    />
-                                                </form>
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
                             );
                         })}
@@ -532,7 +594,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                     {completedTasks.length > 0 && (
                         <div className="pt-6 border-t border-gray-100 dark:border-gray-800">
                             <h3 className={`text-xs font-bold uppercase tracking-wider mb-4 ${isCyberpunk ? 'text-[#00f0ff]/40' : 'text-gray-400'}`}>Completed ({completedTasks.length})</h3>
-                            <div className="space-y-2 opacity-60 hover:opacity-100 transition-opacity">
+                            <div className="space-y-2">
                                 {completedTasks.map(task => (
                                     <div key={task.id} className={`flex items-center p-3 rounded-xl border ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/10' : 'bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-800'}`}>
                                         <button 
@@ -541,7 +603,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                                         >
                                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                                         </button>
-                                        <span className={`text-sm line-through ${isCyberpunk ? 'text-[#00f0ff]/50' : 'text-gray-500'}`}>{task.title}</span>
+                                        <span className={`text-sm line-through transition-all opacity-40 ${isCyberpunk ? 'text-[#00f0ff]/50' : 'text-gray-500'}`}>{task.title}</span>
                                         <button onClick={() => handleDelete(task.id)} className="ml-auto text-gray-400 hover:text-red-500 transition-all p-2">
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                         </button>

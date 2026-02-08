@@ -32,6 +32,8 @@ export interface Task {
   description?: string;
   createdAt?: string;
   subtasks?: Subtask[];
+  tags?: string[];
+  completionDate?: string;
 }
 
 export interface StudyLog {
