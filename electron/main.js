@@ -1,4 +1,3 @@
-
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, powerSaveBlocker, dialog, globalShortcut, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -21,14 +20,7 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.yourname.focusflow');
 }
 
-// Register Custom Protocol 'focusflow://'
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('focusflow', process.execPath, [path.resolve(process.argv[1])]);
-  }
-} else {
-  app.setAsDefaultProtocolClient('focusflow');
-}
+
 
 // Helper to create a simple icon since we might not have assets
 function createTrayIcon() {
@@ -127,7 +119,7 @@ function setupContextMenu(window) {
       const trimmedText = params.selectionText.trim();
       const searchText = trimmedText.length > 20 ? trimmedText.substring(0, 20) + '...' : trimmedText;
       template.push({
-        label: `Search Google for "${searchText}"`,
+        label: `Search Google for "${searchText}"`, 
         click: () => {
           shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(params.selectionText)}`);
         }
@@ -184,7 +176,7 @@ function setupContextMenu(window) {
       template.push({ type: 'separator' });
       
       template.push({
-        label: 'Start Dictation...',
+        label: 'Start Dictation...', 
         click: () => Menu.sendActionToFirstResponder('startDictation:')
       });
       
@@ -526,7 +518,7 @@ function setupIpcHandlers() {
               lines.push(lineContent);
           }
       } else {
-          const headerRegex = new RegExp(`^#+\\s+${header.trim()}\\s*$`, 'i');
+          const headerRegex = new RegExp(`^#+\s+${header.trim()}\s*$`, 'i');
           const headerIndex = lines.findIndex(line => headerRegex.test(line));
 
           if (headerIndex === -1) {
@@ -824,6 +816,13 @@ function createAuthServer() {
 }
 
 app.whenReady().then(() => {
+    if (process.defaultApp) {
+        if (process.argv.length >= 2) {
+            app.setAsDefaultProtocolClient('focusflow', process.execPath, [path.resolve(process.argv[1])]);
+        }
+    } else {
+        app.setAsDefaultProtocolClient('focusflow');
+    }
     setupIpcHandlers();
     createWindow();
     createAuthServer();

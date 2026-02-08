@@ -383,6 +383,29 @@ export const deleteTask = async (id: string): Promise<Task[]> => {
     window.dispatchEvent(new Event('focusflow-task-update'));
     return newTasks;
 };
+
+export const mergeTasks = async (newTasks: Task[]): Promise<{ saved: Task[], count: number }> => {
+    const existingTasks = await getTasks();
+    const taskMap = new Map(existingTasks.map(t => [t.id, t]));
+    let newCount = 0;
+    newTasks.forEach(t => {
+        if (!taskMap.has(t.id)) {
+            newCount++;
+        }
+        taskMap.set(t.id, t);
+    });
+    const saved = Array.from(taskMap.values());
+    await dbSet(TASKS_KEY, saved);
+    window.dispatchEvent(new Event('focusflow-task-update'));
+    return { saved, count: newCount };
+};
+
+export const saveTasks = async (tasks: Task[]): Promise<Task[]> => {
+    await dbSet(TASKS_KEY, tasks);
+    window.dispatchEvent(new Event('focusflow-task-update'));
+    return tasks;
+};
+
 // --- Logs ---
 
 export const getLogs = async (): Promise<StudyLog[]> => {
