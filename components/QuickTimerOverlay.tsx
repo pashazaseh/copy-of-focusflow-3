@@ -58,15 +58,19 @@ export const QuickTimerOverlay: React.FC = () => {
 
     const handleMouseMove = (e: React.MouseEvent) => {
         if (!isDragging) return;
-        
-        // Calculate distance based on pull vector
-        const dy = e.clientY - startPoint.y;
-        const dx = e.clientX - startPoint.x;
-        const distance = Math.sqrt(dx*dx + dy*dy);
-        const mins = Math.max(1, Math.round(distance / PIXELS_PER_MINUTE));
-        
-        setDuration(mins);
-        setCursor({ x: e.clientX, y: e.clientY });
+
+        const { clientX, clientY } = e;
+
+        requestAnimationFrame(() => {
+            // Calculate distance based on pull vector
+            const dy = clientY - startPoint.y;
+            const dx = clientX - startPoint.x;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            const mins = Math.max(1, Math.round(distance / PIXELS_PER_MINUTE));
+            
+            setDuration(mins);
+            setCursor({ x: clientX, y: clientY });
+        });
     };
 
     const handleMouseUp = () => {

@@ -10,6 +10,8 @@ import { getUnlockedAchievements, getAchievementReward, getDailyQuests } from '.
 import * as storage from './services/storageService';
 import { playWin } from './services/audioService';
 
+const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
+
 // Lazy load heavy components
 const TimerPanel = lazy(() => import('./components/TimerPanel').then(m => ({ default: m.TimerPanel })));
 const CalendarPanel = lazy(() => import('./components/CalendarPanel').then(m => ({ default: m.CalendarPanel })));

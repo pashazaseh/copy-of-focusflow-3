@@ -47,11 +47,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setDoNotDisturb: (enable) => ipcRenderer.invoke('set-do-not-disturb', enable),
   toggleGhostMode: (state) => ipcRenderer.send('toggle-ghost-mode', state),
   setAlwaysOnTop: (flag) => ipcRenderer.send('set-always-on-top', flag),
-  onSyncTimerState: (callback) => {
-    const handler = (event, state) => callback(state);
-    ipcRenderer.on('sync-timer-state', handler);
-    return () => ipcRenderer.removeListener('sync-timer-state', handler);
+  onTimerUpdate: (callback) => {
+    const handler = (event, { action, payload }) => callback(action, payload);
+    ipcRenderer.on('timer-update', handler);
+    return () => ipcRenderer.removeListener('timer-update', handler);
   },
+  broadcastTimerAction: (action, payload) => ipcRenderer.send('timer-action', { action, payload }),
   getTimerState: () => ipcRenderer.send('get-timer-state'),
   playSoundEffect: () => ipcRenderer.send('play-sound-effect'),
   openExternal: (url) => ipcRenderer.send('open-external', url),
@@ -67,5 +68,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('update_downloaded', handler);
     return () => ipcRenderer.removeListener('update_downloaded', handler);
   },
+  onTrayAction: (callback) => ipcRenderer.on('tray-action', (_event, value) => callback(value)),
   restartApp: () => ipcRenderer.send('restart_app'),
 });

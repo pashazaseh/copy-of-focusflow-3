@@ -38,6 +38,9 @@ declare global {
       onFileChange: (callback: (data: { eventType: string; filename: string; path: string }) => void) => () => void;
       updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
       openQuickCapture: () => void;
+      onTimerUpdate: (callback: (event: any, ...args: any[]) => void) => () => void;
+      getTimerState: () => void;
+      broadcastTimerAction: (action: string, payload: any) => void;
     };
   }
 }

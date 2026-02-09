@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { playSpinTick } from '../services/audioService';
+import { playPickerTick } from '../services/audioService';
 
 interface TimeWheelProps {
     items: number[];
@@ -41,7 +41,7 @@ export const TimeWheel: React.FC<TimeWheelProps> = ({ items, selectedValue, onCh
     const playTick = () => {
         const now = Date.now();
         if (now - lastSoundTime.current > 50) { // 50ms debounce
-            playSpinTick(0.15); 
+            playPickerTick(0.3);
             if (typeof navigator !== 'undefined' && navigator.vibrate) {
                 navigator.vibrate(5);
             }

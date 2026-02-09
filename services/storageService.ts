@@ -129,24 +129,34 @@ export const setInitialized = async () => {
 // --- Data Management (Export/Import) ---
 
 export const exportData = async (): Promise<string> => {
-    const data: Record<string, string | null> = {};
-    
     const db = await getDB();
-    const keys = await new Promise<IDBValidKey[]>((resolve) => {
+    return new Promise((resolve, reject) => {
+        const data: Record<string, string> = {};
         const tx = db.transaction(STORE_NAME, 'readonly');
         const store = tx.objectStore(STORE_NAME);
-        const req = store.getAllKeys();
-        req.onsuccess = () => resolve(req.result);
-    });
 
-    for (const key of keys) {
-        const kStr = key.toString();
-        if (kStr.startsWith('focusflow_') || kStr.startsWith('heatmap_')) {
-            const val = await dbGet(kStr, null);
-            data[kStr] = JSON.stringify(val); // Export as JSON string to match old format
-        }
-    }
-    return JSON.stringify(data, null, 2);
+        tx.oncomplete = () => {
+            resolve(JSON.stringify(data, null, 2));
+        };
+        tx.onerror = () => {
+            reject(tx.error);
+        };
+
+        const cursorReq = store.openCursor();
+        cursorReq.onsuccess = () => {
+            const cursor = cursorReq.result;
+            if (cursor) {
+                const key = cursor.key.toString();
+                if (key.startsWith('focusflow_') || key.startsWith('heatmap_')) {
+                    data[key] = JSON.stringify(cursor.value);
+                }
+                cursor.continue();
+            }
+        };
+        cursorReq.onerror = () => {
+            reject(cursorReq.error);
+        }
+    });
 };
 
 export const exportLogsToCSV = async (): Promise<string> => {

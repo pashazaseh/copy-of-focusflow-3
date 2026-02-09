@@ -1,5 +1,4 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, powerSaveBlocker, dialog, globalShortcut, shell } = require('electron');
-const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -18,21 +17,7 @@ let fileWatcher = null;
 let currentGlobalShortcut = 'CommandOrControl+Shift+O';
 let lastTrayTitle = '';
 let ghostState = null;
-const ghostStatePath = path.join(app.getPath('userData'), 'ghost-window-state.json');
-
-// Ensure notifications work on Windows
-if (process.platform === 'win32') {
-  app.setAppUserModelId('com.yourname.focusflow');
-}
-
-autoUpdater.on('update-available', () => {
-  if (win && !win.isDestroyed()) win.webContents.send('update_available');
-});
-
-autoUpdater.on('update-downloaded', () => {
-  if (win && !win.isDestroyed()) win.webContents.send('update_downloaded');
-});
-
+let isTimerActive = false;
 
 // Helper to create a simple icon since we might not have assets
 function createTrayIcon() {
@@ -290,6 +275,7 @@ function triggerQuickCapture() {
 }
 
 function createGhostWindow(initialState) {
+    const ghostStatePath = path.join(app.getPath('userData'), 'ghost-window-state.json');
   if (ghostWin && !ghostWin.isDestroyed()) {
     ghostWin.show();
     ghostWin.focus();
@@ -322,7 +308,8 @@ function createGhostWindow(initialState) {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false
+      webSecurity: false,
+      backgroundThrottling: false
     }
   });
 
@@ -402,13 +389,17 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('update-tray-title', (event, title) => {
-    lastTrayTitle = title;
+    let displayTitle = title;
+    if (displayTitle && displayTitle.length > 20) {
+      displayTitle = displayTitle.substring(0, 20) + '...';
+    }
+    lastTrayTitle = displayTitle;
     if (tray && !tray.isDestroyed()) {
       if (process.platform === 'darwin') {
-        tray.setTitle(title);
+        tray.setTitle(displayTitle);
         // If title is present (e.g. Timer, Streak), hide icon by using transparent image.
         // If title is empty (Mode: None), show the default app icon.
-        if (title && title.length > 0) {
+        if (displayTitle && displayTitle.length > 0) {
           if (transparentIcon) tray.setImage(transparentIcon);
         } else {
           if (defaultIcon) tray.setImage(defaultIcon);
@@ -417,7 +408,7 @@ function setupIpcHandlers() {
         // On Windows/Linux, we can't show text next to icon easily.
         // We should keep the icon visible and update tooltip.
         if (defaultIcon) tray.setImage(defaultIcon);
-        tray.setToolTip(title || 'FocusFlow');
+        tray.setToolTip(displayTitle || 'FocusFlow');
       }
     }
   });
@@ -547,8 +538,10 @@ function setupIpcHandlers() {
     try {
       const filename = `focusflow_backup_${Date.now()}.json`;
       const filePath = path.join(folderPath, filename);
+      const tempPath = filePath + '.tmp';
       await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-      await fs.promises.writeFile(filePath, data, 'utf8');
+      await fs.promises.writeFile(tempPath, data, 'utf8');
+      await fs.promises.rename(tempPath, filePath);
       return { success: true, path: filePath };
     } catch (e) {
       return { success: false, error: e.message };
@@ -730,6 +723,20 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.on('timer-action', (event, { action, payload }) => {
+    ghostState = payload;
+    
+    if (action === 'START_TIMER') isTimerActive = true;
+    else if (action === 'PAUSE_TIMER' || action === 'RESET_TIMER') isTimerActive = false;
+
+    const windows = [win, ghostWin].filter(w => w && !w.isDestroyed());
+    windows.forEach(w => {
+      if (w.webContents !== event.sender) {
+        w.webContents.send('timer-update', { action, payload });
+      }
+    });
+  });
+
   ipcMain.on('get-timer-state', (event) => {
     if (ghostState) {
       event.sender.send('sync-timer-state', ghostState);
@@ -755,6 +762,7 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('restart_app', () => {
+    const { autoUpdater } = require('electron-updater');
     autoUpdater.quitAndInstall();
   });
 }
@@ -765,7 +773,7 @@ function createWindow() {
     height: 800,
     icon: createAppIcon(),
     backgroundColor: '#121212', // Dark background for instant non-white paint
-    frame: false, // Frameless for custom Mac traffic lights
+    frame: process.platform === 'darwin',
     titleBarStyle: 'hidden', 
     titleBarOverlay: {
         color: '#00000000',
@@ -780,6 +788,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false,
+      backgroundThrottling: false,
     },
   });
 
@@ -791,10 +800,6 @@ function createWindow() {
         'Cross-Origin-Opener-Policy': ['same-origin-allow-popups']
       }
     });
-  });
-
-  win.once('ready-to-show', () => {
-    autoUpdater.checkForUpdatesAndNotify();
   });
 
   // Prevent closing the app when the window is closed (minimize to tray)
@@ -851,7 +856,6 @@ function createQuickWindow() {
   
   quickWin.loadURL(url);
 
-  // Force transparency to prevent "second background" flash
   quickWin.webContents.on('did-finish-load', () => {
     quickWin.webContents.insertCSS('html, body { background: transparent !important; }');
   });
@@ -876,17 +880,14 @@ function createQuickWindow() {
 function showQuickTimer() {
   if (!quickWin) createQuickWindow();
   
-  // Position window on current screen
   const cursorPoint = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursorPoint);
   
   quickWin.setBounds(display.bounds);
   
-  // Calculate start point: Try tray bounds first for centering (the "ribbon" location), fallback to cursor
   let startX = cursorPoint.x;
   let startY = cursorPoint.y;
 
-  // Use tray bounds if available for precise centering
   if (tray && !tray.isDestroyed()) {
       try {
           const bounds = tray.getBounds();
@@ -948,7 +949,6 @@ function showQuickTimer() {
   quickWin.focus();
 }
 
-// Handle Deep Links (focusflow://)
 app.on('open-url', (event, url) => {
   event.preventDefault();
   if (win) {
@@ -958,7 +958,6 @@ app.on('open-url', (event, url) => {
   }
 });
 
-// Local Auth Server for OAuth Callbacks (TickTick, etc.)
 function createAuthServer() {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost:54321');
@@ -968,7 +967,7 @@ function createAuthServer() {
       if (win) {
         if (win.isMinimized()) win.restore();
         win.focus();
-        win.webContents.send('oauth-code', code); // Send the code directly
+        win.webContents.send('oauth-code', code);
       }
       
       res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -985,6 +984,9 @@ function createAuthServer() {
 }
 
 app.whenReady().then(() => {
+    if (process.platform === 'win32') {
+      app.setAppUserModelId('com.yourname.focusflow');
+    }
     if (process.defaultApp) {
         if (process.argv.length >= 2) {
             app.setAsDefaultProtocolClient('focusflow', process.execPath, [path.resolve(process.argv[1])]);
@@ -995,10 +997,19 @@ app.whenReady().then(() => {
     setupIpcHandlers();
     createWindow();
     createAuthServer();
+
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.on('update-available', () => {
+      if (win && !win.isDestroyed()) win.webContents.send('update_available');
+    });
+    autoUpdater.on('update-downloaded', () => {
+      if (win && !win.isDestroyed()) win.webContents.send('update_downloaded');
+    });
+    win.once('ready-to-show', () => {
+        autoUpdater.checkForUpdatesAndNotify();
+    });
     
-    // Defer non-critical background windows and tray to prioritize main window render
     setTimeout(() => {
-        // Register Global Hotkey for Quick Capture
         try {
             if (currentGlobalShortcut && !globalShortcut.isRegistered(currentGlobalShortcut)) {
                 globalShortcut.register(currentGlobalShortcut, triggerQuickCapture);
@@ -1009,37 +1020,49 @@ app.whenReady().then(() => {
 
         createQuickWindow();
         
-        // Create Tray
         defaultIcon = createTrayIcon();
-        // Create transparent icon (1x1 transparent pixel) to hide icon when text is shown
         const buffer = Buffer.alloc(4); 
         transparentIcon = nativeImage.createFromBuffer(buffer, { width: 1, height: 1 });
 
         tray = new Tray(defaultIcon);
         
-        const contextMenu = Menu.buildFromTemplate([
-            { label: 'Show FocusFlow', click: () => win.show() },
-            { label: 'Preferences', click: () => win.show() },
-            { type: 'separator' },
-            { label: 'Quit', click: () => app.quit() }
-        ]);
-        
         tray.setToolTip('FocusFlow');
         
-        // Left Click: Trigger Quick Timer (Drag)
+        const getDynamicMenu = () => {
+            const template = [
+                {
+                    label: "⏯ Start/Pause Timer",
+                    click: () => win.webContents.send('tray-action', { type: 'TOGGLE_TIMER' })
+                },
+                {
+                    label: "⏭ Skip Break", 
+                    click: () => win.webContents.send('tray-action', { type: 'SKIP_PHASE' })
+                },
+                { "type": "separator" },
+                {
+                    label: "⚡ Quick Focus (25m)", 
+                    click: () => win.webContents.send('tray-action', { type: 'START_FOCUS', duration: 25 })
+                },
+                { label: '📝 Quick Capture', click: () => triggerQuickCapture() },
+                { type: 'separator' },
+                { label: 'Show App', click: () => win.show() },
+                { label: 'Quit', click: () => app.quit() }
+            ];
+            return Menu.buildFromTemplate(template);
+        };
+
         tray.on('mouse-down', (event) => {
-            // Fix: Allow Option/Alt + Click or Ctrl + Click to show context menu
             if (event.altKey || event.ctrlKey) {
-                tray.popUpContextMenu(contextMenu);
+                tray.popUpContextMenu(getDynamicMenu());
             } else {
                 showQuickTimer();
             }
         });
         
-        // Right Click: Open Context Menu
-        tray.on('right-click', () => tray.popUpContextMenu(contextMenu));
+        tray.on('right-click', () => {
+            tray.popUpContextMenu(getDynamicMenu());
+        });
         
-        // macOS Dock Menu
         if (process.platform === 'darwin') {
             app.dock.setMenu(Menu.buildFromTemplate([
                 { label: 'New Timer (Drag)', click: () => showQuickTimer() },
@@ -1047,12 +1070,6 @@ app.whenReady().then(() => {
             ]));
         }
         
-        // Click on tray icon toggles context menu (default behavior for setContextMenu)
-        // If we want left click to trigger Drag immediately, we can intercept 'click'
-        // But user asked for "Select 'New Timer (Drag)'", which implies a menu. 
-        // However, Gestimer workflow usually triggers on drag. We stick to Menu per prompt "Access: left-click ... select ...".
-        
-        // Apply any pending title that came in before tray was ready
         if (lastTrayTitle) {
             if (process.platform === 'darwin') {
                 tray.setTitle(lastTrayTitle);
@@ -1073,7 +1090,7 @@ app.on('before-quit', () => {
   try {
     globalShortcut.unregisterAll();
   } catch (e) {
-    // Ignore error if app is not ready (e.g. single instance lock check failed)
+    // Ignore error if app is not ready
   }
 });
 
@@ -1082,7 +1099,6 @@ app.on('activate', () => {
   else if (win) win.show();
 });
 
-// Handle Second Instance (Focus existing window)
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
@@ -1091,7 +1107,6 @@ if (!gotTheLock) {
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
-      // Find the protocol url in commandLine
       const url = commandLine.find(arg => arg.startsWith('focusflow://'));
       if (url) win.webContents.send('oauth-code', url);
     }
