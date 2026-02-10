@@ -1,4 +1,4 @@
-import { StudyLog, UserRank, Achievement, Task } from '../types';
+import { StudyLog, UserRank, Achievement, Task, Project } from '../types';
 
 export const RANKS: UserRank[] = [
     { title: 'Novice I', minHours: 0, color: 'text-gray-500' },
@@ -248,4 +248,79 @@ export const calculateDailyTickTickProgress = (tasks: Task[]): number => {
     if (tickTickTasks.length === 0) return 0;
     const completed = tickTickTasks.filter(t => t.isCompleted).length;
     return Math.round((completed / tickTickTasks.length) * 100);
+};
+
+// Helper to match App.tsx local date format (YYYY-MM-DD)
+const getLocalDate = (date: Date = new Date()) => {
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+};
+
+// Helper
+const isYesterday = (dateStr: string) => {
+    if (!dateStr) return false;
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const yesterdayStr = getLocalDate(d);
+    return dateStr === yesterdayStr;
+};
+
+// Project Trophies Definition
+export const PROJECT_TROPHIES = [
+    { id: 'streak_3', icon: '🔥', name: 'Momentum', description: '3 Day Streak', condition: (p: Project) => (p.streak?.current || 0) >= 3 },
+    { id: 'streak_7', icon: '🚀', name: 'Dedicated', description: '7 Day Streak', condition: (p: Project) => (p.streak?.current || 0) >= 7 },
+    { id: 'xp_1000', icon: '⚔️', name: 'Novice', description: '1,000 XP', condition: (p: Project) => (p.xp || 0) >= 1000 },
+    { id: 'xp_5000', icon: '🛡️', name: 'Expert', description: '5,000 XP', condition: (p: Project) => (p.xp || 0) >= 5000 },
+];
+
+export const handleSessionComplete = (
+    currentProject: Project, 
+    userBank: number, 
+    minutes: number
+) => {
+    const today = getLocalDate();
+    const earnedCoins = Math.floor(minutes / 5); // Example: 1 coin per 5 mins
+
+    // 1. Update Global Economy
+    const newGlobalBank = userBank + earnedCoins;
+
+    // 2. Update Project Specific Streak
+    let newStreak = currentProject.streak?.current || 0;
+    const lastActive = currentProject.streak?.lastActiveDate || '';
+
+    if (lastActive === today) {
+        // Already worked on this today, do nothing
+    } else if (isYesterday(lastActive)) {
+        // Continued streak
+        newStreak += 1;
+    } else {
+        // Broken streak (for this project only!)
+        newStreak = 1;
+    }
+
+    const newXp = (currentProject.xp || 0) + (minutes * 10);
+
+    // 3. Check Project Specific Trophies
+    const unlockedTrophies = new Set(currentProject.unlockedTrophies || []);
+    // Create a temporary object to test conditions against the *new* stats
+    const tempProjectState = { 
+        ...currentProject, 
+        streak: { current: newStreak, best: 0, lastActiveDate: today }, 
+        xp: newXp 
+    };
+
+    PROJECT_TROPHIES.forEach(trophy => {
+        if (!unlockedTrophies.has(trophy.id) && trophy.condition(tempProjectState)) {
+            unlockedTrophies.add(trophy.id);
+        }
+    });
+
+    return {
+        updatedProject: {
+            ...currentProject,
+            streak: { current: newStreak, best: Math.max(newStreak, currentProject.streak?.best || 0), lastActiveDate: today },
+            xp: newXp,
+            unlockedTrophies: Array.from(unlockedTrophies)
+        },
+        updatedGlobalBank: newGlobalBank
+    };
 };

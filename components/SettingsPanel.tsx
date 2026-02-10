@@ -263,7 +263,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                 </div>
                             </>
                         )}
-                        {activeTab === 'integrations' && <SyncSettings appTheme={appTheme} setLastBackup={setLastBackup} />}
+                        {activeTab === 'sync' && <SyncSettings appTheme={appTheme} setLastBackup={setLastBackup} />}
                         {activeTab === 'data' && <DataSettings appTheme={appTheme} lastBackup={lastBackup} setLastBackup={setLastBackup} />}
                         {activeTab === 'debug' && (
                             <DebugSettings 

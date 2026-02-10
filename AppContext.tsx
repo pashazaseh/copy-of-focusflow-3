@@ -211,7 +211,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const createProject = useCallback(async (name: string, theme: HeatmapTheme) => {
         try {
-            const newProject: Project = { id: Date.now().toString(), name, theme, createdAt: new Date().toISOString(), sortOrder: projects.length, isArchived: false };
+            const newProject: Project = { 
+                id: Date.now().toString(), 
+                name, 
+                theme, 
+                createdAt: new Date().toISOString(), 
+                sortOrder: projects.length, 
+                isArchived: false,
+                streak: { current: 0, best: 0, lastActiveDate: '' },
+                xp: 0,
+                unlockedTrophies: []
+            };
             const updated = await storage.saveProject(newProject);
             if (Array.isArray(updated)) {
                 setProjects(updated);

@@ -1122,10 +1122,12 @@ function FocusFlowContent() {
 
             {currentView === ViewMode.GAMIFICATION && (
               <GamificationPanel 
-                  allLogs={logs}
-                  totalHours={globalTotalHours}
-                  streak={globalStreaks.current}
-                  isDataLoaded={isDataLoaded}
+                  activeProject={activeProject || null}
+                  userState={{
+                      globalBalance: currentGems,
+                      totalFocusTime: globalTotalHours
+                  }}
+                  isCyberpunk={appTheme === 'cyberpunk'}
               />
             )}
 

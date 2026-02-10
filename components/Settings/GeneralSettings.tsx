@@ -48,27 +48,40 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     onUpdateMenuBarConfig,
     countdowns
 }) => {
-    const [localNavConfig, setLocalNavConfig] = useState<StoredNavConfig[]>([]);
-    const [localWidgetOrder, setLocalWidgetOrder] = useState<string[]>([]);
-
-    useEffect(() => {
-        // Ensure uniqueness in navConfig to prevent key collisions
-        const uniqueNavConfig = navConfig.filter((item, index, self) => 
+    const [localNavConfig, setLocalNavConfig] = useState<StoredNavConfig[]>(() => {
+        const safeNavConfig = navConfig || [];
+        const uniqueNavConfig = safeNavConfig.filter((item, index, self) => 
             index === self.findIndex((t) => t.view === item.view)
         );
         const existingViews = new Set(uniqueNavConfig.map(i => i.view));
-        const missingItems = NAV_ITEMS_DEF.filter(i => !existingViews.has(i.view))
+        const missingItems = (NAV_ITEMS_DEF || []).filter(i => !existingViews.has(i.view))
+            .map(i => ({ view: i.view, isVisible: true }));
+        return [...uniqueNavConfig, ...missingItems];
+    });
+
+    const [localWidgetOrder, setLocalWidgetOrder] = useState<string[]>(() => {
+        const currentOrder = sidebarConfig?.widgetOrder || Object.keys(widgetLabels);
+        const uniqueOrder = Array.from(new Set(currentOrder));
+        return [...uniqueOrder, ...Object.keys(widgetLabels).filter(k => !uniqueOrder.includes(k))];
+    });
+
+    useEffect(() => {
+        const safeNavConfig = navConfig || [];
+        const uniqueNavConfig = safeNavConfig.filter((item, index, self) => 
+            index === self.findIndex((t) => t.view === item.view)
+        );
+        const existingViews = new Set(uniqueNavConfig.map(i => i.view));
+        const missingItems = (NAV_ITEMS_DEF || []).filter(i => !existingViews.has(i.view))
             .map(i => ({ view: i.view, isVisible: true }));
         setLocalNavConfig([...uniqueNavConfig, ...missingItems]);
     }, [navConfig]);
 
     useEffect(() => {
-        const currentOrder = sidebarConfig.widgetOrder || Object.keys(widgetLabels);
-        // Ensure uniqueness in currentOrder to prevent key collisions
+        const currentOrder = sidebarConfig?.widgetOrder || Object.keys(widgetLabels);
         const uniqueOrder = Array.from(new Set(currentOrder));
         const allWidgets = [...uniqueOrder, ...Object.keys(widgetLabels).filter(k => !uniqueOrder.includes(k))];
         setLocalWidgetOrder(allWidgets);
-    }, [sidebarConfig.widgetOrder]);
+    }, [sidebarConfig]);
 
     const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
     const [draggingWidgetIndex, setDraggingWidgetIndex] = useState<number | null>(null);
@@ -148,7 +161,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                         </div>
                         <button 
                             onClick={onToggleTheme}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isDarkMode ? 'bg-blue-600' : 'bg-gray-200'}`}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 ${isDarkMode ? (isCyberpunk ? 'bg-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.6)] focus:ring-[#00f0ff] focus:ring-offset-black' : 'bg-blue-600 focus:ring-blue-500') : 'bg-gray-200'}`}
                         >
                             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isDarkMode ? 'translate-x-6' : 'translate-x-1'}`} />
                         </button>
@@ -166,7 +179,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                             <button 
                                 onClick={() => setAppTheme('cyberpunk')}
                                 disabled={!inventory.theme_cyber}
-                                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border flex items-center gap-1.5 ${appTheme === 'cyberpunk' ? 'bg-slate-900 border-purple-500 text-purple-400 shadow-sm' : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed'}`}
+                                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border flex items-center gap-1.5 ${appTheme === 'cyberpunk' ? 'bg-slate-900 border-[#00f0ff] text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed'}`}
                             >
                                 <span>Cyberpunk</span>
                                 {!inventory.theme_cyber && <span className="text-[9px] bg-gray-200 dark:bg-gray-700 px-1 rounded">Locked</span>}
@@ -220,7 +233,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                     <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500/80 dark:text-gray-400/80">
                         Navigation & Sidebar
                     </h3>
-                    <button onClick={handleResetNavConfig} className="text-xs text-gray-500 hover:text-blue-500 underline">Reset Default</button>
+                    <button onClick={handleResetNavConfig} className={`text-xs hover:underline ${isCyberpunk ? 'text-[#00f0ff] hover:text-[#00f0ff] hover:drop-shadow-[0_0_5px_rgba(0,240,255,0.8)]' : 'text-gray-500 hover:text-blue-500'}`}>Reset Default</button>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-4">
                     {/* Sidebar Widgets */}
@@ -240,7 +253,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                                 </div>
                                 <button 
                                     onClick={() => onUpdateSidebarConfig({ ...sidebarConfig, [widgetKey]: !sidebarConfig[widgetKey as keyof SidebarConfig] })}
-                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${sidebarConfig[widgetKey as keyof SidebarConfig] ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-all focus:outline-none ${sidebarConfig[widgetKey as keyof SidebarConfig] ? (isCyberpunk ? 'bg-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.6)]' : 'bg-blue-600') : 'bg-gray-300 dark:bg-gray-600'}`}
                                 >
                                     <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${sidebarConfig[widgetKey as keyof SidebarConfig] ? 'translate-x-5' : 'translate-x-1'}`} />
                                 </button>
@@ -273,7 +286,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                                         type="checkbox" 
                                         checked={item.isVisible} 
                                         onChange={() => toggleVisibility(index)}
-                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                        className={`w-4 h-4 rounded border-gray-300 focus:ring-offset-0 cursor-pointer ${isCyberpunk ? 'accent-[#00f0ff] bg-black border-[#00f0ff]/50 focus:ring-[#00f0ff] shadow-[0_0_5px_rgba(0,240,255,0.2)]' : 'text-blue-600 focus:ring-blue-500'}`}
                                     />
                                 </div>
                             );
@@ -293,7 +306,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                                             onClick={() => onUpdateSidebarConfig({ ...sidebarConfig, questsWidgetSize: size })}
                                             className={`px-3 py-1 rounded-md text-xs font-bold transition-all capitalize ${
                                                 sidebarConfig.questsWidgetSize === size
-                                                ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300')
+                                                ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300')
                                                 : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800')
                                             }`}
                                         >

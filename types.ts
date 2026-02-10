@@ -1,15 +1,30 @@
 // types.ts
 
+export interface Streak {
+    current: number;
+    best: number;
+    lastActiveDate: string;
+}
+
+export interface UserState {
+    globalBalance: number;
+    totalFocusTime: number;
+}
+
 export interface Project {
   id: string;
   name: string;
   theme: HeatmapTheme;
+  color?: string;
   createdAt: string;
   isArchived?: boolean;
   sortOrder?: number;
   weeklyGoal?: number; // Overrides global weekly goal if set
   goals?: UserGoals; // Project specific goals
   goalHistory?: { date: string; goals: UserGoals }[]; // Project specific goal history
+  streak: Streak;
+  xp: number;
+  unlockedTrophies: string[];
 }
 
 export interface Subtask {

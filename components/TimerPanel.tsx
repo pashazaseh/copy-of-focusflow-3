@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as storage from '../services/storageService';
 import { TimerSettings, SessionRecord, Project, MenuBarConfig, Transaction, Task } from '../types';
-import { playAlarm } from '../services/audioService';
-import { useTheme } from '../AppContext';
+import { playAlarm, playTone } from '../services/audioService';
+import { useTheme, useProjects } from '../AppContext';
+import { handleSessionComplete } from '../services/gamificationService';
 import { ControlDock } from './Timer/ControlDock';
 import { TimerActionButtons } from './Timer/TimerControls';
 import { TimeWheel } from './TimeWheel';
@@ -158,6 +159,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
     onSaveSession, projectId, projects, menuBarConfig, externalStart, onConsumeExternalStart, currentGems: propGems, addTransaction 
 }) => {
   const { appTheme } = useTheme();
+  const { updateProjects } = useProjects();
   
   const [mode, setMode] = useState<TimerMode>('POMO');
   const [phase, setPhase] = useState<TimerPhase>('FOCUS');
@@ -647,6 +649,19 @@ const handleTimerComplete = async () => {
           
           const hours = Math.round((durationSecs / 3600) * 10) / 10;
           onSaveSession(hours, labelText, currentData.selectedProjectId);
+
+          // --- RPG Integration: Update Project Stats ---
+          if (currentData.selectedProjectId && currentData.selectedProjectId !== 'all') {
+              const project = projects.find(p => p.id === currentData.selectedProjectId);
+              if (project) {
+                  const durationMinutes = Math.floor(durationSecs / 60);
+                  // Calculate new stats
+                  const { updatedProject } = handleSessionComplete(project, currentGems, durationMinutes);
+                  // Save to storage and update global context
+                  const updatedList = await storage.saveProject(updatedProject);
+                  updateProjects(updatedList);
+              }
+          }
 
           if (currentData.selectedTaskId) {
               const task = currentData.tasks.find(t => t.id === currentData.selectedTaskId);
@@ -1140,52 +1155,137 @@ const handleTimerComplete = async () => {
   else if (mode === 'STOPWATCH') phaseColor = isCyberpunk ? "#F59E0B" : "#F59E0B";
   else if (phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') phaseColor = isCyberpunk ? "#10B981" : "#10B981";
 
+  const getGhostColor = (current: number, total: number) => {
+      const progress = total > 0 ? Math.max(0, Math.min(1, current / total)) : 0;
+      const hue = Math.floor(progress * 220); // 220 (Blue) -> 0 (Red)
+      return {
+          hue,
+          primary: `hsl(${hue}, 100%, 60%)`,
+          glow: `hsla(${hue}, 100%, 60%, 0.3)`
+      };
+  };
+
+  // Heartbeat sound effect for urgent ghost mode
+  useEffect(() => {
+      if (!isGhostMode || !isActive || !isUrgent) return;
+
+      let intervalId: ReturnType<typeof setInterval>;
+      
+      const playHeartbeat = () => {
+          const savedVol = localStorage.getItem('focusflow_timer_volume');
+          const vol = savedVol ? parseFloat(savedVol) : 0.5;
+          // Double thump for heartbeat effect
+          playTone(150, 0.1, vol * 0.4, 'sine');
+          setTimeout(() => playTone(100, 0.1, vol * 0.3, 'sine'), 150);
+      };
+
+      const timeoutId = setTimeout(() => {
+          playHeartbeat();
+          intervalId = setInterval(playHeartbeat, 3000);
+      }, 1500);
+
+      return () => {
+          clearTimeout(timeoutId);
+          if (intervalId) clearInterval(intervalId);
+      };
+  }, [isGhostMode, isActive, isUrgent]);
+
   if (isGhostMode) {
+      const { primary, glow } = getGhostColor(timeLeft, initialTime);
+      const radius = 88;
+      const circumference = 2 * Math.PI * radius;
+      const progress = initialTime > 0 ? Math.max(0, Math.min(1, timeLeft / initialTime)) : 0;
+      const dashOffset = circumference * (1 - progress);
+
       return (
           <div className="fixed inset-0 w-full h-full flex items-center justify-center bg-transparent">
-              <div className="relative group w-full h-full max-w-[90vmin] max-h-[90vmin] flex items-center justify-center">
-                  <div className="absolute top-2 left-1/2 -translate-x-1/2 flex gap-3 opacity-0 group-hover:opacity-100 transition-all duration-300 z-50 transform translate-y-2 group-hover:translate-y-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                      <button
-                          onClick={togglePin}
-                          className={`p-2.5 rounded-full transition-all hover:scale-110 backdrop-blur-xl border shadow-lg ${isCyberpunk ? 'text-[#00f0ff] bg-black/80 border-[#00f0ff]/40 hover:bg-[#00f0ff]/20 hover:shadow-[#00f0ff]/20' : 'text-white bg-black/40 border-white/10 hover:bg-black/60'}`}
-                          title={isPinned ? "Unpin Window" : "Pin Window"}
-                      >
-                          <svg className="w-4 h-4" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
-                      </button>
-                      <button
-                          onClick={handleToggleGhostMode}
-                          className={`p-2.5 rounded-full transition-all hover:scale-110 backdrop-blur-xl border shadow-lg ${isCyberpunk ? 'text-[#00f0ff] bg-black/80 border-[#00f0ff]/40 hover:bg-[#00f0ff]/20 hover:shadow-[#00f0ff]/20' : 'text-white bg-black/40 border-white/10 hover:bg-black/60'}`}
-                          title="Expand to App"
-                      >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M20 8V4m0 0h-4M4 16v4m0 0h4M20 16v4m0 0h-4" /></svg>
-                      </button>
-                  </div>
+              <div 
+                className="relative flex items-center justify-center w-48 h-48 rounded-full transition-all duration-1000 ease-in-out group"
+                style={{
+                  WebkitAppRegion: 'drag'
+                } as any}
+                onDoubleClick={toggleTimer}
+              >
+                {/* 1. Background Layer */}
+                <div 
+                    className="absolute inset-0 rounded-full bg-black/60 backdrop-blur-md animate-pulse-slow"
+                    style={{
+                        background: `radial-gradient(circle, ${glow} 0%, rgba(0,0,0,0.6) 70%)`,
+                        boxShadow: `0 0 30px ${glow}`
+                    }}
+                />
 
-                  {sessionLabel && <p className="absolute top-1/4 text-white text-lg font-semibold mb-4 truncate transition-opacity duration-300 opacity-50 group-hover:opacity-100">{sessionLabel}</p>}
-                  <div onDoubleClick={toggleTimer} onMouseDown={handleGhostMouseDown} className="cursor-move transition-opacity duration-300 opacity-50 group-hover:opacity-100">
-                  <TimerDisplay
-                    timeLeft={timeLeft}
-                    initialTime={initialTime}
-                    mode={mode}
-                    phase={phase}
-                    isActive={isActive}
-                    isCyberpunk={isCyberpunk}
-                    formatTime={formatTime}
-                    isGhost={true}
-                  />
-                  </div>
-                  
-                  <div className="absolute bottom-8 flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                      <button onClick={toggleTimer} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 shadow-lg ${isCyberpunk ? 'text-black' : 'bg-white text-black'}`} style={isCyberpunk ? { backgroundColor: phaseColor, boxShadow: `0 0 20px ${phaseColor}80` } : {}}>
-                          {isActive ? <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
-                      </button>
-                      <button onClick={resetTimer} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 ${isCyberpunk ? 'bg-black/60' : 'bg-black/40 text-white'}`} style={isCyberpunk ? { color: phaseColor, boxShadow: `0 0 15px ${phaseColor}40`, borderColor: phaseColor, borderWidth: '1px' } : {}}>
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                      </button>
-                      {mode === 'POMO' && <button onClick={skipPhase} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 ${isCyberpunk ? 'bg-black/60' : 'bg-black/40 text-white'}`} style={isCyberpunk ? { color: phaseColor, boxShadow: `0 0 15px ${phaseColor}40`, borderColor: phaseColor, borderWidth: '1px' } : {}}>
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="m9 5 7 7-7 7"/></svg>
-                      </button>}
-                  </div>
+                {/* 2. SVG Layer */}
+                <svg className="absolute inset-0 w-full h-full transform -rotate-90 pointer-events-none">
+                    <circle 
+                        cx="96" cy="96" r={radius} 
+                        fill="none" 
+                        stroke="rgba(255,255,255,0.1)" 
+                        strokeWidth="4" 
+                    />
+                    <circle 
+                        cx="96" cy="96" r={radius} 
+                        fill="none" 
+                        stroke={primary} 
+                        strokeWidth="4" 
+                        strokeDasharray={circumference}
+                        strokeDashoffset={dashOffset}
+                        strokeLinecap="round"
+                        style={{
+                            filter: `drop-shadow(0 0 4px ${primary})`,
+                            transition: 'stroke-dashoffset 1s linear, stroke 1s linear'
+                        }}
+                    />
+                </svg>
+
+                {/* Window Controls (Top) */}
+                <div 
+                    className="absolute top-4 left-0 right-0 flex justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50"
+                    style={{ WebkitAppRegion: 'no-drag' } as any}
+                >
+                     <button 
+                        onClick={togglePin} 
+                        className={`p-1.5 rounded-full hover:bg-white/10 transition-colors ${isPinned ? 'text-white' : 'text-white/50'}`} 
+                        title={isPinned ? "Unpin" : "Pin"}
+                     >
+                        <svg className="w-3.5 h-3.5" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                     </button>
+                     <button 
+                        onClick={() => window.electronAPI?.close()} 
+                        className="p-1.5 rounded-full hover:bg-red-500/20 text-white/50 hover:text-red-500 transition-colors" 
+                        title="Close"
+                     >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                     </button>
+                </div>
+
+                {/* 3. Content Layer */}
+                <div className="z-10 text-center relative" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                   {/* Time Display */}
+                   <div 
+                     className="text-4xl font-mono font-bold tracking-wider drop-shadow-md select-none"
+                     style={{ color: primary, textShadow: '0 2px 4px rgba(0,0,0,0.9)' }}
+                   >
+                     {formatTime(timeLeft)}
+                   </div>
+                </div>
+                
+                {/* Controls (Visible on Hover) */}
+                <div 
+                    className="absolute bottom-4 left-0 right-0 flex justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50"
+                    style={{ WebkitAppRegion: 'no-drag' } as any}
+                >
+                    <button onClick={toggleTimer} className="p-2 hover:text-white text-white/70 transition-colors">
+                    {isActive ? (
+                        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                    ) : (
+                        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    )}
+                    </button>
+                    <button onClick={handleToggleGhostMode} className="p-2 hover:text-white text-white/70 transition-colors" title="Expand">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M20 8V4m0 0h-4M4 16v4m0 0h4M20 16v4m0 0h-4" /></svg>
+                    </button>
+                </div>
               </div>
           </div>
       );
