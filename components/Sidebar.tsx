@@ -97,6 +97,7 @@ interface NavItemProps {
     icon: React.ReactNode;
     label: string;
     appTheme?: AppTheme;
+    collapsed?: boolean;
 }
 
 const NavItem: React.FC<NavItemProps> = ({ 
@@ -104,11 +105,13 @@ const NavItem: React.FC<NavItemProps> = ({
   onClick, 
   icon, 
   label,
-  appTheme
+  appTheme,
+  collapsed
 }) => (
   <button
     onClick={onClick}
-    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 group ${
+    title={collapsed ? label : undefined}
+    className={`w-full flex items-center ${collapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-lg transition-all duration-200 group ${
       appTheme === 'cyberpunk'
         ? (active 
             ? 'bg-[#00f0ff]/10 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.2)] border border-[#00f0ff]/30' 
@@ -125,7 +128,7 @@ const NavItem: React.FC<NavItemProps> = ({
     }`}>
       {icon}
     </div>
-    <span className="font-medium text-sm">{label}</span>
+    {!collapsed && <span className="font-medium text-sm">{label}</span>}
   </button>
 );
 
@@ -164,30 +167,58 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectTheme, setNewProjectTheme] = useState<HeatmapTheme>('green');
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+      if (typeof window !== 'undefined') return localStorage.getItem('focusflow_sidebar_collapsed') === 'true';
+      return false;
+  });
+
+  const toggleSidebar = () => {
+      const newState = !isCollapsed;
+      setIsCollapsed(newState);
+      localStorage.setItem('focusflow_sidebar_collapsed', String(newState));
+      setIsProjectMenuOpen(false);
+  };
+
   const { setPendingQuickTimer } = useTimerContext();
   const { countdowns } = useCountdowns();
   
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Ensure config has defaults to prevent crashes or missing widgets
-  const safeConfig = useMemo(() => ({
-      showWeeklyGoalWidget: true,
-      showDailyGoalWidget: false,
-      showMonthlyGoalWidget: false,
-      showTimerWidget: false,
-      showCountdownWidget: false,
-      showQuestsWidget: true,
-      questsWidgetSize: 'standard',
-      widgetOrder: [
+  const safeConfig = useMemo(() => {
+      const defaultOrder = [
           'showTimerWidget',
           'showQuestsWidget',
           'showCountdownWidget',
           'showDailyGoalWidget',
           'showWeeklyGoalWidget',
-          'showMonthlyGoalWidget'
-      ],
-      ...sidebarConfig
-  }), [sidebarConfig]);
+          'showMonthlyGoalWidget',
+          'showLatestBadgeWidget'
+      ];
+
+      const config = {
+          showWeeklyGoalWidget: true,
+          showDailyGoalWidget: false,
+          showMonthlyGoalWidget: false,
+          showTimerWidget: false,
+          showCountdownWidget: false,
+          showQuestsWidget: true,
+          showLatestBadgeWidget: true,
+          questsWidgetSize: 'standard',
+          widgetOrder: defaultOrder,
+          ...sidebarConfig
+      };
+
+      // Ensure new widgets are added to order if missing from saved config
+      if (sidebarConfig.widgetOrder) {
+          const missing = defaultOrder.filter(k => !sidebarConfig.widgetOrder!.includes(k));
+          if (missing.length > 0) {
+              config.widgetOrder = [...sidebarConfig.widgetOrder, ...missing];
+          }
+      }
+
+      return config;
+  }, [sidebarConfig]);
   
   // Safe access to active project
   const activeProject = projects.find(p => p.id === currentProjectId) || projects[0] || {
@@ -423,6 +454,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <div className="flex gap-2">{[25, 45, 60].map(min => (<button key={min} onClick={(e) => { e.stopPropagation(); setPendingQuickTimer({ duration: min, timestamp: Date.now() }); onChangeView(ViewMode.TIMER); }} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20 border border-[#00f0ff]/30' : 'bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40'}`}>{min}m</button>))}</div>
                   </div>
               );
+          case 'showLatestBadgeWidget':
+              if (!latestBadge) return null;
+              return (
+                  <div key="latestBadge" className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                      <div className="text-2xl">{latestBadge.icon}</div>
+                      <div className="overflow-hidden">
+                          <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Latest Badge</p>
+                          <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{latestBadge.title}</p>
+                      </div>
+                  </div>
+              );
           default: return null;
       }
   };
@@ -432,15 +474,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
     : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700';
 
   return (
-    <div className={`w-64 shrink-0 border-r flex flex-col p-4 transition-colors duration-300 relative ${sidebarClass}`}>
+    <div className={`${isCollapsed ? 'w-20' : 'w-64'} shrink-0 border-r flex flex-col p-4 transition-all duration-300 relative ${sidebarClass}`}>
+      
+      {/* Toggle Button */}
+      <button 
+        onClick={toggleSidebar}
+        className={`absolute -right-3 top-9 w-6 h-6 rounded-full border shadow-sm flex items-center justify-center z-50 transition-colors cursor-pointer ${appTheme === 'cyberpunk' ? 'bg-black border-[#00f0ff] text-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+      >
+        <svg className={`w-3 h-3 transition-transform duration-300 ${isCollapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+      </button>
       
       {/* Project Selector */}
       <div className="mb-6 mt-2 relative" ref={menuRef}>
         <button 
-            onClick={() => setIsProjectMenuOpen(!isProjectMenuOpen)}
-            className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-gray-200/50 dark:hover:bg-gray-800 transition-colors group"
+            onClick={() => !isCollapsed && setIsProjectMenuOpen(!isProjectMenuOpen)}
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} p-2 rounded-xl hover:bg-gray-200/50 dark:hover:bg-gray-800 transition-colors group`}
+            title={isCollapsed ? activeProject.name : undefined}
         >
-            <div className="flex items-center space-x-3 overflow-hidden">
+            <div className={`flex items-center ${isCollapsed ? '' : 'space-x-3'} overflow-hidden`}>
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0 shadow-sm ${
                     activeProject.theme === 'green' ? 'bg-green-500' :
                     activeProject.theme === 'blue' ? 'bg-blue-500' :
@@ -448,16 +499,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }`}>
                     <span className="font-bold text-sm">{activeProject.name.substring(0, 2).toUpperCase()}</span>
                 </div>
-                <div className="text-left truncate">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Project</p>
-                    <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{activeProject.name}</p>
-                </div>
+                {!isCollapsed && (
+                    <div className="text-left truncate">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Project</p>
+                        <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{activeProject.name}</p>
+                    </div>
+                )}
             </div>
-            <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isProjectMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            {!isCollapsed && <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isProjectMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>}
         </button>
 
         {/* Dropdown Menu */}
-        {isProjectMenuOpen && (
+        {isProjectMenuOpen && !isCollapsed && (
             <div className="absolute top-full left-0 w-full mt-2 bg-white dark:bg-[#2c2c2e] rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 animate-fade-in-up">
                 {!isCreating ? (
                     <>
@@ -542,7 +595,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto custom-scrollbar">
+      <nav className="flex-1 space-y-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
         {navConfig.map((item) => {
             if (!item.isVisible) return null;
             const def = NAV_ITEMS_DEF.find(d => d.view === item.view);
@@ -556,34 +609,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     icon={def.icon}
                     label={def.label}
                     appTheme={appTheme}
+                    collapsed={isCollapsed}
                 />
             );
         })}
 
         {/* Footer Actions */}
-        <div className="mt-1 flex gap-2">
+        <div className={`mt-1 flex ${isCollapsed ? 'flex-col' : ''} gap-2`}>
             {/* Settings Button */}
             <button
                 onClick={() => onChangeView(ViewMode.SETTINGS)}
-                className={`flex-1 flex items-center space-x-3 px-3 py-2 rounded-lg transition-all duration-200 group ${
+                className={`${isCollapsed ? 'justify-center' : 'flex-1 space-x-3'} flex items-center px-3 py-2 rounded-lg transition-all duration-200 group ${
                     appTheme === 'cyberpunk'
                     ? (currentView === ViewMode.SETTINGS ? 'bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30' : 'text-[#00f0ff]/60 hover:bg-[#00f0ff]/5')
                     : (currentView === ViewMode.SETTINGS ? 'bg-blue-500 text-white shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800')
                 }`}
+                title={isCollapsed ? "Settings" : undefined}
             >
                 <div className={`${
                     appTheme === 'cyberpunk' ? (currentView === ViewMode.SETTINGS ? 'text-[#00f0ff]' : 'text-[#00f0ff]/60') : (currentView === ViewMode.SETTINGS ? 'text-white' : 'text-gray-500 dark:text-gray-500 group-hover:text-gray-700 dark:group-hover:text-gray-300')
                 }`}>
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                 </div>
-                <span className="font-medium text-sm">Settings</span>
+                {!isCollapsed && <span className="font-medium text-sm">Settings</span>}
             </button>
 
             {/* Sync Button */}
             {onSync && (
                 <button
                     onClick={onSync}
-                    className={`p-2 rounded-lg transition-all duration-200 group ${
+                    className={`p-2 rounded-lg transition-all duration-200 group ${isCollapsed ? 'w-full flex justify-center' : ''} ${
                         appTheme === 'cyberpunk'
                         ? 'text-[#00f0ff]/60 hover:bg-[#00f0ff]/5 hover:text-[#00f0ff]'
                         : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-blue-500'
@@ -596,23 +651,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </nav>
 
-      {latestBadge && (
-          <div className={`mt-4 mx-1 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
-              <div className="text-2xl">{latestBadge.icon}</div>
-              <div className="overflow-hidden">
-                  <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Latest Badge</p>
-                  <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{latestBadge.title}</p>
-              </div>
-          </div>
-      )}
-
       {/* Widget Area */}
+      {!isCollapsed && (
       <div className={`mt-4 px-1 pt-4 border-t ${appTheme === 'cyberpunk' ? 'border-[#00f0ff]/20' : 'border-gray-200 dark:border-gray-700'}`}>
           {safeConfig.widgetOrder.map(key => {
               if (!safeConfig[key as keyof SidebarConfig]) return null;
               return renderWidget(key);
           })}
       </div>
+      )}
     </div>
   );
 };

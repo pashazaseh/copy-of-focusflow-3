@@ -210,6 +210,42 @@ function setupContextMenu(window) {
   });
 }
 
+function setupGhostContextMenu(window) {
+  window.webContents.on('context-menu', (event, params) => {
+    const template = [
+      {
+        label: 'Exit Ghost Mode',
+        click: () => {
+          if (win && !win.isDestroyed()) {
+            win.show();
+            if (ghostState) win.webContents.send('sync-timer-state', ghostState);
+          }
+          window.close();
+        }
+      },
+      { type: 'separator' },
+      {
+        label: 'Always on Top',
+        type: 'checkbox',
+        checked: window.isAlwaysOnTop(),
+        click: (item) => {
+           const flag = item.checked;
+           if (process.platform === 'darwin') {
+             window.setAlwaysOnTop(flag, 'floating', 1);
+             window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+           } else {
+             window.setAlwaysOnTop(flag, 'floating');
+           }
+        }
+      },
+      { type: 'separator' },
+      { label: 'Quit', click: () => app.quit() }
+    ];
+    const menu = Menu.buildFromTemplate(template);
+    menu.popup();
+  });
+}
+
 function hideQuickTimer() {
   if (quickWin && !quickWin.isDestroyed()) {
     quickWin.hide();
@@ -296,7 +332,7 @@ function createGhostWindow(initialState) {
     return;
   }
 
-  let savedBounds = { width: 300, height: 300 };
+  let savedBounds = { width: 400, height: 400 };
   try {
     if (fs.existsSync(ghostStatePath)) {
       savedBounds = JSON.parse(fs.readFileSync(ghostStatePath, 'utf8'));
@@ -327,6 +363,8 @@ function createGhostWindow(initialState) {
       backgroundThrottling: false
     }
   });
+
+  setupGhostContextMenu(ghostWin);
 
   if (process.platform === 'darwin') {
     ghostWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -395,11 +433,46 @@ function setupIpcHandlers() {
         win.close();
     }
   });
-  ipcMain.on('window-minimize', () => { if (win && !win.isDestroyed()) win.minimize(); });
-  ipcMain.on('window-maximize', () => {
-    if (win && !win.isDestroyed()) {
-        if (win.isMaximized()) win.unmaximize();
-        else win.maximize();
+  ipcMain.on('window-minimize', (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window && !window.isDestroyed()) {
+      window.minimize();
+    }
+  });
+  ipcMain.on('window-move', (event, { x, y }) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window && !window.isDestroyed()) {
+      const { width, height } = window.getBounds();
+      const display = screen.getDisplayNearestPoint({ x: x + width / 2, y: y + height / 2 });
+      const workArea = display.workArea;
+      const snapThreshold = 20;
+
+      let newX = x;
+      let newY = y;
+
+      if (Math.abs(x - workArea.x) < snapThreshold) {
+        newX = workArea.x;
+      } else if (Math.abs((x + width) - (workArea.x + workArea.width)) < snapThreshold) {
+        newX = workArea.x + workArea.width - width;
+      }
+
+      if (Math.abs(y - workArea.y) < snapThreshold) {
+        newY = workArea.y;
+      } else if (Math.abs((y + height) - (workArea.y + workArea.height)) < snapThreshold) {
+        newY = workArea.y + workArea.height - height;
+      }
+
+      window.setPosition(Math.round(newX), Math.round(newY));
+    }
+  });
+  ipcMain.on('window-maximize', (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window && !window.isDestroyed()) {
+      if (window.isMaximized()) {
+        window.unmaximize();
+      } else {
+        window.maximize();
+      }
     }
   });
 
@@ -744,7 +817,7 @@ function setupIpcHandlers() {
   ipcMain.on('timer-action', (event, { action, payload }) => {
     console.log('[Timer Debug] Timer action:', action, payload);
     // Update the master state cache
-    ghostState = { ...ghostState, ...payload };
+    ghostState = payload;
     
     if (action === 'START_TIMER') isTimerActive = true;
     else if (action === 'PAUSE_TIMER' || action === 'RESET_TIMER') isTimerActive = false;
@@ -799,7 +872,7 @@ function createWindow() {
     titleBarOverlay: {
         color: '#00000000',
         symbolColor: '#9CA3AF',
-        height: 40
+        height: 36
     },
     trafficLightPosition: { x: 16, y: 12 }, // Native alignment
     vibrancy: 'under-window', // macOS native blur effect

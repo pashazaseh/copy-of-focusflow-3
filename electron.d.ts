@@ -39,6 +39,8 @@ declare global {
       updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
       openQuickCapture: () => void;
       onTimerUpdate: (callback: (event: any, ...args: any[]) => void) => () => void;
+      onTrayAction: (callback: (action: { type: string; duration?: number }) => void) => () => void;
+      onSyncTimerState: (callback: (state: any) => void) => () => void;
       getTimerState: () => void;
       broadcastTimerAction: (action: string, payload: any) => void;
     };

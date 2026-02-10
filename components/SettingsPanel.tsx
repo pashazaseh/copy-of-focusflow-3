@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, lazy } from 'react';
 import { StoredNavConfig } from './Sidebar';
 import { MenuBarConfig, Project, HeatmapTheme, SidebarConfig, SettingsTab, AppTheme } from '../types';
 import { useCountdowns } from '../AppContext';
@@ -7,6 +7,7 @@ import { TimerSettingsPanel } from './Settings/TimerSettings';
 import { SyncSettings } from './Settings/SyncSettings';
 import { DataSettings } from './Settings/DataSettings';
 import { ProjectSettings } from './Settings/ProjectSettings';
+const DebugSettings = lazy(() => import('./Settings/DebugSettings').then(module => ({ default: module.DebugSettings })));
 
 interface SettingsPanelProps {
     navConfig: StoredNavConfig[];
@@ -78,6 +79,32 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         return 'yourname/focusflow';
     });
 
+    const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+
+    const testRepoConnection = async (repoOverride?: string) => {
+        const repo = typeof repoOverride === 'string' ? repoOverride : repoName;
+        if (!repo) return;
+        setTestStatus('testing');
+        try {
+            const res = await fetch(`https://api.github.com/repos/${repo}`);
+            if (res.ok) {
+                const data = await res.json();
+                setTestStatus('success');
+                if (data.default_branch) {
+                    setUpdateBranch(data.default_branch);
+                    localStorage.setItem('focusflow_update_branch', data.default_branch);
+                }
+                setTimeout(() => setTestStatus('idle'), 2000);
+            } else {
+                setTestStatus('error');
+                setTimeout(() => setTestStatus('idle'), 2000);
+            }
+        } catch (e) {
+            setTestStatus('error');
+            setTimeout(() => setTestStatus('idle'), 2000);
+        }
+    };
+
     const checkForUpdates = async () => {
         setUpdateStatus('checking');
         try {
@@ -117,15 +144,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         </div>
                         
                         {/* Tab Navigation */}
-                        <div className={`flex flex-wrap p-1 rounded-xl shadow-inner ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-800'}`}>
-                            {(['general', 'timer', 'projects', 'integrations', 'data'] as SettingsTab[]).map(tab => (
+                        <div className={`flex p-1 rounded-2xl shadow-inner transition-all duration-300 ${isCyberpunk ? 'bg-black/40 border border-[#00f0ff]/20 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-gray-200 dark:bg-gray-800'}`}>
+                            {(['general', 'timer', 'projects', 'sync', 'data', 'debug'] as any[]).map(tab => (
                                 <button
                                     key={tab}
                                     onClick={() => onTabChange(tab as SettingsTab)}
-                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wide whitespace-nowrap ${
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 uppercase tracking-wide whitespace-nowrap ${
                                         activeTab === tab 
-                                        ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm')
-                                        : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200')
+                                        ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)] border border-[#00f0ff]/50 animate-pulse' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm')
+                                        : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff] hover:bg-[#00f0ff]/5' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200')
                                     }`}
                                 >
                                     {tab === 'timer' ? 'Configuration' : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -155,12 +182,37 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                 <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>GitHub Repository</div>
                                                 <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>owner/repo name</div>
                                             </div>
-                                            <input 
-                                                type="text" 
-                                                value={repoName}
-                                                onChange={(e) => { setRepoName(e.target.value); localStorage.setItem('focusflow_github_repo', e.target.value); }}
-                                                className={`px-3 py-1.5 rounded-lg text-sm border focus:outline-none w-48 text-right ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'}`}
-                                            />
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    value={repoName}
+                                                    onChange={(e) => { 
+                                                        let val = e.target.value;
+                                                        let isUrl = false;
+                                                        if (val.includes('github.com/')) {
+                                                            val = val.replace(/^(?:https?:\/\/)?(?:www\.)?github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '');
+                                                            isUrl = true;
+                                                        }
+                                                        setRepoName(val); 
+                                                        localStorage.setItem('focusflow_github_repo', val); 
+                                                        if (isUrl && val.includes('/')) {
+                                                            testRepoConnection(val);
+                                                        }
+                                                    }}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm border focus:outline-none w-48 text-right ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'}`}
+                                                />
+                                                <button 
+                                                    onClick={() => testRepoConnection()}
+                                                    disabled={testStatus === 'testing' || !repoName}
+                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                                        testStatus === 'success' ? 'bg-green-500 text-white' :
+                                                        testStatus === 'error' ? 'bg-red-500 text-white' :
+                                                        (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600')
+                                                    }`}
+                                                >
+                                                    {testStatus === 'testing' ? '...' : testStatus === 'success' ? 'OK' : testStatus === 'error' ? 'Fail' : 'Test'}
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
@@ -213,6 +265,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         )}
                         {activeTab === 'integrations' && <SyncSettings appTheme={appTheme} setLastBackup={setLastBackup} />}
                         {activeTab === 'data' && <DataSettings appTheme={appTheme} lastBackup={lastBackup} setLastBackup={setLastBackup} />}
+                        {activeTab === 'debug' && (
+                            <DebugSettings 
+                                sidebarConfig={sidebarConfig} 
+                                menuBarConfig={menuBarConfig} 
+                                appTheme={appTheme} 
+                            />
+                        )}
                     </div>
                 </div>
             </div>

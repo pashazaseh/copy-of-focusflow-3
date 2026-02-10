@@ -19,6 +19,7 @@ module.exports = {
       },
       animation: {
         'spin-slow': 'spin 20s linear infinite',
+        'pulse-glow': 'pulse-glow 4s ease-in-out infinite',
       },
       backgroundImage: {
         'radial-dark': 'radial-gradient(ellipse at center, #000 0%, #111827 80%)',

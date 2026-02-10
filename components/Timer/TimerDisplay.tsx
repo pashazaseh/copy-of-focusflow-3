@@ -93,9 +93,10 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
                     <stop offset="0%" stopColor="#facc15" /> 
                     <stop offset="100%" stopColor="#f97316" />
                 </linearGradient>
-                <radialGradient id="blue-glow" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="rgba(0, 120, 255, 0.7)" />
-                    <stop offset="100%" stopColor="rgba(0, 120, 255, 0)" />
+                <radialGradient id="dark-blue-glow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="rgba(0, 100, 255, 0.8)" />
+                    <stop offset="70%" stopColor="rgba(0, 50, 200, 0.3)" />
+                    <stop offset="100%" stopColor="rgba(0, 20, 80, 0)" />
                 </radialGradient>
                 <filter id="glow-filter" x="-50%" y="-50%" width="200%" height="200%">
                     <feGaussianBlur stdDeviation="3.5" result="coloredBlur" />
@@ -105,7 +106,7 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
                     </feMerge>
                 </filter>
                 <filter id="background-glow-filter" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="15" result="coloredBlur" />
+                    <feGaussianBlur stdDeviation="20" result="coloredBlur" />
                     <feMerge>
                         <feMergeNode in="coloredBlur" />
                         <feMergeNode in="SourceGraphic" />
@@ -117,8 +118,9 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
                 cx={isGhost ? 100 : 120}
                 cy={isGhost ? 100 : 120}
                 r={radius}
-                fill="url(#blue-glow)"
-                className={isCyberpunk && isActive ? 'animate-pulse' : 'opacity-0'}
+                fill="url(#dark-blue-glow)"
+                className={isCyberpunk && isActive ? 'animate-pulse-glow' : 'opacity-0'}
+                style={{ transformOrigin: 'center' }}
                 filter="url(#background-glow-filter)"
             />
 

@@ -959,9 +959,9 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                              </button>
                         </div>
                         
-                        <div className={`flex p-1 mx-6 mt-4 rounded-xl shadow-inner shrink-0 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-gray-900'}`}>
+                        <div className={`flex p-1 mx-6 mt-4 rounded-xl shadow-inner shrink-0 transition-all duration-300 ${isCyberpunk ? 'bg-black/40 border border-[#00f0ff]/20 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-gray-100 dark:bg-gray-900'}`}>
                              {(['view', 'filters', 'connections'] as const).map(tab => (
-                                 <button key={tab} onClick={() => setConfigTab(tab)} className={`flex-1 py-1.5 text-xs font-bold rounded-lg capitalize transition-all ${configTab === tab ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-sm' : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm') : 'text-gray-500 dark:text-gray-400'}`}>{tab}</button>
+                                 <button key={tab} onClick={() => setConfigTab(tab)} className={`flex-1 py-1.5 text-xs font-bold rounded-lg capitalize transition-all duration-300 ${configTab === tab ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)] border border-[#00f0ff]/50 animate-pulse' : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff] hover:bg-[#00f0ff]/5' : 'text-gray-500 dark:text-gray-400')}`}>{tab}</button>
                              ))}
                         </div>
 

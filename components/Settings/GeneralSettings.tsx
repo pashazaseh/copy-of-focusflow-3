@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StoredNavConfig, NAV_ITEMS_DEF } from '../Sidebar';
 import { MenuBarConfig, MenuBarMode, SidebarConfig, AppTheme, WidgetSize, CountdownItem } from '../../types';
 
@@ -24,6 +24,16 @@ const SectionHeader: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     </h3>
 );
 
+const widgetLabels: Record<string, string> = {
+    showQuestsWidget: 'Daily Quests',
+    showTimerWidget: 'Quick Timer',
+    showCountdownWidget: 'Closest Countdown',
+    showDailyGoalWidget: 'Daily Goal',
+    showWeeklyGoalWidget: 'Weekly Goal',
+    showMonthlyGoalWidget: 'Monthly Goal',
+    showLatestBadgeWidget: 'Latest Badge'
+};
+
 export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     navConfig,
     onUpdateNavConfig,
@@ -38,52 +48,80 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     onUpdateMenuBarConfig,
     countdowns
 }) => {
+    const [localNavConfig, setLocalNavConfig] = useState<StoredNavConfig[]>([]);
+    const [localWidgetOrder, setLocalWidgetOrder] = useState<string[]>([]);
+
+    useEffect(() => {
+        // Ensure uniqueness in navConfig to prevent key collisions
+        const uniqueNavConfig = navConfig.filter((item, index, self) => 
+            index === self.findIndex((t) => t.view === item.view)
+        );
+        const existingViews = new Set(uniqueNavConfig.map(i => i.view));
+        const missingItems = NAV_ITEMS_DEF.filter(i => !existingViews.has(i.view))
+            .map(i => ({ view: i.view, isVisible: true }));
+        setLocalNavConfig([...uniqueNavConfig, ...missingItems]);
+    }, [navConfig]);
+
+    useEffect(() => {
+        const currentOrder = sidebarConfig.widgetOrder || Object.keys(widgetLabels);
+        // Ensure uniqueness in currentOrder to prevent key collisions
+        const uniqueOrder = Array.from(new Set(currentOrder));
+        const allWidgets = [...uniqueOrder, ...Object.keys(widgetLabels).filter(k => !uniqueOrder.includes(k))];
+        setLocalWidgetOrder(allWidgets);
+    }, [sidebarConfig.widgetOrder]);
+
     const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
     const [draggingWidgetIndex, setDraggingWidgetIndex] = useState<number | null>(null);
 
     const handleDragStart = (e: React.DragEvent, index: number) => {
         setDraggingIndex(index);
         e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", index.toString());
     };
 
     const handleDragOver = (e: React.DragEvent, index: number) => {
         e.preventDefault();
         if (draggingIndex === null || draggingIndex === index) return;
-        const newConfig = [...navConfig];
+        const newConfig = [...localNavConfig];
         const draggedItem = newConfig[draggingIndex];
         newConfig.splice(draggingIndex, 1);
         newConfig.splice(index, 0, draggedItem);
-        onUpdateNavConfig(newConfig);
+        setLocalNavConfig(newConfig);
         setDraggingIndex(index);
     };
 
-    const handleDragEnd = () => setDraggingIndex(null);
+    const handleDragEnd = () => {
+        setDraggingIndex(null);
+        onUpdateNavConfig(localNavConfig);
+    };
 
     const handleWidgetDragStart = (e: React.DragEvent, index: number) => {
         setDraggingWidgetIndex(index);
         e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", index.toString());
     };
 
     const handleWidgetDragOver = (e: React.DragEvent, index: number) => {
         e.preventDefault();
         if (draggingWidgetIndex === null || draggingWidgetIndex === index) return;
-        const currentOrder = sidebarConfig.widgetOrder || [
-            'showTimerWidget', 'showQuestsWidget', 'showCountdownWidget', 
-            'showDailyGoalWidget', 'showWeeklyGoalWidget', 'showMonthlyGoalWidget'
-        ];
-        const newOrder = [...currentOrder];
+        
+        const newOrder = [...localWidgetOrder];
         const draggedItem = newOrder[draggingWidgetIndex];
         newOrder.splice(draggingWidgetIndex, 1);
         newOrder.splice(index, 0, draggedItem);
-        onUpdateSidebarConfig({ ...sidebarConfig, widgetOrder: newOrder });
+        setLocalWidgetOrder(newOrder);
         setDraggingWidgetIndex(index);
     };
 
-    const handleWidgetDragEnd = () => setDraggingWidgetIndex(null);
+    const handleWidgetDragEnd = () => {
+        setDraggingWidgetIndex(null);
+        onUpdateSidebarConfig({ ...sidebarConfig, widgetOrder: localWidgetOrder });
+    };
     
     const toggleVisibility = (index: number) => {
-        const newConfig = [...navConfig];
+        const newConfig = [...localNavConfig];
         newConfig[index].isVisible = !newConfig[index].isVisible;
+        setLocalNavConfig(newConfig);
         onUpdateNavConfig(newConfig);
     };
 
@@ -95,15 +133,6 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     const isCyberpunk = appTheme === 'cyberpunk';
     const cardBaseClass = isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700';
     const controlBgClass = isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-700/50';
-
-    const widgetLabels: Record<string, string> = {
-        showQuestsWidget: 'Daily Quests',
-        showTimerWidget: 'Quick Timer',
-        showCountdownWidget: 'Closest Countdown',
-        showDailyGoalWidget: 'Daily Goal',
-        showWeeklyGoalWidget: 'Weekly Goal',
-        showMonthlyGoalWidget: 'Monthly Goal'
-    };
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -196,7 +225,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-4">
                     {/* Sidebar Widgets */}
                     <div className="space-y-2">
-                         {(sidebarConfig.widgetOrder || Object.keys(widgetLabels)).map((widgetKey, index) => (
+                         {localWidgetOrder.map((widgetKey, index) => (
                             <div 
                                 key={widgetKey} 
                                 draggable 
@@ -216,12 +245,12 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                                     <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${sidebarConfig[widgetKey as keyof SidebarConfig] ? 'translate-x-5' : 'translate-x-1'}`} />
                                 </button>
                             </div>
-                        ))}
+                         ))}
                     </div>
 
                     {/* Nav Items */}
                     <div className="space-y-2">
-                        {navConfig.map((item, index) => {
+                        {localNavConfig.map((item, index) => {
                             const def = NAV_ITEMS_DEF.find(d => d.view === item.view);
                             if (!def) return null;
                             return (

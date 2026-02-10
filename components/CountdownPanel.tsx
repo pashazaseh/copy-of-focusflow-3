@@ -433,15 +433,15 @@ export const CountdownPanel: React.FC = () => {
                             <div className="flex flex-col items-center gap-2">
                                 {/* Type Filters */}
                                 {isGroupsVisible && (
-                                    <div className={`flex items-center p-1 rounded-xl border shadow-sm overflow-x-auto no-scrollbar ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-[#151516] border-gray-200 dark:border-gray-800'}`}>
+                                    <div className={`flex items-center p-1 rounded-xl border shadow-sm overflow-x-auto no-scrollbar transition-all duration-300 ${isCyberpunk ? 'bg-black/40 border-[#00f0ff]/20 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-white dark:bg-[#151516] border-gray-200 dark:border-gray-800'}`}>
                                         {['all', 'countdown', 'anniversary', 'birthday', 'holiday'].map(t => (
                                             <button
                                                 key={t}
                                                 onClick={() => setActiveTypeFilter(t)}
-                                                className={`px-4 py-1.5 rounded-lg text-xs font-bold capitalize transition-all duration-200 whitespace-nowrap ${
+                                                className={`px-4 py-1.5 rounded-lg text-xs font-bold capitalize transition-all duration-300 whitespace-nowrap ${
                                                     activeTypeFilter === t 
-                                                    ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-blue-600 text-white shadow-md shadow-blue-500/20')
-                                                    : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5')
+                                                    ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)] border border-[#00f0ff]/50 animate-pulse' : 'bg-blue-600 text-white shadow-md shadow-blue-500/20')
+                                                    : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff] hover:bg-[#00f0ff]/5' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5')
                                                 }`}
                                             >
                                                 {t}

@@ -65,16 +65,16 @@ export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMod
     <div className={containerClass}>
       {/* Window Title Bar */}
       <div 
-        className={`h-10 border-b flex items-center justify-between px-4 shrink-0 select-none transition-colors duration-300 ${headerClass} ${isElectron && platform === 'win32' ? 'pr-[140px]' : ''}`}
+        className={`h-9 border-b flex items-center justify-between shrink-0 select-none transition-colors duration-300 relative ${headerClass} ${isElectron && platform === 'win32' ? 'pr-[140px]' : ''}`}
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <div 
-            className="flex space-x-2 group"
+            className={`flex space-x-2 group ${isElectron && platform === 'darwin' ? 'pl-0' : 'pl-4'}`}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           {/* Use Native Traffic Lights in Electron, Custom in Web */}
           {isElectron ? (
-             platform === 'darwin' ? <div className="w-16 h-4" /> : null
+             platform === 'darwin' ? <div className="w-28 h-9" /> : null
           ) : (
              <>
               <button onClick={handleClose} className="w-3 h-3 rounded-full bg-red-500 border border-red-600/20 group-hover:bg-red-600 transition-colors shadow-sm cursor-pointer flex items-center justify-center">
@@ -89,23 +89,11 @@ export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMod
              </>
           )}
         </div>
-        <div className="text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2">
-          {icon ? icon : (
-            <svg className="w-4 h-4" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    <linearGradient id="iconGrad" x1="0" y1="0" x2="100" y2="100%">
-                        <stop offset="0%" stopColor="#3b82f6" />
-                        <stop offset="100%" stopColor="#8b5cf6" />
-                    </linearGradient>
-                </defs>
-                <circle cx="50" cy="50" r="45" fill="url(#iconGrad)" />
-                <path d="M35 50 L45 60 L65 40" stroke="white" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          )}
+        <div className="absolute left-1/2 -translate-x-1/2 h-full flex items-center justify-center text-sm font-medium text-gray-500 dark:text-gray-400 gap-2">
           {title || "FocusFlow"}
         </div>
         <div 
-            className="flex items-center"
+            className="flex items-center pr-4"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
             <button 

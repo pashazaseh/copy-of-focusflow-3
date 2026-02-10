@@ -22,6 +22,16 @@ interface Particle {
     ty: number;
 }
 
+interface Challenge {
+    id: string;
+    title: string;
+    reward: number;
+    dueDate?: string;
+    completedDate?: string;
+    penalized?: boolean;
+    difficulty?: 'Easy' | 'Medium' | 'Hard';
+}
+
 // --- Constants & Helpers ---
 
 const RARITY_COLORS: Record<string, string> = {
@@ -499,6 +509,53 @@ const HistoryModal: React.FC<{ isOpen: boolean; onClose: () => void; isCyberpunk
     );
 };
 
+const ChallengeHistoryModal: React.FC<{ isOpen: boolean; onClose: () => void; isCyberpunk: boolean; challenges: Challenge[] }> = ({ isOpen, onClose, isCyberpunk, challenges }) => {
+    if (!isOpen) return null;
+
+    const history = challenges.filter(c => c.completedDate || (c.dueDate && new Date(c.dueDate + 'T23:59:59') < new Date() && !c.completedDate)).sort((a, b) => {
+        const dateA = a.completedDate ? new Date(a.completedDate) : (a.dueDate ? new Date(a.dueDate) : new Date(0));
+        const dateB = b.completedDate ? new Date(b.completedDate) : (b.dueDate ? new Date(b.dueDate) : new Date(0));
+        return dateB.getTime() - dateA.getTime();
+    });
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+            <div className={`w-full max-w-2xl rounded-3xl border shadow-2xl p-6 relative overflow-hidden flex flex-col max-h-[80vh] ${isCyberpunk ? 'bg-black border-[#00f0ff]/50' : 'bg-[#1c1c1e] border-slate-700'}`}>
+                <div className="flex justify-between items-center mb-6 shrink-0">
+                    <h3 className={`text-2xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>Challenge History</h3>
+                    <button onClick={onClose} className={`p-1 rounded-lg transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'text-slate-400 hover:text-white'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2">
+                    {history.length === 0 ? (
+                        <div className="text-center py-10 text-slate-500">No past challenges.</div>
+                    ) : (
+                        history.map((c) => {
+                            const isCompleted = !!c.completedDate;
+                            const statusColor = isCompleted ? (isCyberpunk ? 'text-green-500' : 'text-green-400') : (isCyberpunk ? 'text-red-500' : 'text-red-400');
+                            const statusText = isCompleted ? 'Completed' : 'Failed';
+                            const date = isCompleted ? c.completedDate : c.dueDate;
+                            
+                            return (
+                                <div key={c.id} className={`flex items-center justify-between p-4 rounded-xl border ${isCyberpunk ? 'bg-[#00f0ff]/5 border-[#00f0ff]/20' : 'bg-white/5 border-white/5'}`}>
+                                    <div>
+                                        <p className={`text-sm font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>{c.title}</p>
+                                        <p className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-slate-400'}`}>
+                                            {statusText} on {date ? new Date(date).toLocaleDateString() : 'Unknown'} • {c.difficulty || 'Medium'}
+                                        </p>
+                                    </div>
+                                    <div className={`font-mono font-bold ${statusColor}`}>
+                                        {isCompleted ? `+${c.reward}` : `-${c.difficulty === 'Hard' ? 20 : c.difficulty === 'Easy' ? 5 : 10}`} 💎
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const TrophyRoom: React.FC<{ 
     achievements: any[]; 
     unlockedCount: number; 
@@ -560,10 +617,222 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
 
   const [isEconomyInfoOpen, setIsEconomyInfoOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'shop' | 'earn'>('shop');
+  const [activeTab, setActiveTab] = useState<'shop' | 'earn' | 'challenges'>('shop');
   const [isCreateItemModalOpen, setIsCreateItemModalOpen] = useState(false);
   const [customShopItems, setCustomShopItems] = useState<ShopItem[]>([]);
   const [shopFilter, setShopFilter] = useState<'all' | 'custom'>('all');
+
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [newChallengeTitle, setNewChallengeTitle] = useState('');
+  const [newChallengeReward, setNewChallengeReward] = useState(50);
+  const [newChallengeDueDate, setNewChallengeDueDate] = useState('');
+  const [newChallengeDifficulty, setNewChallengeDifficulty] = useState<'Easy' | 'Medium' | 'Hard'>('Medium');
+  const [challengeFilter, setChallengeFilter] = useState<'active' | 'expired' | 'completed' | 'all'>('active');
+  const [timerTick, setTimerTick] = useState(0);
+  const [isAddChallengeMenuOpen, setIsAddChallengeMenuOpen] = useState(false);
+  const [editingChallengeId, setEditingChallengeId] = useState<string | null>(null);
+  const [isChallengeHistoryOpen, setIsChallengeHistoryOpen] = useState(false);
+
+  useEffect(() => {
+      const timer = setInterval(() => setTimerTick(t => t + 1), 60000);
+      return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+      try {
+          const saved = localStorage.getItem('focusflow_challenges');
+          if (saved) {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed)) {
+                  setChallenges(parsed);
+              }
+          }
+      } catch {}
+  }, []);
+
+  const handleAddChallenge = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newChallengeTitle.trim() || newChallengeReward <= 0) return;
+      
+      let updated;
+      if (editingChallengeId) {
+          updated = challenges.map(c => {
+              if (c.id === editingChallengeId) {
+                  return {
+                      ...c,
+                      title: newChallengeTitle.trim(),
+                      reward: newChallengeReward,
+                      dueDate: newChallengeDueDate || undefined,
+                      difficulty: newChallengeDifficulty
+                  };
+              }
+              return c;
+          });
+          setEditingChallengeId(null);
+      } else {
+          const newChallenge: Challenge = {
+              id: Date.now().toString(),
+              title: newChallengeTitle.trim(),
+              reward: newChallengeReward,
+              dueDate: newChallengeDueDate || undefined,
+              difficulty: newChallengeDifficulty
+          };
+          updated = [...challenges, newChallenge];
+      }
+
+      setChallenges(updated);
+      localStorage.setItem('focusflow_challenges', JSON.stringify(updated));
+      setNewChallengeTitle('');
+      setNewChallengeReward(50);
+      setNewChallengeDueDate('');
+      setNewChallengeDifficulty('Medium');
+      setIsAddChallengeMenuOpen(false);
+  };
+
+  const handleEditChallenge = (challenge: Challenge) => {
+      setEditingChallengeId(challenge.id);
+      setNewChallengeTitle(challenge.title);
+      setNewChallengeReward(challenge.reward);
+      setNewChallengeDueDate(challenge.dueDate || '');
+      setNewChallengeDifficulty(challenge.difficulty || 'Medium');
+      setIsAddChallengeMenuOpen(true);
+  };
+
+  const handleCancelEdit = () => {
+      setEditingChallengeId(null);
+      setNewChallengeTitle('');
+      setNewChallengeReward(50);
+      setNewChallengeDueDate('');
+      setNewChallengeDifficulty('Medium');
+      setIsAddChallengeMenuOpen(false);
+  };
+
+  const handleDifficultyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const diff = e.target.value as 'Easy' | 'Medium' | 'Hard';
+      setNewChallengeDifficulty(diff);
+      if (diff === 'Easy') setNewChallengeReward(20);
+      else if (diff === 'Medium') setNewChallengeReward(50);
+      else if (diff === 'Hard') setNewChallengeReward(100);
+  };
+
+  const handleCompleteChallenge = (id: string, e?: React.MouseEvent) => {
+      const challenge = challenges.find(c => c.id === id);
+      if (!challenge) return;
+      
+      if (confirm(`Did you complete "${challenge.title}"?`)) {
+          const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
+          const newBonus = currentBonus + challenge.reward;
+          setBonusGems(newBonus);
+          localStorage.setItem('focusflow_bonus_gems', newBonus.toString());
+          
+          addTransaction({
+              id: `challenge-${id}-${Date.now()}`,
+              date: new Date().toISOString(),
+              type: 'EARN',
+              amount: challenge.reward,
+              description: `Challenge: ${challenge.title}`
+          });
+          
+          const savedVol = localStorage.getItem('focusflow_timer_volume');
+          const vol = savedVol ? parseFloat(savedVol) : 0.5;
+          playWin(vol);
+          
+          if (e) spawnParticles(e.clientX, e.clientY, isCyberpunk ? '#00ff00' : '#10b981', 15, `+${challenge.reward}`);
+          
+          const newChallenges = challenges.map(c => c.id === id ? { ...c, completedDate: new Date().toISOString() } : c);
+          setChallenges(newChallenges);
+          localStorage.setItem('focusflow_challenges', JSON.stringify(newChallenges));
+          if (challengeFilter === 'active') setChallengeFilter('active'); // Refresh view context if needed
+      }
+  };
+
+  const handleDeleteChallenge = (id: string) => {
+      if (confirm('Delete this challenge?')) {
+          const newChallenges = challenges.filter(c => c.id !== id);
+          setChallenges(newChallenges);
+          localStorage.setItem('focusflow_challenges', JSON.stringify(newChallenges));
+      }
+  };
+
+  const getCountdown = (dateStr: string) => {
+      const now = new Date();
+      const due = new Date(dateStr + 'T23:59:59');
+      const diff = due.getTime() - now.getTime();
+      
+      if (diff <= 0) return 'Expired';
+      
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      
+      if (days > 0) return `${days}d ${hours}h`;
+      return `${hours}h ${minutes}m`;
+  };
+
+  // Penalty Check
+  useEffect(() => {
+      if (!Array.isArray(challenges)) return;
+
+      const now = new Date();
+      let penaltyTotal = 0;
+      let hasUpdates = false;
+
+      const updatedChallenges = challenges.map(c => {
+          if (!c.completedDate && !c.penalized && c.dueDate) {
+              const due = new Date(c.dueDate + 'T23:59:59');
+              if (now > due) {
+                  hasUpdates = true;
+                  const penalty = c.difficulty === 'Hard' ? 20 : c.difficulty === 'Easy' ? 5 : 10;
+                  penaltyTotal += penalty;
+                  return { ...c, penalized: true };
+              }
+          }
+          return c;
+      });
+
+      if (hasUpdates) {
+          setChallenges(updatedChallenges);
+          localStorage.setItem('focusflow_challenges', JSON.stringify(updatedChallenges));
+
+          if (penaltyTotal > 0) {
+              const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
+              const newBonus = currentBonus - penaltyTotal;
+              setBonusGems(newBonus);
+              localStorage.setItem('focusflow_bonus_gems', newBonus.toString());
+
+              addTransaction({
+                  id: `penalty-${Date.now()}`,
+                  date: new Date().toISOString(),
+                  type: 'SPEND',
+                  amount: -penaltyTotal,
+                  description: 'Challenge Expired Penalty'
+              });
+              
+              const savedVol = localStorage.getItem('focusflow_timer_volume');
+              const vol = savedVol ? parseFloat(savedVol) : 0.5;
+              playTone(150, 0.5, vol, 'sawtooth');
+          }
+      }
+  }, [challenges, timerTick]);
+
+  const filteredChallenges = useMemo(() => {
+      if (!Array.isArray(challenges)) return [];
+
+      return challenges.filter(c => {
+          const isExpired = c.dueDate && getCountdown(c.dueDate) === 'Expired';
+          const isCompleted = !!c.completedDate;
+
+          if (challengeFilter === 'active') return !isCompleted && !isExpired;
+          if (challengeFilter === 'expired') return !isCompleted && isExpired;
+          if (challengeFilter === 'completed') return isCompleted;
+          return true;
+      }).sort((a, b) => {
+          if (challengeFilter === 'completed' && a.completedDate && b.completedDate) {
+              return new Date(b.completedDate).getTime() - new Date(a.completedDate).getTime();
+          }
+          return 0;
+      });
+  }, [challenges, challengeFilter, timerTick]); // tick dependency to update expired status
 
   const isMounted = useRef(true);
   useEffect(() => {
@@ -1056,9 +1325,24 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
                 </div>
             </div>
 
-            <div className="flex gap-2">
-                <button onClick={() => setActiveTab('shop')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'shop' ? (isCyberpunk ? 'bg-[#00f0ff] text-black shadow-[0_0_10px_rgba(0,240,255,0.4)]' : 'bg-white text-gray-900 shadow-lg') : (isCyberpunk ? 'text-[#00f0ff]/60 hover:bg-[#00f0ff]/10' : 'text-gray-400 hover:bg-white/5')}`}>Shop</button>
-                <button onClick={() => setActiveTab('earn')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'earn' ? (isCyberpunk ? 'bg-[#00f0ff] text-black shadow-[0_0_10px_rgba(0,240,255,0.4)]' : 'bg-white text-gray-900 shadow-lg') : (isCyberpunk ? 'text-[#00f0ff]/60 hover:bg-[#00f0ff]/10' : 'text-gray-400 hover:bg-white/5')}`}>Earn</button>
+            <div className={`flex p-1 rounded-2xl mb-8 transition-all duration-300 ${isCyberpunk ? 'bg-black/40 border border-[#00f0ff]/20 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-gray-100 dark:bg-white/5'}`}>
+                {(['shop', 'earn', 'challenges'] as const).map((tab) => (
+                    <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        className={`flex-1 py-2 px-6 rounded-xl text-sm font-bold transition-all duration-300 capitalize ${
+                            activeTab === tab
+                                ? (isCyberpunk 
+                                    ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)] border border-[#00f0ff]/50 animate-pulse' 
+                                    : 'bg-white text-gray-900 shadow-lg')
+                                : (isCyberpunk 
+                                    ? 'text-[#00f0ff]/40 hover:text-[#00f0ff] hover:bg-[#00f0ff]/5' 
+                                    : 'text-gray-400 hover:bg-white/5')
+                        }`}
+                    >
+                        {tab}
+                    </button>
+                ))}
             </div>
 
             <div className="flex flex-col gap-10">
@@ -1130,6 +1414,101 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
                 />
                 </>
                 )}
+
+                {activeTab === 'challenges' && (
+                    <div className={`rounded-3xl p-8 border ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-slate-800/50 border-gray-200 dark:border-white/5'}`}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className={`text-xl font-bold flex items-center gap-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>
+                                <span className="text-2xl">⚔️</span> Self-Challenges
+                            </h3>
+                            <div className="flex items-center gap-3">
+                                <div className={`text-xs hidden sm:block ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>
+                                    Set goals, complete them, earn gems.
+                                </div>
+                                <button onClick={() => setIsChallengeHistoryOpen(true)} className={`p-2 rounded-xl transition-all ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'}`} title="Challenge History">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                </button>
+                                <button onClick={() => { if(isAddChallengeMenuOpen) handleCancelEdit(); else setIsAddChallengeMenuOpen(true); }} className={`p-2 rounded-xl transition-all ${isAddChallengeMenuOpen ? (isCyberpunk ? 'bg-[#00f0ff] text-black' : 'bg-blue-600 text-white') : (isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600')}`}>
+                                    <svg className={`w-5 h-5 transition-transform ${isAddChallengeMenuOpen ? 'rotate-45' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Create Challenge Form */}
+                        {isAddChallengeMenuOpen && (
+                        <form onSubmit={handleAddChallenge} className={`mb-8 p-4 rounded-2xl border animate-fade-in ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-gray-50 dark:bg-slate-900/50 border-gray-200 dark:border-white/10'}`}>
+                            <div className="flex flex-col md:flex-row gap-4 items-end">
+                                <div className="flex-1 w-full">
+                                    <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Challenge Title</label>
+                                    <input type="text" value={newChallengeTitle} onChange={(e) => setNewChallengeTitle(e.target.value)} placeholder="e.g. Read 50 pages" className={`w-full px-4 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-900 dark:text-white focus:ring-blue-500'}`} />
+                                </div>
+                                <div className="w-full md:w-28">
+                                    <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Difficulty</label>
+                                    <select value={newChallengeDifficulty} onChange={handleDifficultyChange} className={`w-full px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-900 dark:text-white focus:ring-blue-500'}`}>
+                                        <option value="Easy">Easy</option>
+                                        <option value="Medium">Medium</option>
+                                        <option value="Hard">Hard</option>
+                                    </select>
+                                </div>
+                                <div className="w-full md:w-32">
+                                    <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Reward</label>
+                                    <input type="number" value={newChallengeReward} onChange={(e) => setNewChallengeReward(parseInt(e.target.value))} min="1" className={`w-full px-4 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-900 dark:text-white focus:ring-blue-500'}`} />
+                                </div>
+                                <div className="w-full md:w-32">
+                                    <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Due Date</label>
+                                    <input type="date" value={newChallengeDueDate} onChange={(e) => setNewChallengeDueDate(e.target.value)} className={`w-full px-4 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff] [color-scheme:dark]' : 'bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-900 dark:text-white focus:ring-blue-500 [color-scheme:light] dark:[color-scheme:dark]'}`} />
+                                </div>
+                                <button type="submit" disabled={!newChallengeTitle.trim() || newChallengeReward <= 0} className={`w-full md:w-auto px-6 py-2 rounded-xl text-sm font-bold shadow-lg transition-all ${isCyberpunk ? 'bg-[#00f0ff] text-black hover:bg-[#00f0ff]/80 disabled:opacity-50' : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'}`}>{editingChallengeId ? 'Update' : 'Set Challenge'}</button>
+                                {editingChallengeId && (
+                                    <button type="button" onClick={handleCancelEdit} className={`w-full md:w-auto px-4 py-2 rounded-xl text-sm font-bold transition-all ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700'}`}>Cancel</button>
+                                )}
+                            </div>
+                        </form>
+                        )}
+
+                        {/* Filter Controls */}
+                        <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
+                            {(['active', 'expired', 'completed', 'all'] as const).map(filter => (
+                                <button key={filter} onClick={() => setChallengeFilter(filter)} className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all whitespace-nowrap ${challengeFilter === filter ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white')}`}>
+                                    {filter}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Challenges List */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {filteredChallenges.length === 0 ? (
+                                <div className={`col-span-full text-center py-10 ${isCyberpunk ? 'text-[#00f0ff]/40' : 'text-gray-400'}`}>No {challengeFilter} challenges found.</div>
+                            ) : (
+                                filteredChallenges.map(challenge => (
+                                    <div key={challenge.id} className={`group relative p-5 rounded-2xl border transition-all ${isCyberpunk ? 'bg-black border-[#00f0ff]/20 hover:border-[#00f0ff]' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 hover:shadow-md'}`}>
+                                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => handleEditChallenge(challenge)} className="p-1.5 text-gray-400 hover:text-blue-500"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
+                                            <button onClick={() => handleDeleteChallenge(challenge.id)} className="p-1.5 text-gray-400 hover:text-red-500"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                                        </div>
+                                        <div className="mb-4">
+                                            <h4 className={`font-bold text-lg ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{challenge.title}</h4>
+                                            <p className={`text-xs font-mono mt-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Reward: {challenge.reward} 💎</p>
+                                            <p className={`text-xs font-mono mt-0.5 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Difficulty: {challenge.difficulty || 'Medium'}</p>
+                                            {challenge.dueDate && (
+                                                <p className={`text-xs font-mono mt-1 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>
+                                                    Due: {challenge.dueDate} <span className={getCountdown(challenge.dueDate) === 'Expired' ? 'text-red-500 font-bold' : ''}>({getCountdown(challenge.dueDate)})</span>
+                                                </p>
+                                            )}
+                                            {challenge.penalized && (
+                                                <p className={`text-xs font-mono mt-1 ${isCyberpunk ? 'text-red-500' : 'text-red-600'}`}>Penalty Applied (-{challenge.difficulty === 'Hard' ? 20 : challenge.difficulty === 'Easy' ? 5 : 10} 💎)</p>
+                                            )}
+                                            {challenge.completedDate && (
+                                                <p className={`text-xs font-mono mt-1 ${isCyberpunk ? 'text-green-400' : 'text-green-600 dark:text-green-400'}`}>Completed: {new Date(challenge.completedDate).toLocaleDateString()}</p>
+                                            )}
+                                        </div>
+                                        {!challenge.completedDate && <button onClick={(e) => handleCompleteChallenge(challenge.id, e)} className={`w-full py-2 rounded-xl text-sm font-bold transition-all ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30 hover:bg-[#00f0ff]/20' : 'bg-green-50 text-green-600 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30'}`}>Complete & Claim</button>}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
       </div>
@@ -1163,6 +1542,13 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ allLogs = 
           onClose={() => setIsCreateItemModalOpen(false)}
           onCreate={handleCreateItem}
           isCyberpunk={isCyberpunk}
+      />
+
+      <ChallengeHistoryModal 
+          isOpen={isChallengeHistoryOpen} 
+          onClose={() => setIsChallengeHistoryOpen(false)} 
+          isCyberpunk={isCyberpunk} 
+          challenges={challenges} 
       />
     </div>
   );

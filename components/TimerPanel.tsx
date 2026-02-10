@@ -3,9 +3,8 @@ import * as storage from '../services/storageService';
 import { TimerSettings, SessionRecord, Project, MenuBarConfig, Transaction, Task } from '../types';
 import { playAlarm } from '../services/audioService';
 import { useTheme } from '../AppContext';
-import { TimerDisplay } from './Timer/TimerDisplay';
 import { ControlDock } from './Timer/ControlDock';
-import { TimerModeTabs, TimerActionButtons } from './Timer/TimerControls';
+import { TimerActionButtons } from './Timer/TimerControls';
 import { TimeWheel } from './TimeWheel';
 
 interface TimerPanelProps {
@@ -22,6 +21,138 @@ interface TimerPanelProps {
 
 type TimerMode = 'POMO' | 'STOPWATCH';
 type TimerPhase = 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
+
+interface TimerDisplayProps {
+    timeLeft: number;
+    initialTime: number;
+    mode: TimerMode;
+    phase: TimerPhase;
+    isActive: boolean;
+    isCyberpunk: boolean;
+    formatTime: (seconds: number) => string;
+    isGhost?: boolean;
+}
+
+const TimerDisplay: React.FC<TimerDisplayProps> = ({
+    timeLeft,
+    initialTime,
+    mode,
+    phase,
+    isActive,
+    isCyberpunk,
+    formatTime,
+    isGhost
+}) => {
+    const radius = 95;
+    const circumference = 2 * Math.PI * radius;
+    
+    let progress = 0;
+    if (mode === 'POMO') {
+        progress = initialTime > 0 ? (initialTime - timeLeft) / initialTime : 0;
+    } else {
+        progress = (timeLeft % 60) / 60;
+    }
+    
+    const strokeDashoffset = circumference * (1 - progress);
+    const isUrgent = mode === 'POMO' && initialTime > 0 && (timeLeft / initialTime) <= 0.15;
+    
+    let strokeUrl = "url(#focusGradient)";
+    let filterUrl = "url(#cyberGlow)";
+    let textColor = isCyberpunk ? "text-[#00f0ff]" : "text-blue-500";
+    let subTextColor = isCyberpunk ? "text-[#00f0ff]/60" : "text-gray-400 dark:text-gray-500";
+    let dropShadow = isCyberpunk ? "drop-shadow-[0_0_15px_rgba(0,240,255,0.6)]" : "";
+
+    if (isUrgent) {
+        strokeUrl = "url(#urgentGradient)";
+        filterUrl = "url(#glow-red)";
+        textColor = isCyberpunk ? "text-[#ff0055]" : "text-red-500";
+        dropShadow = isCyberpunk ? "drop-shadow-[0_0_15px_rgba(255,0,85,0.6)]" : "";
+    } else if (mode === 'STOPWATCH') {
+        strokeUrl = "url(#stopwatchGradient)";
+        filterUrl = "url(#glow-orange)";
+        textColor = isCyberpunk ? "text-[#F59E0B]" : "text-orange-500";
+        dropShadow = isCyberpunk ? "drop-shadow-[0_0_15px_rgba(245,158,11,0.6)]" : "";
+    } else if (phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') {
+        strokeUrl = "url(#breakGradient)";
+        filterUrl = "url(#glow-green)";
+        textColor = isCyberpunk ? "text-[#10B981]" : "text-green-500";
+        dropShadow = isCyberpunk ? "drop-shadow-[0_0_15px_rgba(16,185,129,0.6)]" : "";
+    } else {
+        filterUrl = "url(#glow-blue)";
+    }
+
+    if (!isCyberpunk) {
+        filterUrl = "drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))";
+    }
+
+    return (
+        <div className={`relative w-full max-w-[380px] aspect-square flex items-center justify-center mb-4 group ${isGhost ? 'scale-90' : ''}`}>
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 200 200">
+                <defs>
+                    <linearGradient id="focusGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor={isCyberpunk ? "#00f0ff" : "#60A5FA"} />
+                        <stop offset="100%" stopColor={isCyberpunk ? "#0099ff" : "#3B82F6"} />
+                    </linearGradient>
+                    <linearGradient id="breakGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#34D399" />
+                        <stop offset="100%" stopColor="#10B981" />
+                    </linearGradient>
+                    <linearGradient id="stopwatchGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#FBBF24" />
+                        <stop offset="100%" stopColor="#F59E0B" />
+                    </linearGradient>
+                    <linearGradient id="urgentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor={isCyberpunk ? "#ff0055" : "#F87171"} />
+                        <stop offset="100%" stopColor={isCyberpunk ? "#ff0000" : "#EF4444"} />
+                    </linearGradient>
+
+                    <filter id="glow-blue" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                    <filter id="glow-green" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                    <filter id="glow-orange" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                    <filter id="glow-red" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                </defs>
+
+                <circle cx="100" cy="100" r={radius} className={isCyberpunk ? "stroke-gray-800" : "stroke-gray-200 dark:stroke-gray-800"} strokeWidth="3" fill="transparent" strokeDasharray="4 4" />
+                {Array.from({ length: 12 }).map((_, i) => { const angle = (i / 12) * 2 * Math.PI; const x1 = 100 + Math.cos(angle) * (radius - 4); const y1 = 100 + Math.sin(angle) * (radius - 4); const x2 = 100 + Math.cos(angle) * (radius + 4); const y2 = 100 + Math.sin(angle) * (radius + 4); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className={isCyberpunk ? "stroke-[#00f0ff]/20" : "stroke-gray-300 dark:stroke-gray-700"} strokeWidth="1.5" />; })}
+                <circle cx="100" cy="100" r={radius} stroke={strokeUrl} strokeWidth="4" fill="transparent" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: filterUrl }} />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                <div className={`text-7xl md:text-8xl font-black tracking-tighter tabular-nums select-none transition-colors duration-300 ${textColor} ${dropShadow} drop-shadow-sm`}>{formatTime(timeLeft)}</div>
+                <div className={`mt-2 text-sm font-bold uppercase tracking-widest ${subTextColor}`}>{mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus' : phase === 'SHORT_BREAK' ? 'Short Break' : 'Long Break') : 'Stopwatch'}</div>
+            </div>
+        </div>
+    );
+};
+
+interface TimerModeTabsProps {
+    mode: TimerMode;
+    onModeSwitch: (mode: TimerMode) => void;
+    isCyberpunk: boolean;
+}
+
+const TimerModeTabs: React.FC<TimerModeTabsProps> = ({ mode, onModeSwitch, isCyberpunk }) => {
+    return (
+        <div className={`flex p-1 rounded-2xl mb-8 transition-all duration-300 ${isCyberpunk ? 'bg-black/40 border border-[#00f0ff]/20 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-gray-100 dark:bg-white/5'}`}>
+            {(['POMO', 'STOPWATCH'] as TimerMode[]).map((m) => (
+                <button
+                    key={m}
+                    onClick={() => onModeSwitch(m)}
+                    className={`flex-1 py-2 px-6 rounded-xl text-xs font-bold transition-all duration-300 ${
+                        mode === m
+                            ? (isCyberpunk 
+                                ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)] border border-[#00f0ff]/50 animate-pulse' 
+                                : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm')
+                            : (isCyberpunk 
+                                ? 'text-[#00f0ff]/40 hover:text-[#00f0ff] hover:bg-[#00f0ff]/5' 
+                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white')
+                    }`}
+                >
+                    {m === 'POMO' ? 'Focus' : 'Stopwatch'}
+                </button>
+            ))}
+        </div>
+    );
+};
 
 export const TimerPanel: React.FC<TimerPanelProps> = ({ 
     onSaveSession, projectId, projects, menuBarConfig, externalStart, onConsumeExternalStart, currentGems: propGems, addTransaction 
@@ -119,7 +250,6 @@ useEffect(() => {
   }, [isActive, mode, phase]);
 
   useEffect(() => {
-      if (isGhostMode) return;
 
       const initTimer = setTimeout(async () => {
           const [sSessions, sSettings, sTasks] = await Promise.all([storage.getSessions(), storage.getTimerSettings(), storage.getTasks()]);
@@ -166,7 +296,7 @@ useEffect(() => {
                   setSessionLabel(localStorage.getItem('focusflow_timer_label') || '');
                   setIsActive(true);
                   setTimeLeft(Math.floor((Date.now() - start) / 1000));
-              } else if (!isGhostMode && !hasSynced.current) {
+              } else if (!hasSynced.current) {
                   const duration = sSettings.pomoDuration * 60;
                   setInitialTime(duration);
                   setTimeLeft(duration);
@@ -390,23 +520,27 @@ useEffect(() => {
               const durationMS = timeLeft * 1000;
               endTimeRef.current = Date.now() + durationMS;
           }
-          localStorage.setItem('focusflow_timer_end_time', endTimeRef.current.toString());
-          localStorage.setItem('focusflow_timer_mode', 'POMO');
-          localStorage.setItem('focusflow_timer_phase', phase);
-          localStorage.setItem('focusflow_timer_project', selectedProjectId);
-          localStorage.setItem('focusflow_timer_task', selectedTaskId);
-          localStorage.setItem('focusflow_timer_label', sessionLabel);
-          localStorage.setItem('focusflow_timer_initial_time', initialTime.toString());
+          if (!isGhostMode) {
+              localStorage.setItem('focusflow_timer_end_time', endTimeRef.current.toString());
+              localStorage.setItem('focusflow_timer_mode', 'POMO');
+              localStorage.setItem('focusflow_timer_phase', phase);
+              localStorage.setItem('focusflow_timer_project', selectedProjectId);
+              localStorage.setItem('focusflow_timer_task', selectedTaskId);
+              localStorage.setItem('focusflow_timer_label', sessionLabel);
+              localStorage.setItem('focusflow_timer_initial_time', initialTime.toString());
+          }
       } else {
           if (!startTimeRef.current) {
               const elapsedMS = timeLeft * 1000;
               startTimeRef.current = Date.now() - elapsedMS;
           }
-          localStorage.setItem('focusflow_timer_start_time', startTimeRef.current.toString());
-          localStorage.setItem('focusflow_timer_mode', 'STOPWATCH');
-          localStorage.setItem('focusflow_timer_project', selectedProjectId);
-          localStorage.setItem('focusflow_timer_task', selectedTaskId);
-          localStorage.setItem('focusflow_timer_label', sessionLabel);
+          if (!isGhostMode) {
+              localStorage.setItem('focusflow_timer_start_time', startTimeRef.current.toString());
+              localStorage.setItem('focusflow_timer_mode', 'STOPWATCH');
+              localStorage.setItem('focusflow_timer_project', selectedProjectId);
+              localStorage.setItem('focusflow_timer_task', selectedTaskId);
+              localStorage.setItem('focusflow_timer_label', sessionLabel);
+          }
       }
 
       timerRef.current = setInterval(() => {
@@ -434,12 +568,14 @@ useEffect(() => {
     } else {
         endTimeRef.current = null;
         startTimeRef.current = null;
-        localStorage.removeItem('focusflow_timer_end_time');
-        localStorage.removeItem('focusflow_timer_start_time');
-        localStorage.removeItem('focusflow_timer_initial_time');
+        if (!isGhostMode) {
+            localStorage.removeItem('focusflow_timer_end_time');
+            localStorage.removeItem('focusflow_timer_start_time');
+            localStorage.removeItem('focusflow_timer_initial_time');
+        }
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isActive, mode, phase, selectedProjectId, selectedTaskId, sessionLabel, initialTime]);
+  }, [isActive, mode, phase, selectedProjectId, selectedTaskId, sessionLabel, initialTime, isGhostMode]);
 
 const handleTimerComplete = async () => {
       const currentData = stateRef.current;
@@ -447,13 +583,15 @@ const handleTimerComplete = async () => {
       setIsActive(false);
       if (timerRef.current) clearInterval(timerRef.current);
       endTimeRef.current = null;
-      localStorage.removeItem('focusflow_timer_end_time');
-      localStorage.removeItem('focusflow_timer_initial_time');
-      triggerAlarm();
       
       if (isGhostMode) {
           (window.electronAPI as any)?.playSoundEffect?.();
+          return;
       }
+
+      localStorage.removeItem('focusflow_timer_end_time');
+      localStorage.removeItem('focusflow_timer_initial_time');
+      triggerAlarm();
 
       if (Notification.permission === "granted") {
           new Notification("Timer Finished!", {
@@ -970,28 +1108,61 @@ const handleTimerComplete = async () => {
 
   const isCyberpunk = appTheme === 'cyberpunk';
 
+  const [isDraggingGhost, setIsDraggingGhost] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+      if (!isDraggingGhost) return;
+      const handleMouseMove = (e: MouseEvent) => {
+          const x = e.screenX - dragOffset.current.x;
+          const y = e.screenY - dragOffset.current.y;
+          (window.electronAPI as any)?.setWindowPosition(x, y);
+      };
+      const handleMouseUp = () => { setIsDraggingGhost(false); };
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+          window.removeEventListener('mousemove', handleMouseMove);
+          window.removeEventListener('mouseup', handleMouseUp);
+      };
+  }, [isDraggingGhost]);
+
+  const handleGhostMouseDown = (e: React.MouseEvent) => {
+      if (e.button === 0) {
+          setIsDraggingGhost(true);
+          dragOffset.current = { x: e.clientX, y: e.clientY };
+      }
+  };
+
+  const isUrgent = mode === 'POMO' && initialTime > 0 && (timeLeft / initialTime) <= 0.15;
+  let phaseColor = isCyberpunk ? "#00f0ff" : "#3B82F6";
+  if (isUrgent) phaseColor = isCyberpunk ? "#ff0055" : "#EF4444";
+  else if (mode === 'STOPWATCH') phaseColor = isCyberpunk ? "#F59E0B" : "#F59E0B";
+  else if (phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') phaseColor = isCyberpunk ? "#10B981" : "#10B981";
+
   if (isGhostMode) {
       return (
           <div className="fixed inset-0 w-full h-full flex items-center justify-center bg-transparent">
-              <div className="absolute top-0 left-0 w-full p-3 flex justify-between opacity-100 transition-opacity duration-300 z-50" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                  <button 
-                      onClick={togglePin}
-                      className={`p-2 rounded-full transition-all hover:scale-110 backdrop-blur-md ${isCyberpunk ? 'text-[#00f0ff] bg-black/60 hover:bg-[#00f0ff]/20' : 'text-white bg-black/20 hover:bg-black/40'}`}
-                      title={isPinned ? "Unpin" : "Pin"}
-                  >
-                      <svg className="w-4 h-4" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
-                  </button>
-                  <button 
-                      onClick={handleToggleGhostMode}
-                      className={`p-2 rounded-full transition-all hover:scale-110 backdrop-blur-md ${isCyberpunk ? 'text-[#00f0ff] bg-black/60 hover:bg-[#00f0ff]/20' : 'text-white bg-black/20 hover:bg-black/40'}`}
-                      title="Show App"
-                  >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 8V4m0 0h4M4 4l5 5m11 5l-5-5m5 5v-4m0 4h-4M4 16v4m0 0h4m-4 0l5-5" /></svg>
-                  </button>
-              </div>
+              <div className="relative group w-full h-full max-w-[90vmin] max-h-[90vmin] flex items-center justify-center">
+                  <div className="absolute top-2 left-1/2 -translate-x-1/2 flex gap-3 opacity-0 group-hover:opacity-100 transition-all duration-300 z-50 transform translate-y-2 group-hover:translate-y-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                      <button
+                          onClick={togglePin}
+                          className={`p-2.5 rounded-full transition-all hover:scale-110 backdrop-blur-xl border shadow-lg ${isCyberpunk ? 'text-[#00f0ff] bg-black/80 border-[#00f0ff]/40 hover:bg-[#00f0ff]/20 hover:shadow-[#00f0ff]/20' : 'text-white bg-black/40 border-white/10 hover:bg-black/60'}`}
+                          title={isPinned ? "Unpin Window" : "Pin Window"}
+                      >
+                          <svg className="w-4 h-4" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                      </button>
+                      <button
+                          onClick={handleToggleGhostMode}
+                          className={`p-2.5 rounded-full transition-all hover:scale-110 backdrop-blur-xl border shadow-lg ${isCyberpunk ? 'text-[#00f0ff] bg-black/80 border-[#00f0ff]/40 hover:bg-[#00f0ff]/20 hover:shadow-[#00f0ff]/20' : 'text-white bg-black/40 border-white/10 hover:bg-black/60'}`}
+                          title="Expand to App"
+                      >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M20 8V4m0 0h-4M4 16v4m0 0h4M20 16v4m0 0h-4" /></svg>
+                      </button>
+                  </div>
 
-              <div className="relative group w-full h-full max-w-[90vmin] max-h-[90vmin] flex items-center justify-center" style={{ WebkitAppRegion: 'drag' } as any}>
-                  {sessionLabel && <p className="absolute top-1/4 text-white text-lg font-semibold mb-4 truncate">{sessionLabel}</p>}
+                  {sessionLabel && <p className="absolute top-1/4 text-white text-lg font-semibold mb-4 truncate transition-opacity duration-300 opacity-50 group-hover:opacity-100">{sessionLabel}</p>}
+                  <div onDoubleClick={toggleTimer} onMouseDown={handleGhostMouseDown} className="cursor-move transition-opacity duration-300 opacity-50 group-hover:opacity-100">
                   <TimerDisplay
                     timeLeft={timeLeft}
                     initialTime={initialTime}
@@ -1002,16 +1173,17 @@ const handleTimerComplete = async () => {
                     formatTime={formatTime}
                     isGhost={true}
                   />
+                  </div>
                   
                   <div className="absolute bottom-8 flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                      <button onClick={toggleTimer} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 shadow-lg ${isCyberpunk ? 'bg-[#00f0ff] text-black' : 'bg-white text-black'}`}>
+                      <button onClick={toggleTimer} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 shadow-lg ${isCyberpunk ? 'text-black' : 'bg-white text-black'}`} style={isCyberpunk ? { backgroundColor: phaseColor, boxShadow: `0 0 20px ${phaseColor}80` } : {}}>
                           {isActive ? <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
                       </button>
-                      <button onClick={resetTimer} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 ${isCyberpunk ? 'bg-black/60 text-[#00f0ff]' : 'bg-black/40 text-white'}`}>
+                      <button onClick={resetTimer} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 ${isCyberpunk ? 'bg-black/60' : 'bg-black/40 text-white'}`} style={isCyberpunk ? { color: phaseColor, boxShadow: `0 0 15px ${phaseColor}40`, borderColor: phaseColor, borderWidth: '1px' } : {}}>
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                       </button>
-                      {mode === 'POMO' && <button onClick={skipPhase} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 ${isCyberpunk ? 'bg-black/60 text-[#00f0ff]' : 'bg-black/40 text-white'}`}>
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="m9 5 7 7-7 7"/></svg>
+                      {mode === 'POMO' && <button onClick={skipPhase} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 ${isCyberpunk ? 'bg-black/60' : 'bg-black/40 text-white'}`} style={isCyberpunk ? { color: phaseColor, boxShadow: `0 0 15px ${phaseColor}40`, borderColor: phaseColor, borderWidth: '1px' } : {}}>
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="m9 5 7 7-7 7"/></svg>
                       </button>}
                   </div>
               </div>
@@ -1192,15 +1364,20 @@ return (
                     isCyberpunk={isCyberpunk}
                 />
                  
-                 <TimerDisplay 
-                    timeLeft={timeLeft}
-                    initialTime={initialTime}
-                    mode={mode}
-                    phase={phase}
-                    isActive={isActive}
-                    isCyberpunk={isCyberpunk}
-                    formatTime={formatTime}
-                 />
+                 <div className="relative flex justify-center items-center">
+                    {isActive && (
+                        <div className={`absolute inset-8 rounded-full blur-2xl animate-pulse transition-all duration-1000 pointer-events-none ${isCyberpunk ? 'bg-gradient-to-tr from-[#00f0ff]/20 to-transparent' : 'bg-gradient-to-tr from-blue-900/40 to-blue-600/10 dark:from-blue-600/30 dark:to-blue-400/5'}`}></div>
+                    )}
+                     <TimerDisplay 
+                        timeLeft={timeLeft}
+                        initialTime={initialTime}
+                        mode={mode}
+                        phase={phase}
+                        isActive={isActive}
+                        isCyberpunk={isCyberpunk}
+                        formatTime={formatTime}
+                     />
+                 </div>
 
                  <TimerActionButtons
                     isActive={isActive}

@@ -92,11 +92,11 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
         <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} rounded-2xl p-6 border shadow-sm min-h-[500px] flex flex-col`}>
             <div className="flex justify-between items-center mb-6">
                 <h3 className={`text-xl font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Project Manager</h3>
-                <div className={`flex p-1 rounded-xl ${isCyberpunk ? 'bg-black border border-[#00f0ff]/20' : 'bg-gray-100 dark:bg-gray-700'}`}>
-                    <button onClick={() => setManagerTab('active')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${managerTab === 'active' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400') : 'text-gray-500 dark:text-gray-400'}`}>
+                <div className={`flex p-1 rounded-xl transition-all duration-300 ${isCyberpunk ? 'bg-black/40 border border-[#00f0ff]/20 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-gray-100 dark:bg-gray-700'}`}>
+                    <button onClick={() => setManagerTab('active')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all duration-300 ${managerTab === 'active' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)] border border-[#00f0ff]/50 animate-pulse' : 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff] hover:bg-[#00f0ff]/5' : 'text-gray-500 dark:text-gray-400')}`}>
                         Active
                     </button>
-                    <button onClick={() => setManagerTab('archived')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${managerTab === 'archived' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white') : 'text-gray-500 dark:text-gray-400'}`}>
+                    <button onClick={() => setManagerTab('archived')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all duration-300 ${managerTab === 'archived' ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)] border border-[#00f0ff]/50 animate-pulse' : 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff] hover:bg-[#00f0ff]/5' : 'text-gray-500 dark:text-gray-400')}`}>
                         Archived
                     </button>
                 </div>
