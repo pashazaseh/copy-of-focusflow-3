@@ -14,7 +14,22 @@ module.exports = {
     extend: {
       fontFamily: {
         sans: ['Inter', ...defaultTheme.fontFamily.sans],
+        orbitron: ['Orbitron', 'sans-serif'],
+        'space-mono': ['"Space Mono"', 'monospace'],
       },
+      animation: {
+        'spin-slow': 'spin 20s linear infinite',
+      },
+      backgroundImage: {
+        'radial-dark': 'radial-gradient(ellipse at center, #000 0%, #111827 80%)',
+        'radial-cyber': 'radial-gradient(ellipse at center, #000 0%, #050505 80%)',
+        'radial-light': 'radial-gradient(ellipse at center, #ccc 0%, #fff 70%)',
+      },
+      backgroundImage: {
+        'radial-dark': 'radial-gradient(ellipse at center, #000 0%, #111827 80%)',
+        'radial-cyber': 'radial-gradient(ellipse at center, #000 0%, #050505 80%)',
+        'radial-light': 'radial-gradient(ellipse at center, #ccc 0%, #fff 70%)',
+      }
     },
   },
   plugins: [],

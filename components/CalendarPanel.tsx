@@ -205,7 +205,10 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
                 { headers: { Authorization: `Bearer ${accessToken}` } }
             );
             
-            if (!calendarListRes.ok) throw new Error("Failed to fetch calendar list");
+            if (!calendarListRes.ok) {
+                const errText = await calendarListRes.text();
+                throw new Error(`Failed to fetch calendar list: ${calendarListRes.status} ${errText}`);
+            }
             const calendarList = await calendarListRes.json();
             
             if (!calendarList.items || calendarList.items.length === 0) {
@@ -248,9 +251,10 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
             if (isMounted.current) {
                 setGoogleEvents(allEvents);
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error fetching Google Calendar events:", error);
-            alert("Failed to sync Google Calendar. Please check your Client ID and permissions.");
+            const msg = error instanceof Error ? error.message : "Unknown error";
+            alert(`Failed to sync Google Calendar: ${msg}. Please check your Client ID and permissions.`);
             if (isMounted.current) setIsConnected(false);
         }
     }, []);

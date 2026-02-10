@@ -4,6 +4,14 @@ const fs = require('fs');
 const http = require('http');
 const { setDoNotDisturb } = require('./dnd');
 
+// Prevent EPIPE errors when writing to stdout/stderr (common in Electron)
+if (process.stdout && process.stdout.on) {
+  process.stdout.on('error', (err) => { if (err.code !== 'EPIPE') throw err; });
+}
+if (process.stderr && process.stderr.on) {
+  process.stderr.on('error', (err) => { if (err.code !== 'EPIPE') throw err; });
+}
+
 let tray = null;
 let win = null;
 let quickWin = null;
@@ -18,6 +26,12 @@ let currentGlobalShortcut = 'CommandOrControl+Shift+O';
 let lastTrayTitle = '';
 let ghostState = null;
 let isTimerActive = false;
+const ghostStatePath = path.join(app.getPath('userData'), 'ghost-window-state.json');
+
+// Ensure notifications work on Windows
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.yourname.focusflow');
+}
 
 // Helper to create a simple icon since we might not have assets
 function createTrayIcon() {
@@ -209,7 +223,7 @@ function createMiniCaptureWindow() {
   if (miniCaptureWin && !miniCaptureWin.isDestroyed()) {
     if (process.platform === 'darwin') {
       miniCaptureWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-      miniCaptureWin.setAlwaysOnTop(true, 'screen-saver', 1);
+      miniCaptureWin.setAlwaysOnTop(true, 'floating', 1); // Verified: floating + visibleOnFullScreen keeps it on top
     }
     miniCaptureWin.show();
     miniCaptureWin.focus();
@@ -232,13 +246,14 @@ function createMiniCaptureWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false // Allow external API calls (Gemini)
+      webSecurity: false, // Allow external API calls (Gemini)
+      backgroundThrottling: false
     }
   });
 
   if (process.platform === 'darwin') {
     miniCaptureWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    miniCaptureWin.setAlwaysOnTop(true, 'screen-saver', 1);
+    miniCaptureWin.setAlwaysOnTop(true, 'floating', 1); // Verified: floating + visibleOnFullScreen keeps it on top
     miniCaptureWin.setFullScreenable(false);
   } else {
     miniCaptureWin.setAlwaysOnTop(true, 'floating');
@@ -275,7 +290,6 @@ function triggerQuickCapture() {
 }
 
 function createGhostWindow(initialState) {
-    const ghostStatePath = path.join(app.getPath('userData'), 'ghost-window-state.json');
   if (ghostWin && !ghostWin.isDestroyed()) {
     ghostWin.show();
     ghostWin.focus();
@@ -303,6 +317,7 @@ function createGhostWindow(initialState) {
     hasShadow: false,
     center: !savedBounds.x,
     show: false,
+    type: 'panel',
     backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -315,7 +330,7 @@ function createGhostWindow(initialState) {
 
   if (process.platform === 'darwin') {
     ghostWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    ghostWin.setAlwaysOnTop(true, 'screen-saver', 1);
+    ghostWin.setAlwaysOnTop(true, 'floating', 1);
     ghostWin.setFullScreenable(false);
   } else {
     ghostWin.setAlwaysOnTop(true, 'floating');
@@ -415,6 +430,7 @@ function setupIpcHandlers() {
 
   // Quick Timer IPC
   ipcMain.on('quick-timer-set', (event, minutes) => {
+    console.log('[Timer Debug] Quick timer set:', minutes);
     hideQuickTimer();
     if (win && !win.isDestroyed()) {
       // Don't force show window, let it run in background (tray updates)
@@ -428,6 +444,7 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('quick-timer-cancel', () => {
+    console.log('[Timer Debug] Quick timer canceled');
     hideQuickTimer();
   });
 
@@ -690,6 +707,7 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('toggle-ghost-mode', (event, state) => {
+    console.log('[Timer Debug] Toggle ghost mode:', state);
     ghostState = state;
     if (ghostWin && !ghostWin.isDestroyed()) {
       // Exit Ghost Mode
@@ -712,7 +730,7 @@ function setupIpcHandlers() {
     if (win) {
       if (flag) {
         if (process.platform === 'darwin') {
-          win.setAlwaysOnTop(true, 'screen-saver', 1);
+          win.setAlwaysOnTop(true, 'floating', 1);
           win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
         } else {
           win.setAlwaysOnTop(true, 'floating');
@@ -724,11 +742,14 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('timer-action', (event, { action, payload }) => {
-    ghostState = payload;
+    console.log('[Timer Debug] Timer action:', action, payload);
+    // Update the master state cache
+    ghostState = { ...ghostState, ...payload };
     
     if (action === 'START_TIMER') isTimerActive = true;
     else if (action === 'PAUSE_TIMER' || action === 'RESET_TIMER') isTimerActive = false;
 
+    // Relay the action to all other windows
     const windows = [win, ghostWin].filter(w => w && !w.isDestroyed());
     windows.forEach(w => {
       if (w.webContents !== event.sender) {
@@ -738,6 +759,7 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('get-timer-state', (event) => {
+    console.log('[Timer Debug] Get timer state:', ghostState);
     if (ghostState) {
       event.sender.send('sync-timer-state', ghostState);
     }
@@ -762,7 +784,6 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('restart_app', () => {
-    const { autoUpdater } = require('electron-updater');
     autoUpdater.quitAndInstall();
   });
 }
@@ -811,6 +832,90 @@ function createWindow() {
     }
   });
 
+  const menuTemplate = [
+    {
+      label: 'FocusFlow',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideothers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    {
+      label: 'File',
+      submenu: [
+        { role: 'close' }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'pasteAndMatchStyle' },
+        { role: 'delete' },
+        { role: 'selectAll' },
+        { type: 'separator' },
+        {
+          label: 'Speech',
+          submenu: [
+            { role: 'startspeaking' },
+            { role: 'stopspeaking' }
+          ]
+        }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forcereload' },
+        { role: 'toggledevtools' },
+        { type: 'separator' },
+        { role: 'resetzoom' },
+        { role: 'zoomin' },
+        { role: 'zoomout' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        { role: 'front' }
+      ]
+    },
+    {
+      role: 'help',
+      submenu: [
+        {
+          label: 'Learn More',
+          click: async () => {
+            const { shell } = require('electron');
+            await shell.openExternal('https://electronjs.org');
+          }
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(menuTemplate);
+  Menu.setApplicationMenu(menu);
+
+
   const isDev = !app.isPackaged;
   if (isDev) {
     win.loadURL('http://localhost:5173');
@@ -827,7 +932,7 @@ function createWindow() {
 
 function createQuickWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
+  const { width, height } = primaryDisplay.bounds;
 
   quickWin = new BrowserWindow({
     width: width,
@@ -838,14 +943,16 @@ function createQuickWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     alwaysOnTop: true,
-    resizable: false,
+    resizable: true,
     show: false,
     hasShadow: false,
     skipTaskbar: true,
+    type: 'panel',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      backgroundThrottling: false
     }
   });
 
@@ -856,6 +963,7 @@ function createQuickWindow() {
   
   quickWin.loadURL(url);
 
+  // Force transparency to prevent "second background" flash
   quickWin.webContents.on('did-finish-load', () => {
     quickWin.webContents.insertCSS('html, body { background: transparent !important; }');
   });
@@ -880,75 +988,63 @@ function createQuickWindow() {
 function showQuickTimer() {
   if (!quickWin) createQuickWindow();
   
+  // Get current mouse position to find the active screen
   const cursorPoint = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursorPoint);
   
+  // Force the window to cover the ENTIRE display (including menu bar)
   quickWin.setBounds(display.bounds);
-  
-  let startX = cursorPoint.x;
-  let startY = cursorPoint.y;
 
+  // Ensure window is on top of everything (including menu bar on macOS)
+  if (process.platform === 'darwin') {
+    quickWin.setAlwaysOnTop(true, 'screen-saver', 1);
+    quickWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  } else {
+    quickWin.setAlwaysOnTop(true, 'screen-saver');
+  }
+  
+  // Calculate start point: Try tray bounds first for centering (the "ribbon" location), fallback to cursor
+  let startX = cursorPoint.x;
+  let startY = cursorPoint.y; // Default to cursor Y
+
+  // Use tray bounds if available for precise centering
   if (tray && !tray.isDestroyed()) {
       try {
           const bounds = tray.getBounds();
+          // Ensure valid bounds are returned (width > 0)
           if (bounds && bounds.width > 0) {
-              startX = Math.round(bounds.x + bounds.width / 2);
-              startY = Math.round(bounds.y + bounds.height / 2);
+              const trayX = Math.round(bounds.x + bounds.width / 2);
+              const trayY = Math.round(bounds.y + bounds.height / 2);
+              
+              // Verify tray coordinates are within the active display bounds
+              // This prevents issues where tray bounds are reported for primary display while cursor is on secondary
+              if (trayX >= display.bounds.x && trayX <= (display.bounds.x + display.bounds.width) &&
+                  trayY >= display.bounds.y && trayY <= (display.bounds.y + display.bounds.height)) {
+                  startX = trayX;
+                  startY = trayY;
+              }
           }
       } catch (e) {
-          // Fallback to cursor
+          console.error("Tray bounds error:", e);
       }
   }
 
-  const localX = startX - display.bounds.x;
-  const localY = startY - display.bounds.y;
+  // Convert Global (Screen) -> Local (Window) coordinates
+  const localX = Math.round(startX - display.bounds.x);
+  const localY = Math.round(startY - display.bounds.y);
     
+  // Inject the position immediately
   quickWin.webContents.executeJavaScript(`
-    const anchorId = 'quick-timer-anchor';
-    let anchor = document.getElementById(anchorId);
-    if (!anchor) {
-      anchor = document.createElement('div');
-      anchor.id = anchorId;
-      document.body.appendChild(anchor);
-    }
-    Object.assign(anchor.style, {
-      position: 'absolute',
-      left: '${localX}px',
-      top: '${localY}px',
-      width: '10px',
-      height: '10px',
-      backgroundColor: '#ffffff',
-      borderRadius: '50%',
-      transform: 'translate(-50%, -50%)',
-      zIndex: '9999',
-      pointerEvents: 'none',
-      boxShadow: '0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(0, 240, 255, 0.6)'
-    });
-
-    window.dispatchEvent(new CustomEvent('tray-position', { detail: { x: ${localX}, y: ${localY} } }));
-
-    if (window.quickTimerAutoClose) clearTimeout(window.quickTimerAutoClose);
-    if (window.clearAutoCloseTimer) {
-        window.removeEventListener('mousedown', window.clearAutoCloseTimer);
-        window.removeEventListener('touchstart', window.clearAutoCloseTimer);
-    }
-
-    window.clearAutoCloseTimer = () => {
-        if (window.quickTimerAutoClose) clearTimeout(window.quickTimerAutoClose);
-    };
-
-    window.quickTimerAutoClose = setTimeout(() => {
-        if (window.electronAPI) window.electronAPI.cancelQuickTimer();
-    }, 4000);
-
-    window.addEventListener('mousedown', window.clearAutoCloseTimer, { once: true });
-    window.addEventListener('touchstart', window.clearAutoCloseTimer, { once: true });
+    window.dispatchEvent(new CustomEvent('tray-position', { 
+        detail: { x: ${localX}, y: ${localY} } 
+    }));
   `).catch(() => {});
 
   quickWin.show();
-  quickWin.focus();
+  quickWin.focus(); // Crucial for receiving mousemove events
 }
 
+// Handle Deep Links (focusflow://)
 app.on('open-url', (event, url) => {
   event.preventDefault();
   if (win) {
@@ -958,6 +1054,7 @@ app.on('open-url', (event, url) => {
   }
 });
 
+// Local Auth Server for OAuth Callbacks (TickTick, etc.)
 function createAuthServer() {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost:54321');
@@ -967,7 +1064,7 @@ function createAuthServer() {
       if (win) {
         if (win.isMinimized()) win.restore();
         win.focus();
-        win.webContents.send('oauth-code', code);
+        win.webContents.send('oauth-code', code); // Send the code directly
       }
       
       res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -984,9 +1081,6 @@ function createAuthServer() {
 }
 
 app.whenReady().then(() => {
-    if (process.platform === 'win32') {
-      app.setAppUserModelId('com.yourname.focusflow');
-    }
     if (process.defaultApp) {
         if (process.argv.length >= 2) {
             app.setAsDefaultProtocolClient('focusflow', process.execPath, [path.resolve(process.argv[1])]);
@@ -998,7 +1092,7 @@ app.whenReady().then(() => {
     createWindow();
     createAuthServer();
 
-    const { autoUpdater } = require('electron-updater');
+    const autoUpdater = require('electron-updater').autoUpdater;
     autoUpdater.on('update-available', () => {
       if (win && !win.isDestroyed()) win.webContents.send('update_available');
     });
@@ -1009,7 +1103,9 @@ app.whenReady().then(() => {
         autoUpdater.checkForUpdatesAndNotify();
     });
     
+    // Defer non-critical background windows and tray to prioritize main window render
     setTimeout(() => {
+        // Register Global Hotkey for Quick Capture
         try {
             if (currentGlobalShortcut && !globalShortcut.isRegistered(currentGlobalShortcut)) {
                 globalShortcut.register(currentGlobalShortcut, triggerQuickCapture);
@@ -1020,7 +1116,9 @@ app.whenReady().then(() => {
 
         createQuickWindow();
         
+        // Create Tray
         defaultIcon = createTrayIcon();
+        // Create transparent icon (1x1 transparent pixel) to hide icon when text is shown
         const buffer = Buffer.alloc(4); 
         transparentIcon = nativeImage.createFromBuffer(buffer, { width: 1, height: 1 });
 
@@ -1032,16 +1130,25 @@ app.whenReady().then(() => {
             const template = [
                 {
                     label: "⏯ Start/Pause Timer",
-                    click: () => win.webContents.send('tray-action', { type: 'TOGGLE_TIMER' })
+                    click: () => {
+                        console.log('[Timer Debug] Tray: Toggle Timer');
+                        win && !win.isDestroyed() && win.webContents.send('tray-action', { type: 'TOGGLE_TIMER' });
+                    }
                 },
                 {
-                    label: "⏭ Skip Break", 
-                    click: () => win.webContents.send('tray-action', { type: 'SKIP_PHASE' })
+                    label: "⏭ Skip Break",
+                    click: () => {
+                        console.log('[Timer Debug] Tray: Skip Phase');
+                        win && !win.isDestroyed() && win.webContents.send('tray-action', { type: 'SKIP_PHASE' });
+                    }
                 },
                 { "type": "separator" },
                 {
-                    label: "⚡ Quick Focus (25m)", 
-                    click: () => win.webContents.send('tray-action', { type: 'START_FOCUS', duration: 25 })
+                    label: "⚡ Quick Focus (25m)",
+                    click: () => {
+                        console.log('[Timer Debug] Tray: Quick Focus');
+                        win && !win.isDestroyed() && win.webContents.send('tray-action', { type: 'START_FOCUS', duration: 25 });
+                    }
                 },
                 { label: '📝 Quick Capture', click: () => triggerQuickCapture() },
                 { type: 'separator' },
@@ -1051,7 +1158,9 @@ app.whenReady().then(() => {
             return Menu.buildFromTemplate(template);
         };
 
+        // Left Click: Trigger Quick Timer (Drag)
         tray.on('mouse-down', (event) => {
+            // Fix: Allow Option/Alt + Click or Ctrl + Click to show context menu
             if (event.altKey || event.ctrlKey) {
                 tray.popUpContextMenu(getDynamicMenu());
             } else {
@@ -1059,10 +1168,12 @@ app.whenReady().then(() => {
             }
         });
         
+        // Right Click: Open Context Menu
         tray.on('right-click', () => {
             tray.popUpContextMenu(getDynamicMenu());
         });
         
+        // macOS Dock Menu
         if (process.platform === 'darwin') {
             app.dock.setMenu(Menu.buildFromTemplate([
                 { label: 'New Timer (Drag)', click: () => showQuickTimer() },
@@ -1070,6 +1181,12 @@ app.whenReady().then(() => {
             ]));
         }
         
+        // Click on tray icon toggles context menu (default behavior for setContextMenu)
+        // If we want left click to trigger Drag immediately, we can intercept 'click'
+        // But user asked for "Select 'New Timer (Drag)'", which implies a menu. 
+        // However, Gestimer workflow usually triggers on drag. We stick to Menu per prompt "Access: left-click ... select ...".
+        
+        // Apply any pending title that came in before tray was ready
         if (lastTrayTitle) {
             if (process.platform === 'darwin') {
                 tray.setTitle(lastTrayTitle);
@@ -1090,7 +1207,7 @@ app.on('before-quit', () => {
   try {
     globalShortcut.unregisterAll();
   } catch (e) {
-    // Ignore error if app is not ready
+    // Ignore error if app is not ready (e.g. single instance lock check failed)
   }
 });
 
@@ -1099,6 +1216,7 @@ app.on('activate', () => {
   else if (win) win.show();
 });
 
+// Handle Second Instance (Focus existing window)
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
@@ -1107,6 +1225,7 @@ if (!gotTheLock) {
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
+      // Find the protocol url in commandLine
       const url = commandLine.find(arg => arg.startsWith('focusflow://'));
       if (url) win.webContents.send('oauth-code', url);
     }

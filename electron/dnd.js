@@ -14,7 +14,11 @@ function setDoNotDisturb(enable) {
     const action = enable ? 'Turn Do Not Disturb On' : 'Turn Do Not Disturb Off';
     exec(`shortcuts run "${action}"`, (error) => {
       if (error) {
-        console.error(`Failed to toggle DND (macOS): ${error.message}`);
+        try {
+          console.error(`Failed to toggle DND (macOS): ${error.message}`);
+        } catch (e) {
+          // Ignore EPIPE errors if stdout/stderr is closed
+        }
       }
     });
   } else if (platform === 'win32') {
@@ -26,7 +30,11 @@ function setDoNotDisturb(enable) {
     
     exec(`powershell -NoProfile -Command "${psCommand}"`, (error) => {
       if (error) {
-        console.error(`Failed to toggle DND (Windows): ${error.message}`);
+        try {
+          console.error(`Failed to toggle DND (Windows): ${error.message}`);
+        } catch (e) {
+          // Ignore EPIPE
+        }
       }
     });
   }

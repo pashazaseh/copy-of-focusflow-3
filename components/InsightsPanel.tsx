@@ -17,8 +17,8 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({ logs }) => {
     try {
       const result = await analyzeStudyHabits(logs);
       setAnalysis(result);
-    } catch (err) {
-      setError("Unable to generate insights. Check your API key or connection.");
+    } catch (err: any) {
+      setError(`Unable to generate insights: ${err.message || "Check API key"}`);
       console.error(err);
     } finally {
       setLoading(false);

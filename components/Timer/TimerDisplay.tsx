@@ -1,97 +1,168 @@
 import React from 'react';
 
-type TimerMode = 'POMO' | 'STOPWATCH';
-type TimerPhase = 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
-
 interface TimerDisplayProps {
+  mode: 'POMO' | 'STOPWATCH';
   timeLeft: number;
   initialTime: number;
-  mode: TimerMode;
-  phase: TimerPhase;
+  phase: 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
   isActive: boolean;
   isCyberpunk: boolean;
-  radius?: number;
   formatTime: (seconds: number) => string;
+  isGhost?: boolean;
 }
 
 export const TimerDisplay: React.FC<TimerDisplayProps> = ({
+  mode,
   timeLeft,
   initialTime,
-  mode,
   phase,
   isActive,
   isCyberpunk,
-  radius = 95,
-  formatTime
+  formatTime,
+  isGhost = false,
 }) => {
+  const progress =
+    mode === 'POMO'
+      ? initialTime > 0 ? (initialTime - timeLeft) / initialTime : 0
+      : (timeLeft % 60) / 60;
+
+  const getPhaseLabel = () => {
+      if (mode === 'STOPWATCH') return 'Stopwatch';
+      if (phase === 'FOCUS') return 'Focus';
+      if (phase === 'SHORT_BREAK') return 'Break';
+      if (phase === 'LONG_BREAK') return 'Long Break';
+      return '';
+  };
+
+  const radius = isGhost ? 85 : 110;
   const circumference = 2 * Math.PI * radius;
-  let progress = 0;
-  if (mode === 'POMO') {
-      progress = initialTime > 0 ? (initialTime - timeLeft) / initialTime : 0;
-  } else {
-      progress = (timeLeft % 60) / 60;
+  const offset = circumference * (1 - progress);
+
+  const phaseColorClass = () => {
+    if (mode === 'STOPWATCH') return isCyberpunk ? 'text-orange-400' : 'text-orange-500';
+    switch (phase) {
+        case 'FOCUS': return isCyberpunk ? 'text-cyan-400' : 'text-blue-500';
+        case 'SHORT_BREAK': return isCyberpunk ? 'text-purple-400' : 'text-green-500';
+        case 'LONG_BREAK': return isCyberpunk ? 'text-indigo-400' : 'text-indigo-500';
+        default: return 'text-gray-500';
+    }
+  };
+
+  const phaseStrokeColor = () => {
+      if (isCyberpunk) {
+          if (mode === 'STOPWATCH') return 'url(#stopwatch-gradient)';
+          return 'url(#progress-gradient)';
+      }
+      if (mode === 'STOPWATCH') return '#f97316';
+      switch (phase) {
+          case 'FOCUS': return '#3b82f6';
+          case 'SHORT_BREAK': return '#22c55e';
+          case 'LONG_BREAK': return '#6366f1';
+          default: return '#6b7280';
+      }
   }
-  const dashOffset = circumference * (1 - progress);
-  const isUrgent = mode === 'POMO' && initialTime > 0 && (timeLeft / initialTime) <= 0.15;
-  const themeColor = mode === 'STOPWATCH' ? 'text-orange-500' : isUrgent ? 'text-red-500' : phase === 'FOCUS' ? 'text-blue-500' : 'text-green-500';
-  const shouldAnimate = progress !== 0;
+
+  const ticks = Array.from({ length: 60 }, (_, i) => {
+    const angle = i * 6;
+    const isFiveMinMark = i % 5 === 0;
+    const center = isGhost ? 100 : 120;
+    return (
+        <line
+            key={i}
+            x1={center}
+            y1="5"
+            x2={center}
+            y2={isFiveMinMark ? (isGhost ? 14 : 18) : (isGhost ? 10 : 12)}
+            strokeWidth={isFiveMinMark ? (isGhost ? 1.5 : 2) : 1}
+            className={isCyberpunk ? "stroke-cyan-400/20" : "stroke-gray-300 dark:stroke-gray-600"}
+            style={{ transform: `rotate(${angle}deg)`, transformOrigin: 'center' }}
+        />
+    )
+  });
+
 
   return (
-    <div className="relative w-full max-w-[380px] aspect-square flex items-center justify-center mb-4 group">
-      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 200 200">
-        <defs>
-          <linearGradient id="focusGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={isCyberpunk ? "#00f0ff" : "#60A5FA"} />
-            <stop offset="100%" stopColor={isCyberpunk ? "#0099ff" : "#3B82F6"} />
-          </linearGradient>
-          <linearGradient id="breakGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#34D399" />
-            <stop offset="100%" stopColor="#10B981" />
-          </linearGradient>
-          <linearGradient id="stopwatchGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#FBBF24" />
-            <stop offset="100%" stopColor="#F59E0B" />
-          </linearGradient>
-          <linearGradient id="urgentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={isCyberpunk ? "#ff0055" : "#F87171"} />
-            <stop offset="100%" stopColor={isCyberpunk ? "#ff0000" : "#EF4444"} />
-          </linearGradient>
-          <filter id="cyberGlow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="4" result="coloredBlur" in="SourceGraphic" />
-            <feMerge>
-              <feMergeNode in="coloredBlur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-          <filter id="pinkGlow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
-            <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -5" result="goo" />
-            <feBlend in="SourceGraphic" in2="goo" />
-          </filter>
-        </defs>
-        
-        {/* Background Track */}
-        <circle cx="100" cy="100" r={radius} className={isCyberpunk ? 'stroke-gray-800' : 'stroke-gray-200 dark:stroke-gray-800'} strokeWidth="3" fill="transparent" strokeDasharray="4 4" />
+    <div className={`flex items-center justify-center ${isGhost ? 'relative w-full h-full' : 'relative w-96 h-96 mb-2'}`}>
+        <svg className="absolute inset-0 w-full h-full" viewBox={isGhost ? "0 0 200 200" : "0 0 240 240"}>
+            <defs>
+                <linearGradient id="progress-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor={isCyberpunk ? "#00f0ff" : "#60a5fa"} />
+                    <stop offset="100%" stopColor={isCyberpunk ? "#3b82f6" : "#818cf8"} />
+                </linearGradient>
+                <linearGradient id="stopwatch-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#facc15" /> 
+                    <stop offset="100%" stopColor="#f97316" />
+                </linearGradient>
+                <radialGradient id="blue-glow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="rgba(0, 120, 255, 0.7)" />
+                    <stop offset="100%" stopColor="rgba(0, 120, 255, 0)" />
+                </radialGradient>
+                <filter id="glow-filter" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="3.5" result="coloredBlur" />
+                    <feMerge>
+                        <feMergeNode in="coloredBlur" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+                <filter id="background-glow-filter" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="15" result="coloredBlur" />
+                    <feMerge>
+                        <feMergeNode in="coloredBlur" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+            </defs>
 
-        {/* Tick Marks */}
-        {Array.from({ length: 12 }).map((_, i) => {
-            const angle = (i / 12) * 2 * Math.PI;
-            const x1 = 100 + Math.cos(angle) * (radius - 4);
-            const y1 = 100 + Math.sin(angle) * (radius - 4);
-            const x2 = 100 + Math.cos(angle) * (radius + 4);
-            const y2 = 100 + Math.sin(angle) * (radius + 4);
-            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className={isCyberpunk ? 'stroke-[#00f0ff]/20' : 'stroke-gray-300 dark:stroke-gray-700'} strokeWidth="1.5" />;
-        })}
+            <circle
+                cx={isGhost ? 100 : 120}
+                cy={isGhost ? 100 : 120}
+                r={radius}
+                fill="url(#blue-glow)"
+                className={isCyberpunk && isActive ? 'animate-pulse' : 'opacity-0'}
+                filter="url(#background-glow-filter)"
+            />
 
-        {/* Progress Circle */}
-        <circle cx="100" cy="100" r={radius} stroke={`url(#${isUrgent ? 'urgentGradient' : mode === 'POMO' ? (phase === 'FOCUS' ? 'focusGradient' : 'breakGradient') : 'stopwatchGradient'})`} strokeWidth="4" fill="transparent" strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" className={`${shouldAnimate ? 'transition-all duration-1000 ease-linear' : ''}`} style={{ filter: isCyberpunk ? (isUrgent ? 'url(#pinkGlow)' : 'url(#cyberGlow)') : `drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))` }}/>
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-          <div className={`text-7xl md:text-8xl font-black tracking-tighter tabular-nums select-none transition-colors duration-300 ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_15px_rgba(0,240,255,0.6)]' : themeColor} drop-shadow-sm`}>{formatTime(timeLeft)}</div>
-          <div className={`mt-2 text-sm font-bold uppercase tracking-widest ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-400 dark:text-gray-500'}`}>{mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus' : phase === 'SHORT_BREAK' ? 'Short Break' : 'Long Break') : 'Stopwatch'}</div>
-      </div>
+            {!isGhost && <g>{ticks}</g>}
+
+            <g style={{ transformOrigin: 'center', transform: 'rotate(-90deg)' }}>
+                <circle
+                    cx={isGhost ? 100 : 120}
+                    cy={isGhost ? 100 : 120}
+                    r={radius}
+                    strokeWidth={isGhost ? 8 : 12}
+                    fill="transparent"
+                    className={isCyberpunk ? "stroke-cyan-400/10" : "stroke-gray-200 dark:stroke-gray-700/50"}
+                />
+                <circle
+                    cx={isGhost ? 100 : 120}
+                    cy={isGhost ? 100 : 120}
+                    r={radius}
+                    strokeWidth={isGhost ? 8 : 12}
+                    fill="transparent"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={offset}
+                    strokeLinecap="round"
+                    style={{ transition: 'stroke-dashoffset 0.5s linear' }}
+                    stroke={phaseStrokeColor()}
+                    className={`${isActive ? 'animate-pulse' : ''}`}
+                    filter={"url(#glow-filter)"}
+                />
+            </g>
+        </svg>
+        <div className="z-10 flex flex-col items-center justify-center text-center">
+            <div className={`font-orbitron font-bold tracking-tighter tabular-nums transition-colors ${isGhost ? 'text-5xl' : 'text-6xl'} ${
+                isCyberpunk
+                    ? 'text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.4)]'
+                    : 'text-gray-800 dark:text-white'
+            }`}>
+                {formatTime(timeLeft)}
+            </div>
+            <div className={`font-space-mono text-center text-xs font-bold uppercase tracking-[0.3em] mt-2 transition-colors ${
+                isActive ? phaseColorClass() : 'text-gray-400 dark:text-gray-600'
+            }`}>
+                {getPhaseLabel()}
+            </div>
+        </div>
     </div>
   );
 };
-
-export default TimerDisplay;

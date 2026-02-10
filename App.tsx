@@ -580,9 +580,9 @@ function FocusFlowContent() {
       // Note: updateProjects in context also saves to storage
   };
 
-  const handleConsumeQuickTimer = () => {
+  const handleConsumeQuickTimer = useCallback(() => {
       setPendingQuickTimer(null);
-  };
+  }, [setPendingQuickTimer]);
 
   const handleManageProjects = () => {
       setCurrentView(ViewMode.SETTINGS);

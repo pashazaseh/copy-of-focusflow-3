@@ -190,13 +190,21 @@ export const MiniCaptureWindow: React.FC = () => {
             });
             
             const data = await response.json();
+
+            if (!response.ok) {
+                console.error("Gemini API Error:", data);
+                setStatus(`Error: ${data.error?.message || response.statusText}`);
+                return;
+            }
+
             if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
                 setText(data.candidates[0].content.parts[0].text.trim());
                 setStatus('✨ Enhanced!');
             } else {
-                setStatus('Error: AI Failed');
+                setStatus('Error: No response');
             }
         } catch (e) {
+            console.error(e);
             setStatus('Error: Network');
         } finally {
             setIsEnhancing(false);
