@@ -313,7 +313,10 @@ export const getProjects = async (): Promise<Project[]> => {
         theme: 'green',
         createdAt: new Date().toISOString(),
         sortOrder: 0,
-        isArchived: false
+        isArchived: false,
+        streak: { current: 0, best: 0, lastActiveDate: '' },
+        xp: 0,
+        unlockedTrophies: []
     };
     
     let projects = await dbGet<Project[]>(PROJECTS_KEY, [defaultProject]);

@@ -75,8 +75,8 @@
 }
 
 @keyframes ghost-pulse {
-  0%, 100% { opacity: 0.3; transform: scale(0.95); }
-  50% { opacity: 0.6; transform: scale(1.0); }
+  0%, 100% { opacity: 0.6; transform: scale(0.95); }
+  50% { opacity: 0.9; transform: scale(1.0); }
 }
 
 .animate-ghost-pulse {

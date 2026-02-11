@@ -79,6 +79,26 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         return 'yourname/focusflow';
     });
 
+    const [minimizeToTray, setMinimizeToTray] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_minimize_to_tray') === 'true';
+        return false;
+    });
+
+    const [showInDock, setShowInDock] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_show_in_dock') !== 'false';
+        return true;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('focusflow_minimize_to_tray', String(minimizeToTray));
+        (window.electronAPI as any)?.setMinimizeToTray?.(minimizeToTray);
+    }, [minimizeToTray]);
+
+    useEffect(() => {
+        localStorage.setItem('focusflow_show_in_dock', String(showInDock));
+        (window.electronAPI as any)?.setShowInDock?.(showInDock);
+    }, [showInDock]);
+
     const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
 
     const testRepoConnection = async (repoOverride?: string) => {
@@ -164,7 +184,38 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     {/* Content Area */}
                     <div className="space-y-6">
                         {activeTab === 'general' && (
-                            <GeneralSettings navConfig={navConfig} onUpdateNavConfig={onUpdateNavConfig} isDarkMode={isDarkMode} onToggleTheme={onToggleTheme} appTheme={appTheme} setAppTheme={setAppTheme} inventory={inventory} sidebarConfig={sidebarConfig} onUpdateSidebarConfig={onUpdateSidebarConfig} menuBarConfig={menuBarConfig} onUpdateMenuBarConfig={onUpdateMenuBarConfig} countdowns={countdowns} />
+                            <>
+                                <GeneralSettings navConfig={navConfig} onUpdateNavConfig={onUpdateNavConfig} isDarkMode={isDarkMode} onToggleTheme={onToggleTheme} appTheme={appTheme} setAppTheme={setAppTheme} inventory={inventory} sidebarConfig={sidebarConfig} onUpdateSidebarConfig={onUpdateSidebarConfig} menuBarConfig={menuBarConfig} onUpdateMenuBarConfig={onUpdateMenuBarConfig} countdowns={countdowns} />
+                                <div className={`p-6 rounded-2xl border shadow-sm ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                                    <h3 className={`text-xl font-bold mb-4 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Window Behavior</h3>
+                                    <div className="space-y-4">
+                                        <label className="flex items-center justify-between cursor-pointer">
+                                            <span className={`text-sm font-medium ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-gray-700 dark:text-gray-300'}`}>Minimize to Menu Bar (Tray)</span>
+                                            <div className="relative">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={minimizeToTray} 
+                                                    onChange={(e) => setMinimizeToTray(e.target.checked)} 
+                                                    className="sr-only peer" 
+                                                />
+                                                <div className={`w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${isCyberpunk ? 'peer-checked:bg-[#00f0ff]' : 'peer-checked:bg-blue-600'}`}></div>
+                                            </div>
+                                        </label>
+                                        <label className="flex items-center justify-between cursor-pointer">
+                                            <span className={`text-sm font-medium ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-gray-700 dark:text-gray-300'}`}>Show in Dock</span>
+                                            <div className="relative">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={showInDock} 
+                                                    onChange={(e) => setShowInDock(e.target.checked)} 
+                                                    className="sr-only peer" 
+                                                />
+                                                <div className={`w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${isCyberpunk ? 'peer-checked:bg-[#00f0ff]' : 'peer-checked:bg-blue-600'}`}></div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                            </>
                         )}
                         {activeTab === 'projects' && <ProjectSettings projects={projects} onCreateProject={onCreateProject} onDeleteProject={onDeleteProject} onUpdateProjects={onUpdateProjects} appTheme={appTheme} />}
                         {activeTab === 'timer' && (

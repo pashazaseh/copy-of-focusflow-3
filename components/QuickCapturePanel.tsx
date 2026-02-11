@@ -4,6 +4,7 @@ import { useTheme, useProjects } from '../AppContext';
 import { CustomPrompt, CaptureDestination, Project } from '../types';
 import { PromptManager } from './PromptManager';
 import * as storage from '../services/storageService';
+import { parseNaturalLanguage } from './nlService';
 
 interface CaptureTemplate {
     id: string;

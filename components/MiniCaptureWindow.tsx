@@ -4,6 +4,7 @@ import { useTheme, useProjects } from '../AppContext';
 import { CustomPrompt, CaptureDestination, Project } from '../types';
 import { PromptManager } from './PromptManager';
 import * as storage from '../services/storageService';
+import { parseNaturalLanguage } from './nlService';
 
 export const MiniCaptureWindow: React.FC = () => {
     const { appTheme } = useTheme();
@@ -35,13 +36,15 @@ export const MiniCaptureWindow: React.FC = () => {
 
     const [isDragging, setIsDragging] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
+    const [isPinned, setIsPinned] = useState(true);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
-
+    const isAutocompleteOpenRef = useRef(false);
     const [parsedProject, setParsedProject] = useState('');
     const [parsedDate, setParsedDate] = useState('');
+    const [parsedDuration, setParsedDuration] = useState('');
     const [parsedPriority, setParsedPriority] = useState('');
 
     // Autocomplete State
@@ -88,15 +91,21 @@ export const MiniCaptureWindow: React.FC = () => {
                 pDate = dMatch[0];
             }
 
+            // Natural Language Date/Time
+            const { date, time, duration } = parseNaturalLanguage(inputText);
+            if (date) {
+                pDate = date.toISOString();
+            }
+
             setParsedProject(pProject);
             setParsedPriority(pPriority);
             setParsedDate(pDate);
+            setParsedDuration(duration || '');
         };
         parseInput(text);
     }, [text, projects]);
 
     // Sync autocomplete state to ref for global event handler
-    const isAutocompleteOpenRef = useRef(false);
     useEffect(() => { isAutocompleteOpenRef.current = autocomplete.isOpen; }, [autocomplete.isOpen]);
 
     useEffect(() => {
@@ -514,6 +523,36 @@ export const MiniCaptureWindow: React.FC = () => {
         }
     };
 
+    const togglePin = () => {
+        const newState = !isPinned;
+        setIsPinned(newState);
+        (window.electronAPI as any)?.setAlwaysOnTop(newState);
+    };
+
+    const handleResizeStart = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const startX = e.screenX;
+        const startY = e.screenY;
+        const startWidth = window.outerWidth;
+        const startHeight = window.outerHeight;
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const newWidth = Math.max(300, startWidth + (e.screenX - startX));
+            const newHeight = Math.max(200, startHeight + (e.screenY - startY));
+            (window.electronAPI as any)?.resizeWindow(Math.round(newWidth), Math.round(newHeight));
+        };
+
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+    };
+
     return (
         <div className={`h-screen w-screen flex flex-col overflow-hidden transition-all duration-300 ${isCyberpunk ? 'bg-black/40 text-[#00f0ff] font-mono border border-[#00f0ff]/30' : 'bg-white/60 dark:bg-[#121212]/60 text-gray-900 dark:text-white border border-gray-200/20 dark:border-white/10'} backdrop-blur-2xl rounded-2xl`}>
             {/* Drag Handle & Header */}
@@ -540,13 +579,21 @@ export const MiniCaptureWindow: React.FC = () => {
                         </div>
                     </div>
                 </div>
-                <button 
-                    onClick={() => window.electronAPI?.close()} 
-                    className={`w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200/50 dark:hover:bg-white/10 transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'text-gray-400 dark:text-gray-500'}`}
-                    style={{ WebkitAppRegion: 'no-drag' } as any}
-                >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+                <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                    <button 
+                        onClick={togglePin} 
+                        className={`w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200/50 dark:hover:bg-white/10 transition-colors ${isPinned ? (isCyberpunk ? 'text-[#00f0ff]' : 'text-blue-500') : (isCyberpunk ? 'text-[#00f0ff]/40' : 'text-gray-400 dark:text-gray-500')}`}
+                        title={isPinned ? "Unpin" : "Pin on Top"}
+                    >
+                        <svg className="w-3.5 h-3.5" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                    </button>
+                    <button 
+                        onClick={() => window.electronAPI?.close()} 
+                        className={`w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200/50 dark:hover:bg-white/10 transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'text-gray-400 dark:text-gray-500'}`}
+                    >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
             </div>
             
             {/* Content */}
@@ -701,6 +748,12 @@ export const MiniCaptureWindow: React.FC = () => {
                 prompts={customPrompts} 
                 onUpdatePrompts={updateCustomPrompts} 
             />
+            {/* Resize Handle */}
+            <div onMouseDown={handleResizeStart} className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-50 flex items-end justify-end p-0.5 opacity-0 hover:opacity-100 transition-opacity">
+                <svg className={`w-3 h-3 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-400 dark:text-gray-500'}`} viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22 22H20V20H22V22ZM22 18H20V16H22V18ZM18 22H16V20H18V22ZM22 14H20V12H22V14ZM14 22H12V20H14V22ZM18 18H16V16H18V18Z" />
+                </svg>
+            </div>
         </div>
     );
 };

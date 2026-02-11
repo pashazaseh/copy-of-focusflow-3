@@ -227,10 +227,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setProjects(updated);
                 setCurrentProjectId(newProject.id);
             }
-        } catch (error) {
-            console.error("Failed to create project:", error);
+        } catch (err) {
+            console.error('Error creating project:', err);
         }
-    }, [projects.length]);
+    }, [projects]);
 
     const deleteProject = useCallback(async (id: string) => {
         try {

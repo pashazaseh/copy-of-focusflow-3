@@ -87,7 +87,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
     }
 
     return (
-        <div className={`relative w-full max-w-[380px] aspect-square flex items-center justify-center mb-4 group ${isGhost ? 'scale-90' : ''}`}>
+        <div className={`relative w-full max-w-[460px] aspect-square flex items-center justify-center mb-8 group ${isGhost ? 'scale-90' : ''}`}>
             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 200 200">
                 <defs>
                     <linearGradient id="focusGradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -113,13 +113,13 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
                     <filter id="glow-red" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
                 </defs>
 
-                <circle cx="100" cy="100" r={radius} className={isCyberpunk ? "stroke-gray-800" : "stroke-gray-200 dark:stroke-gray-800"} strokeWidth="3" fill="transparent" strokeDasharray="4 4" />
+                <circle cx="100" cy="100" r={radius} className={isCyberpunk ? "stroke-gray-800" : "stroke-gray-200 dark:stroke-gray-800"} strokeWidth="6" fill="transparent" strokeDasharray="4 4" />
                 {Array.from({ length: 12 }).map((_, i) => { const angle = (i / 12) * 2 * Math.PI; const x1 = 100 + Math.cos(angle) * (radius - 4); const y1 = 100 + Math.sin(angle) * (radius - 4); const x2 = 100 + Math.cos(angle) * (radius + 4); const y2 = 100 + Math.sin(angle) * (radius + 4); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className={isCyberpunk ? "stroke-[#00f0ff]/20" : "stroke-gray-300 dark:stroke-gray-700"} strokeWidth="1.5" />; })}
-                <circle cx="100" cy="100" r={radius} stroke={strokeUrl} strokeWidth="4" fill="transparent" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: filterUrl }} />
+                <circle cx="100" cy="100" r={radius} stroke={strokeUrl} strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: filterUrl }} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-                <div className={`text-7xl md:text-8xl font-black tracking-tighter tabular-nums select-none transition-colors duration-300 ${textColor} ${dropShadow} drop-shadow-sm`}>{formatTime(timeLeft)}</div>
-                <div className={`mt-2 text-sm font-bold uppercase tracking-widest ${subTextColor}`}>{mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus' : phase === 'SHORT_BREAK' ? 'Short Break' : 'Long Break') : 'Stopwatch'}</div>
+                <div className={`text-6xl md:text-8xl font-mono font-bold tracking-tighter tabular-nums select-none transition-colors duration-300 ${textColor} ${dropShadow} drop-shadow-sm`}>{formatTime(timeLeft)}</div>
+                <div className={`mt-4 text-sm font-bold uppercase tracking-widest ${subTextColor}`}>{mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus' : phase === 'SHORT_BREAK' ? 'Short Break' : 'Long Break') : 'Stopwatch'}</div>
             </div>
         </div>
     );
@@ -1191,10 +1191,21 @@ const handleTimerComplete = async () => {
   }, [isGhostMode, isActive, isUrgent]);
 
   if (isGhostMode) {
-      const { primary, glow } = getGhostColor(timeLeft, initialTime);
+      let primary, glow, progress;
+
+      if (mode === 'STOPWATCH') {
+          progress = (timeLeft % 60) / 60;
+          primary = '#F59E0B'; // Orange
+          glow = 'rgba(245, 158, 11, 0.3)';
+      } else {
+          const colors = getGhostColor(timeLeft, initialTime);
+          primary = colors.primary;
+          glow = colors.glow;
+          progress = initialTime > 0 ? Math.max(0, Math.min(1, timeLeft / initialTime)) : 0;
+      }
+
       const radius = 88;
       const circumference = 2 * Math.PI * radius;
-      const progress = initialTime > 0 ? Math.max(0, Math.min(1, timeLeft / initialTime)) : 0;
       const dashOffset = circumference * (1 - progress);
 
       return (
@@ -1466,7 +1477,7 @@ return (
                  
                  <div className="relative flex justify-center items-center">
                     {isActive && (
-                        <div className={`absolute inset-8 rounded-full blur-2xl animate-pulse transition-all duration-1000 pointer-events-none ${isCyberpunk ? 'bg-gradient-to-tr from-[#00f0ff]/20 to-transparent' : 'bg-gradient-to-tr from-blue-900/40 to-blue-600/10 dark:from-blue-600/30 dark:to-blue-400/5'}`}></div>
+                        <div className={`absolute -inset-4 rounded-full blur-3xl animate-pulse transition-all duration-1000 pointer-events-none ${isCyberpunk ? 'bg-[#00f0ff]/20' : 'bg-blue-500/20 dark:bg-blue-400/10'}`}></div>
                     )}
                      <TimerDisplay 
                         timeLeft={timeLeft}

@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleGhostMode: (state) => ipcRenderer.send('toggle-ghost-mode', state),
   setWindowPosition: (x, y) => ipcRenderer.send('window-move', { x, y }),
   setAlwaysOnTop: (flag) => ipcRenderer.send('set-always-on-top', flag),
+  resizeWindow: (width, height) => ipcRenderer.send('window-resize', { width, height }),
   onTimerUpdate: (callback) => {
     const handler = (event, { action, payload }) => callback(action, payload);
     ipcRenderer.on('timer-update', handler);

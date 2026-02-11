@@ -1,7 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+const easeOutElastic = (x: number): number => {
+    const c4 = (2 * Math.PI) / 3;
+    return x === 0
+      ? 0
+      : x === 1
+      ? 1
+      : Math.pow(2, -10 * x) * Math.sin((x * 10 - 0.75) * c4) + 1;
+};
+
 export const QuickTimerOverlay: React.FC = () => {
     const [isDragging, setIsDragging] = useState(false);
+    const [isSnapping, setIsSnapping] = useState(false);
     const [startPoint, setStartPoint] = useState({ x: 0, y: 0 });
     const [cursor, setCursor] = useState({ x: 0, y: 0 });
 
@@ -22,8 +32,6 @@ export const QuickTimerOverlay: React.FC = () => {
             startPointRef.current = point;
             cursorRef.current = point;
 
-            // Optimization: Start dragging immediately upon receiving coordinates
-            // This eliminates the latency of waiting for the first mousemove
             setIsDragging(true);
         };
 
@@ -49,7 +57,13 @@ export const QuickTimerOverlay: React.FC = () => {
             const minutes = Math.max(5, Math.round(distance / 10));
             
             if (distance > 50) { // Threshold to commit
-                window.electronAPI?.startQuickTimer(minutes);
+                setIsDragging(false);
+                setIsSnapping(true);
+                
+                setTimeout(() => {
+                    window.electronAPI?.startQuickTimer(minutes);
+                    setIsSnapping(false);
+                }, 400);
             } else {
                 window.electronAPI?.cancelQuickTimer();
             }
@@ -64,7 +78,30 @@ export const QuickTimerOverlay: React.FC = () => {
         };
     }, [isDragging]);
 
-    if (!isDragging) return null;
+    useEffect(() => {
+        if (isSnapping) {
+            const start = startPointRef.current;
+            const initial = cursor;
+            const startTime = performance.now();
+            const duration = 400;
+
+            const animate = (time: number) => {
+                const elapsed = time - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const ease = easeOutElastic(progress);
+                
+                setCursor({
+                    x: initial.x + (start.x - initial.x) * ease,
+                    y: initial.y + (start.y - initial.y) * ease
+                });
+
+                if (progress < 1) requestAnimationFrame(animate);
+            };
+            requestAnimationFrame(animate);
+        }
+    }, [isSnapping]);
+
+    if (!isDragging && !isSnapping) return null;
 
     const distance = Math.sqrt(Math.pow(cursor.x - startPoint.x, 2) + Math.pow(cursor.y - startPoint.y, 2));
     const minutes = Math.max(5, Math.round(distance / 10));
@@ -101,6 +138,7 @@ export const QuickTimerOverlay: React.FC = () => {
                 <circle cx={cursor.x} cy={cursor.y} r="5" fill="#00f0ff" fillOpacity="0.2" stroke="#00f0ff" strokeWidth="1.5" filter="url(#glow)" />
                 <circle cx={cursor.x} cy={cursor.y} r="2" fill="#fff" />
             </svg>
+            {!isSnapping && (
             <div 
                 className="absolute text-[#00f0ff] font-mono font-bold text-xl bg-black/90 px-4 py-2 rounded-xl backdrop-blur-md border border-[#00f0ff]/30 shadow-[0_0_20px_rgba(0,240,255,0.4)] flex flex-col items-center"
                 style={{ 
@@ -112,6 +150,7 @@ export const QuickTimerOverlay: React.FC = () => {
                 <span>{minutes}m</span>
                 <div className="text-[10px] text-[#00f0ff]/60 uppercase tracking-widest mt-0.5">Release to Start</div>
             </div>
+            )}
         </div>
     );
 };

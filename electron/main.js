@@ -476,6 +476,13 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.on('window-resize', (event, { width, height }) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window && !window.isDestroyed()) {
+      window.setSize(width, height);
+    }
+  });
+
   ipcMain.on('update-tray-title', (event, title) => {
     let displayTitle = title;
     if (displayTitle && displayTitle.length > 20) {
@@ -780,21 +787,25 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('toggle-ghost-mode', (event, state) => {
-    console.log('[Timer Debug] Toggle ghost mode:', state);
-    ghostState = state;
-    if (ghostWin && !ghostWin.isDestroyed()) {
-      // Exit Ghost Mode
-      if (win && !win.isDestroyed()) {
-        win.show();
-        win.webContents.send('sync-timer-state', state);
+    try {
+      console.log('[Timer Debug] Toggle ghost mode:', state);
+      ghostState = state;
+      if (ghostWin && !ghostWin.isDestroyed()) {
+        // Exit Ghost Mode
+        if (win && !win.isDestroyed()) {
+          win.show();
+          win.webContents.send('sync-timer-state', state);
+        }
+        ghostWin.close();
+      } else {
+        // Enter Ghost Mode
+        createGhostWindow(state);
+        if (win && !win.isDestroyed()) {
+          win.hide();
+        }
       }
-      ghostWin.close();
-    } else {
-      // Enter Ghost Mode
-      createGhostWindow(state);
-      if (win && !win.isDestroyed()) {
-        win.hide();
-      }
+    } catch (e) {
+      console.error("Error in toggle-ghost-mode:", e);
     }
   });
 
@@ -815,20 +826,24 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('timer-action', (event, { action, payload }) => {
-    console.log('[Timer Debug] Timer action:', action, payload);
-    // Update the master state cache
-    ghostState = payload;
-    
-    if (action === 'START_TIMER') isTimerActive = true;
-    else if (action === 'PAUSE_TIMER' || action === 'RESET_TIMER') isTimerActive = false;
+    try {
+      console.log('[Timer Debug] Timer action:', action, payload);
+      // Update the master state cache
+      ghostState = payload;
+      
+      if (action === 'START_TIMER') isTimerActive = true;
+      else if (action === 'PAUSE_TIMER' || action === 'RESET_TIMER') isTimerActive = false;
 
-    // Relay the action to all other windows
-    const windows = [win, ghostWin].filter(w => w && !w.isDestroyed());
-    windows.forEach(w => {
-      if (w.webContents !== event.sender) {
-        w.webContents.send('timer-update', { action, payload });
-      }
-    });
+      // Relay the action to all other windows
+      const windows = [win, ghostWin].filter(w => w && !w.isDestroyed());
+      windows.forEach(w => {
+        if (w.webContents !== event.sender) {
+          w.webContents.send('timer-update', { action, payload });
+        }
+      });
+    } catch (e) {
+      console.error("Error in timer-action:", e);
+    }
   });
 
   ipcMain.on('get-timer-state', (event) => {
@@ -1005,7 +1020,7 @@ function createWindow() {
 
 function createQuickWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.bounds;
+  const { width, height } = primaryDisplay.bounds; // Use bounds, not workArea
 
   quickWin = new BrowserWindow({
     width: width,
@@ -1016,11 +1031,12 @@ function createQuickWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     alwaysOnTop: true,
-    resizable: true,
+    resizable: true, // Critical for correct bounds on macOS
     show: false,
     hasShadow: false,
     skipTaskbar: true,
     type: 'panel',
+    enableLargerThanScreen: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -1036,7 +1052,7 @@ function createQuickWindow() {
   
   quickWin.loadURL(url);
 
-  // Force transparency to prevent "second background" flash
+  // Force transparency
   quickWin.webContents.on('did-finish-load', () => {
     quickWin.webContents.insertCSS('html, body { background: transparent !important; }');
   });
@@ -1061,14 +1077,12 @@ function createQuickWindow() {
 function showQuickTimer() {
   if (!quickWin) createQuickWindow();
   
-  // Get current mouse position to find the active screen
   const cursorPoint = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursorPoint);
   
-  // Force the window to cover the ENTIRE display (including menu bar)
+  // Critical: Set bounds to the full display bounds (including menu bar space)
   quickWin.setBounds(display.bounds);
 
-  // Ensure window is on top of everything (including menu bar on macOS)
   if (process.platform === 'darwin') {
     quickWin.setAlwaysOnTop(true, 'screen-saver', 1);
     quickWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -1076,21 +1090,17 @@ function showQuickTimer() {
     quickWin.setAlwaysOnTop(true, 'screen-saver');
   }
   
-  // Calculate start point: Try tray bounds first for centering (the "ribbon" location), fallback to cursor
   let startX = cursorPoint.x;
-  let startY = cursorPoint.y; // Default to cursor Y
+  let startY = cursorPoint.y;
 
-  // Use tray bounds if available for precise centering
   if (tray && !tray.isDestroyed()) {
       try {
           const bounds = tray.getBounds();
-          // Ensure valid bounds are returned (width > 0)
           if (bounds && bounds.width > 0) {
               const trayX = Math.round(bounds.x + bounds.width / 2);
               const trayY = Math.round(bounds.y + bounds.height / 2);
               
-              // Verify tray coordinates are within the active display bounds
-              // This prevents issues where tray bounds are reported for primary display while cursor is on secondary
+              // Ensure tray is on the active display
               if (trayX >= display.bounds.x && trayX <= (display.bounds.x + display.bounds.width) &&
                   trayY >= display.bounds.y && trayY <= (display.bounds.y + display.bounds.height)) {
                   startX = trayX;
@@ -1106,7 +1116,6 @@ function showQuickTimer() {
   const localX = Math.round(startX - display.bounds.x);
   const localY = Math.round(startY - display.bounds.y);
     
-  // Inject the position immediately
   quickWin.webContents.executeJavaScript(`
     window.dispatchEvent(new CustomEvent('tray-position', { 
         detail: { x: ${localX}, y: ${localY} } 
@@ -1114,7 +1123,7 @@ function showQuickTimer() {
   `).catch(() => {});
 
   quickWin.show();
-  quickWin.focus(); // Crucial for receiving mousemove events
+  quickWin.focus();
 }
 
 // Handle Deep Links (focusflow://)

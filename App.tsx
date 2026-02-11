@@ -320,6 +320,142 @@ const OAuthCallback = ({ code }: { code: string }) => {
     );
 };
 
+const GhostModeView = () => {
+    const [timeLeft, setTimeLeft] = useState(0);
+    const [initialTime, setInitialTime] = useState(0);
+    const [isActive, setIsActive] = useState(false);
+    const [mode, setMode] = useState<'POMO' | 'STOPWATCH'>('POMO');
+    const [phase, setPhase] = useState<'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK'>('FOCUS');
+    const [sessionLabel, setSessionLabel] = useState('');
+    const [selectedProjectId, setSelectedProjectId] = useState('');
+    const endTimeRef = useRef<number | null>(null);
+    const startTimeRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        window.electronAPI?.getTimerState();
+        const cleanup = window.electronAPI?.onSyncTimerState((state) => {
+            setTimeLeft(state.timeLeft);
+            setInitialTime(state.initialTime);
+            setIsActive(state.isActive);
+            setMode(state.mode || 'POMO');
+            setPhase(state.phase || 'FOCUS');
+            setSessionLabel(state.sessionLabel || '');
+            setSelectedProjectId(state.selectedProjectId || '');
+            
+            if (state.isActive) {
+                if (state.mode === 'STOPWATCH') {
+                    startTimeRef.current = state.startTime;
+                    endTimeRef.current = null;
+                } else {
+                    endTimeRef.current = state.endTime;
+                    startTimeRef.current = null;
+                }
+            } else {
+                endTimeRef.current = null;
+                startTimeRef.current = null;
+            }
+        });
+        const interval = setInterval(() => {
+            if (endTimeRef.current) {
+                const now = Date.now();
+                const diff = Math.ceil((endTimeRef.current - now) / 1000);
+                setTimeLeft(diff > 0 ? diff : 0);
+            } else if (startTimeRef.current) {
+                const now = Date.now();
+                const elapsed = Math.floor((now - startTimeRef.current) / 1000);
+                setTimeLeft(elapsed);
+            }
+        }, 1000);
+        return () => {
+            if (cleanup) cleanup();
+            clearInterval(interval);
+        };
+    }, []);
+
+    const toggleTimer = () => {
+        if (isActive) {
+            window.electronAPI?.broadcastTimerAction('PAUSE_TIMER', { timeLeft, mode, phase });
+        } else {
+            const now = Date.now();
+            const payload: any = {
+                mode: mode || 'POMO',
+                phase: phase || 'FOCUS',
+                timeLeft: timeLeft || 0,
+                initialTime: initialTime || 0,
+                sessionLabel: sessionLabel || '',
+                selectedProjectId: selectedProjectId || ''
+            };
+            
+            if (mode === 'STOPWATCH') {
+                payload.startTime = now - (timeLeft * 1000);
+                payload.endTime = null;
+            } else {
+                payload.endTime = now + (timeLeft * 1000);
+                payload.startTime = null;
+            }
+            
+            window.electronAPI?.broadcastTimerAction('START_TIMER', payload);
+        }
+    };
+
+    const handleExitGhostMode = () => {
+        const state = {
+            timeLeft: timeLeft || 0,
+            initialTime: initialTime || 0,
+            isActive: !!isActive,
+            mode: mode || 'POMO',
+            phase: phase || 'FOCUS',
+            sessionLabel: sessionLabel || '',
+            selectedProjectId: selectedProjectId || '',
+            endTime: endTimeRef.current || null,
+            startTime: startTimeRef.current || null
+        };
+        window.electronAPI?.toggleGhostMode(state);
+    };
+
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const progress = mode === 'POMO' 
+        ? (initialTime > 0 ? Math.max(0, Math.min(1, timeLeft / initialTime)) : 0)
+        : (timeLeft % 60) / 60;
+        
+    const hue = Math.floor(progress * 220);
+    const primaryColor = `hsl(${hue}, 100%, 60%)`;
+    const glowColor = `hsla(${hue}, 100%, 60%, 0.3)`;
+    const radius = 88;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference * (1 - progress);
+
+    return (
+        <div className="fixed inset-0 w-full h-full flex items-center justify-center bg-transparent">
+            <div className="relative flex items-center justify-center w-48 h-48 rounded-full transition-all duration-1000 ease-in-out group" style={{ WebkitAppRegion: 'drag' } as any} onDoubleClick={toggleTimer}>
+                <div className="absolute inset-0 rounded-full bg-black/50 backdrop-blur-md animate-pulse-slow" style={{ background: `radial-gradient(circle, ${glowColor} 0%, rgba(0,0,0,0.6) 70%)`, boxShadow: `0 0 30px ${glowColor}` }} />
+                <svg className="absolute inset-0 w-full h-full transform -rotate-90 pointer-events-none">
+                    <circle cx="96" cy="96" r={radius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="4" />
+                    <circle cx="96" cy="96" r={radius} fill="none" stroke={primaryColor} strokeWidth="4" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" style={{ filter: `drop-shadow(0 0 4px ${primaryColor})`, transition: 'stroke-dashoffset 1s linear, stroke 1s linear' }} />
+                </svg>
+                <div className="z-10 text-center relative flex flex-col items-center justify-center" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                    <div className="text-4xl font-mono font-bold tracking-wider drop-shadow-md select-none" style={{ color: primaryColor, textShadow: '0 2px 4px rgba(0,0,0,0.9)' }}>
+                        {formatTime(timeLeft)}
+                    </div>
+                    <div className="absolute top-12 flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <button onClick={toggleTimer} className="p-2 hover:text-white text-white/70 transition-colors">
+                            {isActive ? <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
+                        </button>
+                        <button onClick={handleExitGhostMode} className="p-2 hover:text-white text-white/70 transition-colors">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M20 8V4m0 0h-4M4 16v4m0 0h4M20 16v4m0 0h-4" /></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 function FocusFlowContent() {
   // --- Context Hooks ---
   const { isDarkMode, toggleTheme, appTheme, setAppTheme } = useTheme();
@@ -1128,6 +1264,8 @@ function FocusFlowContent() {
                       totalFocusTime: globalTotalHours
                   }}
                   isCyberpunk={appTheme === 'cyberpunk'}
+                  projects={projects}
+                  onSelectProject={setCurrentProjectId}
               />
             )}
 
@@ -1194,7 +1332,11 @@ export default function App() {
                 {mode === 'mini-capture' ? (
                     <MiniCaptureWindow />
                 ) : mode === 'quick' ? (
-                    <QuickTimerOverlay />
+                    <div className="fixed inset-0 bg-transparent">
+                        <QuickTimerOverlay />
+                    </div>
+                ) : mode === 'ghost' ? (
+                    <GhostModeView />
                 ) : (
                     <FocusFlowContent />
                 )}
