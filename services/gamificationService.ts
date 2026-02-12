@@ -238,15 +238,16 @@ export const ACHIEVEMENTS_LIST: Achievement[] = [
 ];
 
 export const getUnlockedAchievements = (logs: StudyLog[], totalHours: number, currentStreak: number): Achievement[] => {
+    const safeLogs = Array.isArray(logs) ? logs : [];
     return ACHIEVEMENTS_LIST.map(achievement => ({
         ...achievement,
-        isUnlocked: achievement.condition(logs, totalHours, currentStreak)
+        isUnlocked: achievement.condition(safeLogs, totalHours, currentStreak)
     }));
 };
 
 export function getDailyQuests(logs: StudyLog[]) {
     const today = new Date().toISOString().split('T')[0];
-    const todaysLogs = logs.filter(l => l.date === today);
+    const todaysLogs = (logs || []).filter(l => l.date === today);
     const todayHours = todaysLogs.reduce((acc, curr) => acc + curr.hours, 0);
     
     return [

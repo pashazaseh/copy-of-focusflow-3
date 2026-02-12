@@ -1495,8 +1495,6 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
                                 <div className={`text-xs hidden sm:block ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>
                                     Set goals, complete them, earn gems.
                                 </div>
-// Around line 1481-1490, fix the button syntax:
-
                                 <button onClick={() => setIsChallengeHistoryOpen(true)} className={`p-2 rounded-xl transition-all ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'}`} title="Challenge History">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                 </button>

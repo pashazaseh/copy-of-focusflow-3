@@ -44,7 +44,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
     formatTime,
     isGhost
 }) => {
-    const radius = 95;
+    const radius = 110;
     const circumference = 2 * Math.PI * radius;
     
     const validTimeLeft = Number.isFinite(timeLeft) ? timeLeft : 0;
@@ -89,9 +89,13 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
         filterUrl = "drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))";
     }
 
+    const timeString = formatTime(validTimeLeft);
+    const isLong = timeString.length > 5;
+    const fontSize = isLong ? 'text-7xl md:text-8xl' : 'text-8xl md:text-9xl';
+
     return (
-        <div className={`relative w-full max-w-[460px] aspect-square flex items-center justify-center mb-8 group ${isGhost ? 'scale-90' : ''}`}>
-            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 200 200">
+        <div className={`relative w-full max-w-[520px] aspect-square flex items-center justify-center mb-8 group ${isGhost ? 'scale-90' : ''}`}>
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 240 240">
                 <defs>
                     <linearGradient id="focusGradient" x1="0%" y1="0%" x2="100%" y2="100%">
                         <stop offset="0%" stopColor={isCyberpunk ? "#00f0ff" : "#60A5FA"} />
@@ -116,12 +120,12 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
                     <filter id="glow-red" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
                 </defs>
 
-                <circle cx="100" cy="100" r={radius} className={isCyberpunk ? "stroke-gray-800" : "stroke-gray-200 dark:stroke-gray-800"} strokeWidth="6" fill="transparent" strokeDasharray="4 4" />
-                {Array.from({ length: 12 }).map((_, i) => { const angle = (i / 12) * 2 * Math.PI; const x1 = 100 + Math.cos(angle) * (radius - 4); const y1 = 100 + Math.sin(angle) * (radius - 4); const x2 = 100 + Math.cos(angle) * (radius + 4); const y2 = 100 + Math.sin(angle) * (radius + 4); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className={isCyberpunk ? "stroke-[#00f0ff]/20" : "stroke-gray-300 dark:stroke-gray-700"} strokeWidth="1.5" />; })}
-                <circle cx="100" cy="100" r={radius} stroke={strokeUrl} strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffset) ? 0 : strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: filterUrl }} />
+                <circle cx="120" cy="120" r={radius} className={isCyberpunk ? "stroke-gray-800" : "stroke-gray-200 dark:stroke-gray-800"} strokeWidth="8" fill="transparent" strokeDasharray="5 5" />
+                {Array.from({ length: 12 }).map((_, i) => { const angle = (i / 12) * 2 * Math.PI; const x1 = 120 + Math.cos(angle) * (radius - 5); const y1 = 120 + Math.sin(angle) * (radius - 5); const x2 = 120 + Math.cos(angle) * (radius + 5); const y2 = 120 + Math.sin(angle) * (radius + 5); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className={isCyberpunk ? "stroke-[#00f0ff]/20" : "stroke-gray-300 dark:stroke-gray-700"} strokeWidth="2" />; })}
+                <circle cx="120" cy="120" r={radius} stroke={strokeUrl} strokeWidth="10" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffset) ? 0 : strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: filterUrl }} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-                <div className={`text-6xl md:text-8xl font-mono font-bold tracking-tighter tabular-nums select-none transition-colors duration-300 ${textColor} ${dropShadow} drop-shadow-sm`}>{formatTime(validTimeLeft)}</div>
+                <div className={`${fontSize} font-bold tracking-tighter tabular-nums select-none transition-colors duration-300 ${textColor} ${dropShadow} drop-shadow-sm`}>{timeString}</div>
                 <div className={`mt-4 text-sm font-bold uppercase tracking-widest ${subTextColor}`}>{mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus' : phase === 'SHORT_BREAK' ? 'Short Break' : 'Long Break') : 'Stopwatch'}</div>
             </div>
         </div>
@@ -218,6 +222,25 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
   const [manualTime, setManualTime] = useState('12:00');
   const [manualDuration, setManualDuration] = useState(25);
   const [manualType, setManualType] = useState<'POMO'|'STOPWATCH'>('POMO');
+
+  const [alwaysOnTopActive, setAlwaysOnTopActive] = useState(false);
+
+  useEffect(() => {
+      const checkSetting = () => {
+          const enabled = localStorage.getItem('focusflow_always_on_top_active') === 'true';
+          setAlwaysOnTopActive(enabled);
+      };
+      checkSetting();
+      window.addEventListener('focusflow-aot-setting-update', checkSetting);
+      return () => window.removeEventListener('focusflow-aot-setting-update', checkSetting);
+  }, []);
+
+  useEffect(() => {
+      if (alwaysOnTopActive) {
+          setIsPinned(isActive);
+          window.electronAPI?.setAlwaysOnTop(isActive);
+      }
+  }, [isActive, alwaysOnTopActive]);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const endTimeRef = useRef<number | null>(null); 
@@ -887,10 +910,16 @@ const handleTimerComplete = async () => {
       playAlarm(vol);
   };
   
-  const formatTime = (seconds: number) => { 
-      const m = Math.floor(seconds / 60); 
-      const s = seconds % 60; 
-      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`; 
+  const formatTime = (seconds: number) => {
+    if (isNaN(seconds) || seconds < 0) seconds = 0;
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    
+    if (h > 0) {
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
   const openSettings = () => { setTempSettings(settings); setIsSettingsOpen(true); };
   const saveSettings = async () => {

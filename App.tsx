@@ -223,7 +223,7 @@ const LogHistoryTable = React.memo(({
                                     <>
                                         {item.data.notes || <span className="text-gray-300 dark:text-gray-600 italic">-</span>}
                                         {historyScope === 'global' && (
-                                            <span className="ml-2 text-[10px] text-gray-400 border border-gray-200 dark:border-gray-700 px-1 rounded">{projects.find((p: any) => p.id === item.data.projectId)?.name}</span>
+                                            <span className="ml-2 text-[10px] text-gray-400 border border-gray-200 dark:border-gray-700 px-1 rounded">{(projects || []).find((p: any) => p.id === item.data.projectId)?.name}</span>
                                         )}
                                     </>
                                 ) : (
@@ -330,13 +330,16 @@ const GhostModeView = () => {
     const [selectedProjectId, setSelectedProjectId] = useState('');
     const endTimeRef = useRef<number | null>(null);
     const startTimeRef = useRef<number | null>(null);
+    const [timerState, setTimerState] = useState<any>(null);
+    const [isHovered, setIsHovered] = useState(false);
 
     useEffect(() => {
         window.electronAPI?.getTimerState();
         const cleanup = window.electronAPI?.onSyncTimerState((state) => {
             if (!state) return;
-            setTimeLeft(state.timeLeft || 0);
-            setInitialTime(state.initialTime || 0);
+            setTimerState(state);
+            setTimeLeft(state.timeLeft ?? 0);
+            setInitialTime(state.initialTime ?? 0);
             setIsActive(state.isActive);
             setMode(state.mode || 'POMO');
             setPhase(state.phase || 'FOCUS');
@@ -374,44 +377,25 @@ const GhostModeView = () => {
     }, []);
 
     const toggleTimer = () => {
-        if (isActive) {
-            window.electronAPI?.broadcastTimerAction('PAUSE_TIMER', { timeLeft, mode, phase });
-        } else {
-            const now = Date.now();
-            const payload: any = {
-                mode: mode || 'POMO',
-                phase: phase || 'FOCUS',
-                timeLeft: timeLeft || 0,
-                initialTime: initialTime || 0,
-                sessionLabel: sessionLabel || '',
-                selectedProjectId: selectedProjectId || ''
-            };
-            
-            if (mode === 'STOPWATCH') {
-                payload.startTime = now - (timeLeft * 1000);
-                payload.endTime = null;
+        if (!timerState) return;
+        const newAction = timerState.isActive ? 'PAUSE_TIMER' : 'START_TIMER';
+        const payload = { ...timerState, isActive: !timerState.isActive };
+        if (newAction === 'START_TIMER') {
+            if (payload.mode === 'POMO') {
+                payload.endTime = Date.now() + (payload.timeLeft * 1000);
             } else {
-                payload.endTime = now + (timeLeft * 1000);
-                payload.startTime = null;
+                payload.startTime = Date.now() - (payload.timeLeft * 1000);
             }
-            
-            window.electronAPI?.broadcastTimerAction('START_TIMER', payload);
         }
+        window.electronAPI?.broadcastTimerAction(newAction, payload);
     };
-
-    const handleExitGhostMode = () => {
-        const state = {
-            timeLeft: timeLeft || 0,
-            initialTime: initialTime || 0,
-            isActive: !!isActive,
-            mode: mode || 'POMO',
-            phase: phase || 'FOCUS',
-            sessionLabel: sessionLabel || '',
-            selectedProjectId: selectedProjectId || '',
-            endTime: endTimeRef.current || null,
-            startTime: startTimeRef.current || null
-        };
-        window.electronAPI?.toggleGhostMode();
+    const stopTimer = () => {
+        if (!timerState) return;
+        window.electronAPI?.broadcastTimerAction('RESET_TIMER', timerState);
+    };
+    const expandWindow = () => {
+        if (!timerState) return;
+        window.electronAPI?.toggleGhostMode(timerState);
     };
 
     const formatTime = (seconds: number) => {
@@ -421,39 +405,51 @@ const GhostModeView = () => {
     };
 
     const safeTimeLeft = Number.isFinite(timeLeft) ? timeLeft : 0;
-    const safeInitialTime = Number.isFinite(initialTime) ? initialTime : 0;
+    const safeInitialTime = (Number.isFinite(initialTime) && initialTime > 0) ? initialTime : 1;
 
-    const progress = mode === 'POMO' 
-        ? (safeInitialTime > 0 ? Math.max(0, Math.min(1, safeTimeLeft / safeInitialTime)) : 0)
-        : ((safeTimeLeft % 60) / 60);
-        
-    const hue = Math.floor(progress * 220);
-    const primaryColor = `hsl(${hue}, 100%, 60%)`;
-    const glowColor = `hsla(${hue}, 100%, 60%, 0.3)`;
-    const radius = 88;
+    let progress = 0;
+    if (mode === 'POMO') {
+        progress = 1 - (safeTimeLeft / safeInitialTime);
+    } else {
+        progress = 1 - (safeTimeLeft / safeInitialTime);
+    }
+    progress = Math.max(0, Math.min(1, progress));
+    
+    const radius = 45;
     const circumference = 2 * Math.PI * radius;
-    const strokeDashoffset = circumference * (1 - progress);
+    const strokeDashoffset = circumference - (progress * circumference);
+    const safeOffset = Number.isNaN(strokeDashoffset) ? 0 : strokeDashoffset;
+    
+    const getColor = () => {
+        if (mode === 'SHORT_BREAK' || mode === 'LONG_BREAK') return '#10b981';
+        return '#3b82f6';
+    };
 
     return (
-        <div className="fixed inset-0 w-full h-full flex items-center justify-center bg-transparent">
-            <div className="relative flex items-center justify-center w-48 h-48 rounded-full transition-all duration-1000 ease-in-out group" style={{ WebkitAppRegion: 'drag' } as any} onDoubleClick={toggleTimer}>
-                <div className="absolute inset-0 rounded-full bg-black/50 backdrop-blur-md animate-pulse-slow" style={{ background: `radial-gradient(circle, ${glowColor} 0%, rgba(0,0,0,0.6) 70%)`, boxShadow: `0 0 30px ${glowColor}` }} />
-                <svg className="absolute inset-0 w-full h-full transform -rotate-90 pointer-events-none">
-                    <circle cx="96" cy="96" r={radius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="4" />
-                    <circle cx="96" cy="96" r={radius} fill="none" stroke={primaryColor} strokeWidth="4" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffset) ? 0 : strokeDashoffset} strokeLinecap="round" style={{ filter: `drop-shadow(0 0 4px ${primaryColor})`, transition: 'stroke-dashoffset 1s linear, stroke 1s linear' }} />
-                </svg>
-                <div className="z-10 text-center relative flex flex-col items-center justify-center" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                    <div className="text-4xl font-mono font-bold tracking-wider drop-shadow-md select-none" style={{ color: primaryColor, textShadow: '0 2px 4px rgba(0,0,0,0.9)' }}>
-                        {formatTime(safeTimeLeft)}
-                    </div>
-                    <div className="absolute top-12 flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        <button onClick={toggleTimer} className="p-2 hover:text-white text-white/70 transition-colors">
-                            {isActive ? <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
-                        </button>
-                        <button onClick={handleExitGhostMode} className="p-2 hover:text-white text-white/70 transition-colors">
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M20 8V4m0 0h-4M4 16v4m0 0h4M20 16v4m0 0h-4" /></svg>
-                        </button>
-                    </div>
+        <div 
+            className="w-full h-full flex items-center justify-center relative draggable group"
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            style={{ WebkitAppRegion: 'drag' } as any}
+        >
+            <div className={`absolute inset-0 bg-black/40 backdrop-blur-md rounded-full transition-opacity duration-300 ${isHovered ? 'opacity-100' : 'opacity-0'}`} />
+            <svg className="w-full h-full transform -rotate-90 drop-shadow-lg" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r={radius} stroke="rgba(255,255,255,0.1)" strokeWidth="8" fill="transparent" />
+                <circle cx="50" cy="50" r={radius} stroke={getColor()} strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={safeOffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white pointer-events-none">
+                <span className="text-2xl font-bold font-mono tracking-tighter drop-shadow-md">{formatTime(safeTimeLeft)}</span>
+                {isHovered && (
+                    <span className="text-[8px] uppercase tracking-widest opacity-80 mt-1">
+                        {mode.replace('_', ' ')}
+                    </span>
+                )}
+                 <div className={`absolute bottom-6 flex gap-3 transition-all duration-300 transform ${isHovered ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'}`} style={{ WebkitAppRegion: 'no-drag' }}>
+                    <button onClick={stopTimer} className="p-2 rounded-full bg-white/10 hover:bg-red-500/80 text-white transition-colors"><svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg></button>
+                    <button onClick={toggleTimer} className="p-2 rounded-full bg-white/20 hover:bg-white/40 text-white transition-colors">
+                        {isActive ? (<svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>) : (<svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>)}
+                    </button>
+                    <button onClick={expandWindow} className="p-2 rounded-full bg-white/10 hover:bg-blue-500/80 text-white transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg></button>
                 </div>
             </div>
         </div>
@@ -469,6 +465,17 @@ function FocusFlowContent() {
   const { pendingQuickTimer, setPendingQuickTimer } = useTimerContext();
   const { countdowns } = useCountdowns();
 
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    if (window.electronAPI?.onFullScreenChange) {
+      const cleanup = window.electronAPI.onFullScreenChange(setIsFullScreen);
+      return () => {
+        if (cleanup) cleanup();
+      };
+    }
+  }, []);
+
   // Helper to check if a view is enabled in settings
   const isViewEnabled = useCallback((view: ViewMode) => {
       if (navConfig.length === 0) return true; // Default to true while loading
@@ -483,8 +490,6 @@ function FocusFlowContent() {
       return <OAuthCallback code={authCode} />;
   }
 
-  const [timerViewInitialized, setTimerViewInitialized] = useState(false);
-  
   // Dashboard state
   // Use local date string for initial selected date to match heatmap logic
   const [selectedDate, setSelectedDate] = useState<string>(() => {
@@ -622,16 +627,12 @@ function FocusFlowContent() {
   const formRef = useRef<HTMLDivElement>(null); 
 
   useEffect(() => {
-    if (currentView === ViewMode.TIMER || pendingQuickTimer) setTimerViewInitialized(true);
-  }, [currentView, pendingQuickTimer]);
-
-  useEffect(() => {
       const projectLog = logs.find(l => l.date === selectedDate && l.projectId === currentProjectId);
       setHoursInput(projectLog ? projectLog.hours : '');
       setNotesInput(projectLog ? projectLog.notes || '' : '');
   }, [currentProjectId, projects, selectedDate, logs]);
 
-  const activeProject = projects.find(p => p.id === currentProjectId);
+  const activeProject = (projects || []).find(p => p.id === currentProjectId);
   const activeProjectName = activeProject?.name || 'Project';
 
   // Effective Goals Logic (Project Specific)
@@ -1060,6 +1061,7 @@ function FocusFlowContent() {
         isDarkMode={isDarkMode} 
         onToggleTheme={toggleTheme} 
         appTheme={appTheme}
+        isFullScreen={isFullScreen}
         icon={<img src="/icon.png" className="w-4 h-4 object-contain" alt="App Icon" />}
       >
         <Sidebar 
@@ -1089,7 +1091,7 @@ function FocusFlowContent() {
         <div className={`flex-1 relative overflow-hidden flex flex-col transition-colors duration-300 ${contentBgClass}`}>
           
           {/* TimerPanel must be outside Suspense to prevent unmounting when other tabs load */}
-          {isViewEnabled(ViewMode.TIMER) && (currentView === ViewMode.TIMER || timerViewInitialized) && (
+          {isViewEnabled(ViewMode.TIMER) && (
             <div className={currentView === ViewMode.TIMER ? "h-full" : "hidden"}>
               <Suspense fallback={<PanelLoader />}>
                 <TimerPanel 

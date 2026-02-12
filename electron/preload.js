@@ -74,4 +74,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onTrayAction: (callback) => ipcRenderer.on('tray-action', (_event, value) => callback(value)),
   restartApp: () => ipcRenderer.send('restart_app'),
+  onFullScreenChange: (callback) => {
+    const handler = (event, isFullScreen) => callback(isFullScreen);
+    ipcRenderer.on('fullscreen-change', handler);
+    return () => ipcRenderer.removeListener('fullscreen-change', handler);
+  },
+  onSyncTimerState: (callback) => {
+    const handler = (_event, value) => callback(value);
+    ipcRenderer.on('sync-timer-state', handler);
+    return () => ipcRenderer.removeListener('sync-timer-state', handler);
+  },
+  requestTimerState: () => ipcRenderer.send('request-timer-state'),
 });

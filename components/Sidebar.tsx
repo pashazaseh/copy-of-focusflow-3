@@ -212,11 +212,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           showRankWidget: true,
           questsWidgetSize: 'standard',
           widgetOrder: defaultOrder,
-          ...sidebarConfig
+          ...(sidebarConfig || {})
       };
 
       // Ensure new widgets are added to order if missing from saved config
-      if (sidebarConfig.widgetOrder) {
+      if (sidebarConfig?.widgetOrder) {
           const missing = defaultOrder.filter(k => !sidebarConfig.widgetOrder!.includes(k));
           if (missing.length > 0) {
               config.widgetOrder = [...sidebarConfig.widgetOrder, ...missing];
@@ -227,25 +227,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [sidebarConfig]);
   
   // Safe access to active project
-  const activeProject = projects.find(p => p.id === currentProjectId) || projects[0] || {
+  const activeProject = (projects || []).find(p => p.id === currentProjectId) || (projects || [])[0] || {
     id: 'loading',
     name: 'Loading...',
     theme: 'green' as HeatmapTheme,
-    createdAt: ''
+    createdAt: '',
+    streak: { current: 0, best: 0, lastActiveDate: '' },
+    xp: 0,
+    goals: { daily: 4, weekly: 20, monthly: 80, yearly: 1000 },
+    goalHistory: []
   };
 
   const totalHours = useMemo(() => logs.reduce((sum, log) => sum + log.hours, 0), [logs]);
-  const currentRank = useMemo(() => [...RANKS].reverse().find(r => totalHours >= r.minHours) || RANKS[0], [totalHours]);
+  const currentRank = useMemo(() => {
+      if (!RANKS) return { title: 'Loading', minHours: 0, color: 'text-gray-500' };
+      return [...RANKS].reverse().find(r => totalHours >= r.minHours) || RANKS[0];
+  }, [totalHours]);
 
   const weeklyProgress = Math.min(100, (currentWeeklyHours / weeklyGoal) * 100);
-  const dailyProgress = Math.min(100, (currentDailyHours / (goals.daily || 4)) * 100);
-  const monthlyProgress = Math.min(100, (currentMonthlyHours / (goals.monthly || 160)) * 100);
+  const dailyProgress = Math.min(100, (currentDailyHours / (goals?.daily || 4)) * 100);
+  const monthlyProgress = Math.min(100, (currentMonthlyHours / (goals?.monthly || 160)) * 100);
 
   // --- Daily Quests Logic (Mirrored from GamificationPanel) ---
   const quests = useMemo(() => getDailyQuests(logs), [logs]);
 
   // Filter projects for dropdown
-  const activeProjects = projects.filter(p => !p.isArchived);
+  const activeProjects = (projects || []).filter(p => !p.isArchived);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -638,7 +645,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
-        {navConfig.map((item) => {
+        {(navConfig || []).map((item) => {
             if (!item.isVisible) return null;
             const def = NAV_ITEMS_DEF.find(d => d.view === item.view);
             if (!def) return null;

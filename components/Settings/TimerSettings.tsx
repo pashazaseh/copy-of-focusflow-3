@@ -32,6 +32,36 @@ export const TimerSettingsPanel: React.FC<TimerSettingsProps> = ({ appTheme }) =
     const [newWorkPreset, setNewWorkPreset] = useState('');
     const [newRestPreset, setNewRestPreset] = useState('');
 
+    const [minimizeToTray, setMinimizeToTray] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_minimize_to_tray') === 'true';
+        return false;
+    });
+
+    const [showInDock, setShowInDock] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_show_in_dock') !== 'false';
+        return true;
+    });
+
+    const [alwaysOnTopActive, setAlwaysOnTopActive] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_always_on_top_active') === 'true';
+        return false;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('focusflow_always_on_top_active', String(alwaysOnTopActive));
+        window.dispatchEvent(new Event('focusflow-aot-setting-update'));
+    }, [alwaysOnTopActive]);
+
+    useEffect(() => {
+        localStorage.setItem('focusflow_minimize_to_tray', String(minimizeToTray));
+        (window.electronAPI as any)?.setMinimizeToTray?.(minimizeToTray);
+    }, [minimizeToTray]);
+
+    useEffect(() => {
+        localStorage.setItem('focusflow_show_in_dock', String(showInDock));
+        (window.electronAPI as any)?.setShowInDock?.(showInDock);
+    }, [showInDock]);
+
     useEffect(() => {
         storage.getTimerSettings().then(setTimerSettings);
         const v = localStorage.getItem('focusflow_timer_volume');
@@ -181,6 +211,28 @@ export const TimerSettingsPanel: React.FC<TimerSettingsProps> = ({ appTheme }) =
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            {/* Window Behavior */}
+            <div className={`${cardClass} md:col-span-2`}>
+                <SectionHeader title="Window Behavior" />
+                <div className="space-y-4">
+                    <SettingRow label="Minimize to Menu Bar (Tray)">
+                        <button onClick={() => setMinimizeToTray(!minimizeToTray)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${isCyberpunk ? 'focus:ring-offset-black focus:ring-[#00f0ff]' : 'focus:ring-blue-500'} ${minimizeToTray ? (isCyberpunk ? 'bg-[#00f0ff]' : 'bg-blue-600') : 'bg-gray-200 dark:bg-gray-600'}`}>
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${minimizeToTray ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                    </SettingRow>
+                    <SettingRow label="Show in Dock">
+                        <button onClick={() => setShowInDock(!showInDock)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${isCyberpunk ? 'focus:ring-offset-black focus:ring-[#00f0ff]' : 'focus:ring-blue-500'} ${showInDock ? (isCyberpunk ? 'bg-[#00f0ff]' : 'bg-blue-600') : 'bg-gray-200 dark:bg-gray-600'}`}>
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showInDock ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                    </SettingRow>
+                    <SettingRow label="Always on Top when Active">
+                        <button onClick={() => setAlwaysOnTopActive(!alwaysOnTopActive)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${isCyberpunk ? 'focus:ring-offset-black focus:ring-[#00f0ff]' : 'focus:ring-blue-500'} ${alwaysOnTopActive ? (isCyberpunk ? 'bg-[#00f0ff]' : 'bg-blue-600') : 'bg-gray-200 dark:bg-gray-600'}`}>
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${alwaysOnTopActive ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                    </SettingRow>
                 </div>
             </div>
         </div>

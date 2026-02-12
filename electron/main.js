@@ -870,6 +870,13 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.on('request-timer-state', (event) => {
+    console.log('[Timer Debug] Request timer state:', ghostState);
+    if (ghostState) {
+      event.sender.send('sync-timer-state', ghostState);
+    }
+  });
+
   ipcMain.on('play-sound-effect', () => {
     shell.beep();
   });
@@ -944,6 +951,14 @@ function createWindow() {
       event.preventDefault();
       win.hide();
     }
+  });
+
+  win.on('enter-full-screen', () => {
+    win.webContents.send('fullscreen-change', true);
+  });
+
+  win.on('leave-full-screen', () => {
+    win.webContents.send('fullscreen-change', false);
   });
 
   const menuTemplate = [
