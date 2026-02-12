@@ -606,6 +606,16 @@ function FocusFlowContent() {
       }
   }, []);
 
+  // Sync Window Settings on Mount
+  useEffect(() => {
+      if (window.electronAPI) {
+          const minimizeToTray = localStorage.getItem('focusflow_minimize_to_tray') === 'true';
+          const showInDock = localStorage.getItem('focusflow_show_in_dock') !== 'false';
+          window.electronAPI.setMinimizeToTray?.(minimizeToTray);
+          window.electronAPI.setShowInDock?.(showInDock);
+      }
+  }, []);
+
   // Reset page when filters change
   useEffect(() => setHistoryPage(1), [historyFilter, historyScope, historySortField, historySortDesc, historyTypeFilter]);
 

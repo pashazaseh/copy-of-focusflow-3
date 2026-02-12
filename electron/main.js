@@ -939,6 +939,13 @@ function createWindow() {
     }
   });
 
+  win.on('minimize', (event) => {
+    if (!showInDock && process.platform === 'darwin') {
+      event.preventDefault();
+      win.hide();
+    }
+  });
+
   const menuTemplate = [
     {
       label: 'FocusFlow',
@@ -1253,7 +1260,13 @@ app.whenReady().then(() => {
                 },
                 { label: '📝 Quick Capture', click: () => triggerQuickCapture() },
                 { type: 'separator' },
-                { label: 'Show App', click: () => win.show() },
+                { label: 'Show App', click: () => {
+                    if (win) {
+                        if (win.isMinimized()) win.restore();
+                        win.show();
+                        win.focus();
+                    }
+                } },
                 { label: 'Quit', click: () => app.quit() }
             ];
             return Menu.buildFromTemplate(template);
@@ -1314,7 +1327,10 @@ app.on('before-quit', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  else if (win) win.show();
+  else if (win) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+  }
 });
 
 // Handle Second Instance (Focus existing window)
