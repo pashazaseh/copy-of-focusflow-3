@@ -343,8 +343,8 @@ const isYesterday = (dateStr: string) => {
 export const PROJECT_TROPHIES = [
     { id: 'streak_3', icon: '🔥', name: 'Momentum', description: '3 Day Streak', condition: (p: Project) => (p.streak?.current || 0) >= 3 },
     { id: 'streak_7', icon: '🚀', name: 'Dedicated', description: '7 Day Streak', condition: (p: Project) => (p.streak?.current || 0) >= 7 },
-    { id: 'xp_1000', icon: '⚔️', name: 'Novice', description: '1,000 XP', condition: (p: Project) => (p.xp || 0) >= 1000 },
-    { id: 'xp_5000', icon: '🛡️', name: 'Expert', description: '5,000 XP', condition: (p: Project) => (p.xp || 0) >= 5000 },
+    { id: 'hours_10', icon: '⚔️', name: 'Novice', description: '10 Hours', condition: (p: Project) => (p.totalHours || 0) >= 10 },
+    { id: 'hours_50', icon: '🛡️', name: 'Expert', description: '50 Hours', condition: (p: Project) => (p.totalHours || 0) >= 50 },
 ];
 
 export const handleSessionComplete = (
@@ -371,16 +371,16 @@ export const handleSessionComplete = (
         // Broken streak (for this project only!)
         newStreak = 1;
     }
-
-    const newXp = (currentProject.xp || 0) + (minutes * 10);
+    
+    const newTotalHours = (currentProject.totalHours || 0) + (minutes / 60);
 
     // 3. Check Project Specific Trophies
     const unlockedTrophies = new Set(currentProject.unlockedTrophies || []);
     // Create a temporary object to test conditions against the *new* stats
     const tempProjectState = { 
         ...currentProject, 
-        streak: { current: newStreak, best: 0, lastActiveDate: today }, 
-        xp: newXp 
+        streak: { current: newStreak, best: 0, lastActiveDate: today },
+        totalHours: newTotalHours
     };
 
     PROJECT_TROPHIES.forEach(trophy => {
@@ -393,7 +393,7 @@ export const handleSessionComplete = (
         updatedProject: {
             ...currentProject,
             streak: { current: newStreak, best: Math.max(newStreak, currentProject.streak?.best || 0), lastActiveDate: today },
-            xp: newXp,
+            totalHours: newTotalHours,
             unlockedTrophies: Array.from(unlockedTrophies)
         },
         updatedGlobalBank: newGlobalBank
