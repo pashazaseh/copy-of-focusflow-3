@@ -23,6 +23,8 @@ declare global {
       preventAppSuspension: (enable: boolean) => void;
       getOpenAtLogin: () => Promise<boolean>;
       setOpenAtLogin: (open: boolean) => void;
+      setShowInDock: (show: boolean) => void;
+      setMinimizeToTray: (minimize: boolean) => void;
       selectBackupFolder: () => Promise<string | null>;
       selectFile: () => Promise<string | null>;
       selectDirectory: () => Promise<string | null>;
@@ -43,6 +45,7 @@ declare global {
       onSyncTimerState: (callback: (state: any) => void) => () => void;
       getTimerState: () => void;
       broadcastTimerAction: (action: string, payload: any) => void;
+      toggleGhostMode: () => void;
     };
   }
 }

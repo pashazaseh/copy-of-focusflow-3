@@ -107,6 +107,81 @@ const STATIC_ACHIEVEMENTS: Achievement[] = [
         description: 'Log a study session with "Night" in notes',
         icon: '🦉',
         condition: (logs) => logs.some(l => l.notes && l.notes.toLowerCase().includes("night"))
+    },
+    // --- Diversity ---
+    {
+        id: 'diversity_3',
+        title: 'King of the Jungle',
+        description: 'Log time in 3 different projects',
+        icon: '🦁',
+        condition: (logs) => new Set(logs.map(l => l.projectId)).size >= 3
+    },
+    {
+        id: 'diversity_5',
+        title: 'Octopus',
+        description: 'Log time in 5 different projects',
+        icon: '🐙',
+        condition: (logs) => new Set(logs.map(l => l.projectId)).size >= 5
+    },
+    // --- Journaling ---
+    {
+        id: 'notes_10',
+        title: 'Scribe',
+        description: 'Add notes to 10 different sessions',
+        icon: '📝',
+        condition: (logs) => logs.filter(l => l.notes && l.notes.length > 0).length >= 10
+    },
+    {
+        id: 'notes_50',
+        title: 'Chronicler',
+        description: 'Add notes to 50 different sessions',
+        icon: '📖',
+        condition: (logs) => logs.filter(l => l.notes && l.notes.length > 0).length >= 50
+    },
+    // --- Deep Work ---
+    {
+        id: 'deep_3h',
+        title: 'Deep Diver',
+        description: 'Complete a single session > 3 hours',
+        icon: '🧘',
+        condition: (logs) => logs.some(l => l.hours >= 3)
+    },
+    {
+        id: 'deep_5h',
+        title: 'Monk Mode',
+        description: 'Complete a single session > 5 hours',
+        icon: '⛩️',
+        condition: (logs) => logs.some(l => l.hours >= 5)
+    },
+    // --- Volume & Consistency ---
+    {
+        id: 'volume_100',
+        title: 'Centurion',
+        description: 'Log 100 total study sessions',
+        icon: '💯',
+        condition: (logs) => logs.length >= 100
+    },
+    {
+        id: 'streak_5',
+        title: 'Consistency Is Key',
+        description: 'Maintain a 5-day streak',
+        icon: '🗓️',
+        condition: (_, __, streak) => streak >= 5
+    },
+    // --- Special ---
+    {
+        id: 'midnight_oil',
+        title: 'Midnight Oil',
+        description: 'Log a session mentioning "night" or "late" in notes',
+        icon: '🌑',
+        condition: (logs) => logs.some(l => l.notes && (l.notes.toLowerCase().includes('night') || l.notes.toLowerCase().includes('late')))
+    },
+    {
+        id: 'gem_hoarder',
+        title: 'Gem Hoarder',
+        description: 'Accumulate 1,000 Lifetime Gems value (100 hours)',
+        icon: '💎',
+        condition: (_, totalHours) => totalHours >= 100
     }
 ];
 

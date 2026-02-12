@@ -26,6 +26,8 @@ let currentGlobalShortcut = 'CommandOrControl+Shift+O';
 let lastTrayTitle = '';
 let ghostState = null;
 let isTimerActive = false;
+let showInDock = true;
+let minimizeToTray = true;
 const ghostStatePath = path.join(app.getPath('userData'), 'ghost-window-state.json');
 
 // Ensure notifications work on Windows
@@ -558,6 +560,21 @@ function setupIpcHandlers() {
     return app.getLoginItemSettings().openAtLogin;
   });
 
+  ipcMain.on('set-show-in-dock', (event, show) => {
+    showInDock = show;
+    if (process.platform === 'darwin') {
+      if (show) {
+        app.dock.show();
+      } else {
+        app.dock.hide();
+      }
+    }
+  });
+
+  ipcMain.on('set-minimize-to-tray', (event, minimize) => {
+    minimizeToTray = minimize;
+  });
+
   ipcMain.on('set-open-at-login', (event, openAtLogin) => {
     app.setLoginItemSettings({ openAtLogin });
   });
@@ -913,10 +930,12 @@ function createWindow() {
 
   // Prevent closing the app when the window is closed (minimize to tray)
   win.on('close', (event) => {
-    if (!isQuitting) {
+    if (isQuitting) {
+      return;
+    }
+    if (minimizeToTray) {
       event.preventDefault();
       win.hide();
-      return false;
     }
   });
 

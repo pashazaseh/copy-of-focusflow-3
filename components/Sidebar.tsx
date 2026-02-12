@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ViewMode, Project, HeatmapTheme, SidebarConfig, AppTheme, Achievement, StudyLog, UserGoals } from '../types';
-import { getDailyQuests } from '../services/gamificationService';
+import { getDailyQuests, RANKS } from '../services/gamificationService';
 import { useTimerContext, useCountdowns } from '../AppContext';
 
 interface SidebarProps {
@@ -193,7 +193,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           'showDailyGoalWidget',
           'showWeeklyGoalWidget',
           'showMonthlyGoalWidget',
-          'showLatestBadgeWidget'
+          'showLatestBadgeWidget',
+          'showStreakWidget',
+          'showXpWidget',
+          'showRankWidget'
       ];
 
       const config = {
@@ -204,6 +207,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           showCountdownWidget: false,
           showQuestsWidget: true,
           showLatestBadgeWidget: true,
+          showStreakWidget: true,
+          showXpWidget: true,
+          showRankWidget: true,
           questsWidgetSize: 'standard',
           widgetOrder: defaultOrder,
           ...sidebarConfig
@@ -227,6 +233,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     theme: 'green' as HeatmapTheme,
     createdAt: ''
   };
+
+  const totalHours = useMemo(() => logs.reduce((sum, log) => sum + log.hours, 0), [logs]);
+  const currentRank = useMemo(() => [...RANKS].reverse().find(r => totalHours >= r.minHours) || RANKS[0], [totalHours]);
 
   const weeklyProgress = Math.min(100, (currentWeeklyHours / weeklyGoal) * 100);
   const dailyProgress = Math.min(100, (currentDailyHours / (goals.daily || 4)) * 100);
@@ -462,6 +471,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <div className="overflow-hidden">
                           <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Latest Badge</p>
                           <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{latestBadge.title}</p>
+                      </div>
+                  </div>
+              );
+          case 'showStreakWidget':
+              if (!activeProject || activeProject.id === 'loading' || !activeProject.streak) return null;
+              return (
+                  <div key="streak" className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                      <div className="text-2xl">🔥</div>
+                      <div className="overflow-hidden">
+                          <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Project Streak</p>
+                          <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{activeProject.streak.current} Days</p>
+                      </div>
+                  </div>
+              );
+          case 'showXpWidget':
+              if (!activeProject || activeProject.id === 'loading' || activeProject.xp === undefined) return null;
+              return (
+                  <div key="xp" className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                      <div className="text-2xl">✨</div>
+                      <div className="overflow-hidden">
+                          <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Project XP</p>
+                          <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{activeProject.xp.toLocaleString()} XP</p>
+                      </div>
+                  </div>
+              );
+          case 'showRankWidget':
+              if (!currentRank) return null;
+              return (
+                  <div key="rank" className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                      <div className="text-2xl">🏆</div>
+                      <div className="overflow-hidden">
+                          <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Global Rank</p>
+                          <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : currentRank.color || 'text-gray-900 dark:text-white'}`}>{currentRank.title}</p>
                       </div>
                   </div>
               );

@@ -47,15 +47,18 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
     const radius = 95;
     const circumference = 2 * Math.PI * radius;
     
+    const validTimeLeft = Number.isFinite(timeLeft) ? timeLeft : 0;
+    const validInitialTime = Number.isFinite(initialTime) ? initialTime : 0;
+
     let progress = 0;
     if (mode === 'POMO') {
-        progress = initialTime > 0 ? (initialTime - timeLeft) / initialTime : 0;
+        progress = validInitialTime > 0 ? (validInitialTime - validTimeLeft) / validInitialTime : 0;
     } else {
-        progress = (timeLeft % 60) / 60;
+        progress = (validTimeLeft % 60) / 60;
     }
     
     const strokeDashoffset = circumference * (1 - progress);
-    const isUrgent = mode === 'POMO' && initialTime > 0 && (timeLeft / initialTime) <= 0.15;
+    const isUrgent = mode === 'POMO' && validInitialTime > 0 && (validTimeLeft / validInitialTime) <= 0.15;
     
     let strokeUrl = "url(#focusGradient)";
     let filterUrl = "url(#cyberGlow)";
@@ -115,10 +118,10 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
 
                 <circle cx="100" cy="100" r={radius} className={isCyberpunk ? "stroke-gray-800" : "stroke-gray-200 dark:stroke-gray-800"} strokeWidth="6" fill="transparent" strokeDasharray="4 4" />
                 {Array.from({ length: 12 }).map((_, i) => { const angle = (i / 12) * 2 * Math.PI; const x1 = 100 + Math.cos(angle) * (radius - 4); const y1 = 100 + Math.sin(angle) * (radius - 4); const x2 = 100 + Math.cos(angle) * (radius + 4); const y2 = 100 + Math.sin(angle) * (radius + 4); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className={isCyberpunk ? "stroke-[#00f0ff]/20" : "stroke-gray-300 dark:stroke-gray-700"} strokeWidth="1.5" />; })}
-                <circle cx="100" cy="100" r={radius} stroke={strokeUrl} strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: filterUrl }} />
+                <circle cx="100" cy="100" r={radius} stroke={strokeUrl} strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffset) ? 0 : strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: filterUrl }} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-                <div className={`text-6xl md:text-8xl font-mono font-bold tracking-tighter tabular-nums select-none transition-colors duration-300 ${textColor} ${dropShadow} drop-shadow-sm`}>{formatTime(timeLeft)}</div>
+                <div className={`text-6xl md:text-8xl font-mono font-bold tracking-tighter tabular-nums select-none transition-colors duration-300 ${textColor} ${dropShadow} drop-shadow-sm`}>{formatTime(validTimeLeft)}</div>
                 <div className={`mt-4 text-sm font-bold uppercase tracking-widest ${subTextColor}`}>{mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus' : phase === 'SHORT_BREAK' ? 'Short Break' : 'Long Break') : 'Stopwatch'}</div>
             </div>
         </div>

@@ -7,6 +7,7 @@ const TimerSettingsPanel = lazy(() => import('./TimerSettings').then(module => (
 const SyncSettings = lazy(() => import('./SyncSettings').then(module => ({ default: module.SyncSettings })));
 const DataSettings = lazy(() => import('./DataSettings').then(module => ({ default: module.DataSettings })));
 const ProjectSettings = lazy(() => import('./ProjectSettings').then(module => ({ default: module.ProjectSettings })));
+const ConfigurationSettings = lazy(() => import('./ConfigurationSettings').then(module => ({ default: module.ConfigurationSettings })));
 
 interface SettingsPanelProps {
     navConfig: StoredNavConfig[];
@@ -79,10 +80,10 @@ export const SettingsPanel = ({
                         
                         {/* Tab Navigation */}
                         <div className={`flex p-1 rounded-xl shadow-inner overflow-x-auto no-scrollbar ${isCyberpunk ? 'bg-[#0a0a0a] border border-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-800'}`}>
-                            {(['general', 'timer', 'projects', 'sync', 'data'] as any[]).map(tab => (
+                            {(['general', 'timer', 'projects', 'configuration', 'sync', 'data'] as SettingsTab[]).map(tab => (
                                 <button
                                     key={tab}
-                                    onClick={() => onTabChange(tab as SettingsTab)}
+                                    onClick={() => onTabChange(tab)}
                                     className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wide whitespace-nowrap ${
                                         activeTab === tab 
                                         ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm')
@@ -130,8 +131,9 @@ export const SettingsPanel = ({
                             )}
                             
                             {activeTab === 'timer' && <TimerSettingsPanel appTheme={appTheme} />}
-                            {activeTab === ('sync' as SettingsTab) && <SyncSettings appTheme={appTheme} setLastBackup={setLastBackup} />}
-                            {activeTab === ('data' as SettingsTab) && <DataSettings appTheme={appTheme} lastBackup={lastBackup} setLastBackup={setLastBackup} />}
+                            {activeTab === 'configuration' && <ConfigurationSettings />}
+                            {activeTab === 'sync' && <SyncSettings appTheme={appTheme} setLastBackup={setLastBackup} />}
+                            {activeTab === 'data' && <DataSettings appTheme={appTheme} lastBackup={lastBackup} setLastBackup={setLastBackup} />}
                         </Suspense>
                     </div>
                 </div>

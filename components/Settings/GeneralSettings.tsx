@@ -31,6 +31,9 @@ const widgetLabels: Record<string, string> = {
     showDailyGoalWidget: 'Daily Goal',
     showWeeklyGoalWidget: 'Weekly Goal',
     showMonthlyGoalWidget: 'Monthly Goal',
+    showStreakWidget: 'Current Streak',
+    showXpWidget: 'Project XP',
+    showRankWidget: 'Global Rank',
     showLatestBadgeWidget: 'Latest Badge'
 };
 

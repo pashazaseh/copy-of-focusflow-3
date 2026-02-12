@@ -864,12 +864,17 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
       });
   }, [challenges, challengeFilter, timerTick]); // tick dependency to update expired status
 
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
-
-  useEffect(() => {
-      setIsDataLoaded(true);
-  }, []);
-
+      const isMounted = useRef(true);
+      useEffect(() => {
+          isMounted.current = true;
+          return () => { isMounted.current = false; };
+      }, []);
+  
+      const [isDataLoaded, setIsDataLoaded] = useState(false);
+  
+      useEffect(() => {
+          setIsDataLoaded(true);
+      }, []);
   const [shopOrder, setShopOrder] = useState<string[]>([]);
   useEffect(() => {
       try {
@@ -1430,22 +1435,31 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
                         </div>
                         
                         <TrophyRoom 
-                            achievements={projectAchievements} 
-                            unlockedCount={projectAchievements.filter(a => a.isUnlocked).length} 
+                            achievements={filteredAchievements} 
+                            unlockedCount={unlockedCount} 
                             isCyberpunk={isCyberpunk} 
                             filter={badgeFilter} 
                             setFilter={setBadgeFilter} 
                         />
                         </>
                     ) : (
-                        <div className={`rounded-3xl p-12 text-center border ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'}`}>
-                            <div className="text-6xl mb-4">🏦</div>
-                            <h3 className={`text-2xl font-bold mb-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Global Vault</h3>
-                            <p className={`text-lg font-mono mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-yellow-500'}`}>{currentGems} Gems Available</p>
-                            <p className={`max-w-md mx-auto ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-slate-400'}`}>
-                                Select a specific project from the sidebar to view its RPG stats, streak history, and trophies.
-                            </p>
-                        </div>
+                        <>
+                            <div className={`rounded-3xl p-12 text-center border mb-8 ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'}`}>
+                                <div className="text-6xl mb-4">🏦</div>
+                                <h3 className={`text-2xl font-bold mb-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Global Vault</h3>
+                                <p className={`text-lg font-mono mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-yellow-500'}`}>{currentGems} Gems Available</p>
+                                <p className={`max-w-md mx-auto ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-slate-400'}`}>
+                                    This vault contains your overall rank and global achievements. Select a project to see project-specific stats.
+                                </p>
+                            </div>
+                            <TrophyRoom 
+                                achievements={filteredAchievements}
+                                unlockedCount={unlockedCount}
+                                isCyberpunk={isCyberpunk}
+                                filter={badgeFilter}
+                                setFilter={setBadgeFilter}
+                            />
+                        </>
                     )
                 )}
 

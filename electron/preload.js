@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   preventAppSuspension: (enable) => ipcRenderer.send('prevent-app-suspension', enable),
   setOpenAtLogin: (open) => ipcRenderer.send('set-open-at-login', open),
   getOpenAtLogin: () => ipcRenderer.invoke('get-open-at-login'),
+  setShowInDock: (show) => ipcRenderer.send('set-show-in-dock', show),
+  setMinimizeToTray: (minimize) => ipcRenderer.send('set-minimize-to-tray', minimize),
   selectBackupFolder: () => ipcRenderer.invoke('select-backup-folder'),
   selectFile: () => ipcRenderer.invoke('select-file'),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),

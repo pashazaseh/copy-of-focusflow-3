@@ -25,6 +25,7 @@ export interface Project {
   streak: Streak;
   xp: number;
   unlockedTrophies: string[];
+  spinsAvailable?: number;
 }
 
 export interface Subtask {
@@ -157,11 +158,15 @@ export interface SidebarConfig {
     showTimerWidget: boolean;
     showCountdownWidget: boolean;
     showQuestsWidget: boolean;
+    showStreakWidget?: boolean;
+    showXpWidget?: boolean;
+    showRankWidget?: boolean;
+    showLatestBadgeWidget?: boolean;
     questsWidgetSize: WidgetSize;
     widgetOrder: string[];
 }
 
-export type SettingsTab = 'general' | 'timer' | 'projects' | 'integrations' | 'data';
+export type SettingsTab = 'general' | 'timer' | 'projects' | 'integrations' | 'data' | 'configuration';
 
 // Calendar Types
 export interface CustomEvent {

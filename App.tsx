@@ -46,227 +46,77 @@ const parseDate = (dateStr: string) => {
 const Toast = ({ title, subtitle = "Achievement Unlocked", icon, onClose, isCyberpunk }: { title: string, subtitle?: string, icon: string, onClose: () => void, isCyberpunk: boolean }) => (
     <div className="fixed top-24 left-1/2 transform -translate-x-1/2 z-[100] animate-fade-in-down pointer-events-none">
         <div className={`px-6 py-4 rounded-2xl shadow-2xl border flex items-center gap-4 backdrop-blur-xl pointer-events-auto transition-all ${isCyberpunk ? 'bg-black/90 border-[#00f0ff] text-[#00f0ff] shadow-[0_0_30px_rgba(0,240,255,0.4)]' : 'bg-gray-900/95 text-white border-white/10 shadow-xl'}`}>
-            <div className={`text-3xl ${isCyberpunk ? 'drop-shadow-[0_0_10px_rgba(0,240,255,0.8)]' : ''}`}>{icon}</div>
+            <div className="text-3xl">{icon}</div>
             <div>
-                <p className={`text-[10px] font-bold uppercase tracking-widest mb-0.5 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-yellow-400'}`}>{subtitle}</p>
-                <p className="font-bold text-base leading-none">{title}</p>
+                <div className="font-bold text-sm">{title}</div>
+                <div className="text-xs opacity-75">{subtitle}</div>
             </div>
-            <button onClick={onClose} className={`ml-2 p-1 rounded-full transition-colors ${isCyberpunk ? 'hover:bg-[#00f0ff]/20 text-[#00f0ff]/50 hover:text-[#00f0ff]' : 'hover:bg-white/20 text-gray-400 hover:text-white'}`}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
         </div>
     </div>
 );
 
-// Interfaces defined OUTSIDE the class for clarity
-interface ErrorBoundaryProps {
-  children: React.ReactNode;
-}
+// Tutorial Component
+const Tutorial = ({ onComplete, isCyberpunk }: { onComplete: () => void, isCyberpunk: boolean }) => {
+    const [step, setStep] = useState(0);
 
-interface ErrorBoundaryState {
-  hasError: boolean;
-}
+    const steps = [
+        {
+            title: "Welcome to FocusFlow",
+            description: "Your AI-powered productivity app. Let's get started!",
+            target: "sidebar"
+        },
+        {
+            title: "Start a Timer",
+            description: "Click the play button to begin a Pomodoro session.",
+            target: "timer"
+        },
+        {
+            title: "Track Your Progress",
+            description: "View stats, streaks, and achievements in the dashboard.",
+            target: "stats"
+        }
+    ];
 
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  declare props: ErrorBoundaryProps;
-  public state: ErrorBoundaryState = { hasError: false };
+    const handleNext = () => {
+        if (step < steps.length - 1) {
+            setStep(step + 1);
+        } else {
+            onComplete();
+        }
+    };
 
-  static getDerivedStateFromError(_: any): ErrorBoundaryState {
-    return { hasError: true };
-  }
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+            <div className={`w-full max-w-md rounded-3xl p-8 border shadow-2xl relative overflow-hidden ${isCyberpunk ? 'bg-black border-[#00f0ff]/50' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                <div className={`absolute top-0 right-0 w-40 h-40 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none ${isCyberpunk ? 'bg-[#00f0ff]/10' : 'bg-blue-100 dark:bg-blue-500/10'}`}></div>
+                
+                <h2 className={`text-2xl font-bold mb-2 relative z-10 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>
+                    {steps[step].title}
+                </h2>
+                <p className={`mb-8 relative z-10 ${isCyberpunk ? 'text-[#00f0ff]/70' : 'text-gray-600 dark:text-gray-400'}`}>
+                    {steps[step].description}
+                </p>
 
-  componentDidCatch(error: any, errorInfo: any) {
-    console.error("Uncaught error:", error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex flex-col items-center justify-center h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white p-4">
-          <h1 className="text-2xl font-bold mb-4">Something went wrong</h1>
-          <p className="mb-4 text-gray-600 dark:text-gray-400">An error occurred while rendering the application.</p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-          >
-            Reload Application
-          </button>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-// --- Extracted Memoized Components to prevent re-renders on input change ---
-
-const DashboardHeader = React.memo(({ activeProjectName, currentYear, activeProject, streaks }: { activeProjectName: string, currentYear: number, activeProject: any, streaks: any }) => (
-    <header className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white dark:bg-[#1c1c1e] rounded-3xl p-6 border border-gray-200 dark:border-gray-700/50 shadow-sm flex flex-col justify-center h-32">
-        <h2 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-            {activeProjectName} 
-            <span className="mx-3 text-gray-300 dark:text-gray-700 font-light text-2xl">|</span>
-            <span className="text-gray-400 dark:text-gray-500 font-normal">{currentYear}</span>
-        </h2>
-        <div className="flex items-center gap-2 mt-1">
-            <p className="text-gray-500 dark:text-gray-400">Dashboard Overview</p>
-            {activeProject?.weeklyGoal && (
-                <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full font-bold">Goal: {activeProject.weeklyGoal}h/wk</span>
-            )}
-        </div>
-        </div>
-        
-        <div className="relative group overflow-hidden bg-gradient-to-r from-orange-500 to-rose-500 rounded-3xl shadow-xl h-32 transform transition-transform hover:scale-[1.02]">
-            <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white opacity-10 rounded-full blur-2xl"></div>
-            <div className="absolute bottom-0 left-0 -mb-4 -ml-4 w-20 h-20 bg-yellow-400 opacity-20 rounded-full blur-2xl"></div>
-            <div className="relative p-6 h-full flex items-center justify-between">
-                <div className="flex-1 border-r border-white/20 pr-6">
-                    <p className="text-orange-100 text-[10px] font-bold uppercase tracking-widest opacity-90 mb-1">Current Streak</p>
-                    <div className="flex items-baseline">
-                        <span className="text-4xl font-black text-white tracking-tighter drop-shadow-sm leading-none">{streaks.current}</span>
-                        <span className="ml-1.5 text-sm font-bold text-orange-50/90">Days</span>
-                    </div>
-                </div>
-                <div className="flex-1 pl-6">
-                        <p className="text-orange-100 text-[10px] font-bold uppercase tracking-widest opacity-90 mb-1">Longest Streak</p>
-                    <div className="flex items-baseline">
-                        <span className="text-4xl font-black text-white tracking-tighter drop-shadow-sm leading-none">{streaks.longest}</span>
-                        <span className="ml-1.5 text-sm font-bold text-orange-50/90">Days</span>
-                    </div>
+                <div className="flex gap-3 relative z-10">
+                    {step > 0 && (
+                        <button
+                            onClick={() => setStep(step - 1)}
+                            className={`flex-1 py-2 rounded-lg font-bold transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                        >
+                            Back
+                        </button>
+                    )}
+                    <button
+                        onClick={handleNext}
+                        className={`flex-1 py-2 rounded-lg font-bold transition-colors ${isCyberpunk ? 'bg-[#00f0ff] text-black hover:bg-[#00f0ff]/80' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                    >
+                        {step === steps.length - 1 ? 'Get Started' : 'Next'}
+                    </button>
                 </div>
             </div>
         </div>
-    </header>
-));
-
-const LogHistoryTable = React.memo(({ 
-    paginatedHistory, 
-    historySortField, 
-    historySortDesc, 
-    setHistorySortField, 
-    setHistorySortDesc, 
-    handleDayClick, 
-    historyScope, 
-    projects,
-    unifiedHistoryLength,
-    ITEMS_PER_PAGE,
-    historyPage,
-    setHistoryPage
-}: any) => (
-    <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl border border-gray-200 dark:border-gray-700/50 shadow-sm overflow-hidden">
-        <table className="w-full text-left border-collapse">
-            <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
-                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                        onClick={() => {
-                            if (historySortField === 'date') setHistorySortDesc(!historySortDesc);
-                            else { setHistorySortField('date'); setHistorySortDesc(true); }
-                        }}
-                    >
-                        <div className="flex items-center space-x-1">
-                            <span>Date</span>
-                            {historySortField === 'date' && <span>{historySortDesc ? '↓' : '↑'}</span>}
-                        </div>
-                    </th>
-                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                        onClick={() => {
-                            if (historySortField === 'hours') setHistorySortDesc(!historySortDesc);
-                            else { setHistorySortField('hours'); setHistorySortDesc(true); }
-                        }}
-                    >
-                        <div className="flex items-center space-x-1">
-                            <span>Value</span>
-                            {historySortField === 'hours' && <span>{historySortDesc ? '↓' : '↑'}</span>}
-                        </div>
-                    </th>
-                    <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Details</th>
-                    <th className="p-4 w-10"></th>
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                {paginatedHistory.length === 0 ? (
-                    <tr><td colSpan={4} className="p-8 text-center text-gray-500 dark:text-gray-400">No logs found for this period.</td></tr>
-                ) : (
-                    paginatedHistory.map((item: any) => (
-                        <tr key={item.kind === 'log' ? `log-${item.data.date}-${item.data.projectId}` : item.data.id} className="group hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                            <td className="p-4 text-sm text-gray-900 dark:text-gray-200 font-medium">
-                                {item.kind === 'log' ? item.data.date : new Date(item.data.date).toLocaleDateString()}
-                                <div className="text-[10px] text-gray-400 font-normal mt-0.5">
-                                    {item.kind === 'log' 
-                                        ? new Date(item.data.date).toLocaleDateString('en-US', { weekday: 'long' })
-                                        : new Date(item.data.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
-                                    }
-                                </div>
-                            </td>
-                            <td className="p-4 text-sm text-gray-900 dark:text-gray-200">
-                                {item.kind === 'log' ? (
-                                    <div className="flex flex-col items-start gap-1">
-                                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${item.data.hours >= 4 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : item.data.hours >= 1 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>
-                                            {item.data.hours} hrs
-                                        </span>
-                                        <span className="text-[10px] font-bold text-yellow-600 dark:text-yellow-500 ml-0.5">
-                                            +{Math.floor(item.data.hours * 20)} 💎
-                                        </span>
-                                    </div>
-                                ) : (
-                                    <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                                        item.data.type === 'SPEND' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' :
-                                        item.data.type === 'UNLOCK' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300' :
-                                        'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
-                                    }`}>
-                                        {item.data.amount > 0 ? '+' : ''}{item.data.amount} 💎
-                                    </span>
-                                )}
-                            </td>
-                            <td className="p-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
-                                {item.kind === 'log' ? (
-                                    <>
-                                        {item.data.notes || <span className="text-gray-300 dark:text-gray-600 italic">-</span>}
-                                        {historyScope === 'global' && (
-                                            <span className="ml-2 text-[10px] text-gray-400 border border-gray-200 dark:border-gray-700 px-1 rounded">{projects.find((p: any) => p.id === item.data.projectId)?.name}</span>
-                                        )}
-                                    </>
-                                ) : (
-                                    <span>{item.data.description}</span>
-                                )}
-                            </td>
-                            <td className="p-4 text-right">
-                                {item.kind === 'log' && (
-                                    <button onClick={() => handleDayClick(item.data.date)} className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all" title="Edit">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                    </button>
-                                )}
-                            </td>
-                        </tr>
-                    ))
-                )}
-            </tbody>
-        </table>
-        
-        {/* Pagination Controls */}
-        {unifiedHistoryLength > ITEMS_PER_PAGE && (
-            <div className="flex justify-between items-center p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
-                <button 
-                    onClick={() => setHistoryPage((p: number) => Math.max(1, p - 1))}
-                    disabled={historyPage === 1}
-                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
-                    Previous
-                </button>
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Page {historyPage} of {Math.ceil(unifiedHistoryLength / ITEMS_PER_PAGE)}
-                </span>
-                <button 
-                    onClick={() => setHistoryPage((p: number) => Math.min(Math.ceil(unifiedHistoryLength / ITEMS_PER_PAGE), p + 1))}
-                    disabled={historyPage >= Math.ceil(unifiedHistoryLength / ITEMS_PER_PAGE)}
-                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
-                    Next
-                </button>
-            </div>
-        )}
-    </div>
-));
+    );
+};
 
 // OAuth Callback Component
 const OAuthCallback = ({ code }: { code: string }) => {
@@ -309,17 +159,87 @@ const OAuthCallback = ({ code }: { code: string }) => {
                         </>
                     ) : (
                         <>
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                             Copy Code
                         </>
                     )}
                 </button>
-                <p className="text-xs text-gray-400 mt-4">You can close this window after copying.</p>
             </div>
         </div>
     );
 };
 
+// Interfaces defined OUTSIDE the class for clarity
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  declare props: ErrorBoundaryProps;
+  public state: ErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(_: any): ErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white p-4">
+          <h1 className="text-2xl font-bold mb-4">Something went wrong</h1>
+          <p className="mb-4 text-gray-600 dark:text-gray-400">An error occurred while rendering the application.</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+          >
+            Reload Application
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// --- Extracted Memoized Components to prevent re-renders on input change ---
+
+const DashboardHeader = React.memo(({ activeProjectName, currentYear, activeProject, streaks }: { activeProjectName: string, currentYear: number, activeProject: any, streaks: any }) => (
+    <header className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div>
+            <h1 className="text-3xl md:text-4xl font-black mb-2">
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400">
+                    {activeProjectName}
+                </span>
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400">Year {currentYear}</p>
+        </div>
+        <div className="flex gap-4 justify-end items-start">
+            {activeProject && (
+                <>
+                    <div className="text-right">
+                        <div className="text-3xl font-black text-red-500">{streaks?.current || 0}</div>
+                        <div className="text-xs uppercase tracking-widest text-gray-500">Current Streak</div>
+                    </div>
+                    <div className="text-right">
+                        <div className="text-3xl font-black text-orange-500">{streaks?.best || 0}</div>
+                        <div className="text-xs uppercase tracking-widest text-gray-500">Best Streak</div>
+                    </div>
+                </>
+            )}
+        </div>
+    </header>
+));
+
+// GhostMode Component - syncs with main timer
 const GhostModeView = () => {
     const [timeLeft, setTimeLeft] = useState(0);
     const [initialTime, setInitialTime] = useState(0);
@@ -330,12 +250,20 @@ const GhostModeView = () => {
     const [selectedProjectId, setSelectedProjectId] = useState('');
     const endTimeRef = useRef<number | null>(null);
     const startTimeRef = useRef<number | null>(null);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+    // Request initial timer state from main app
     useEffect(() => {
         window.electronAPI?.getTimerState();
-        const cleanup = window.electronAPI?.onSyncTimerState((state) => {
-            setTimeLeft(state.timeLeft);
-            setInitialTime(state.initialTime);
+    }, []);
+
+    // Listen for timer state sync from main app
+    useEffect(() => {
+        const cleanup = window.electronAPI?.onSyncTimerState((state: any) => {
+            if (!state) return;
+            
+            setTimeLeft(state.timeLeft || 0);
+            setInitialTime(state.initialTime || 0);
             setIsActive(state.isActive);
             setMode(state.mode || 'POMO');
             setPhase(state.phase || 'FOCUS');
@@ -355,22 +283,74 @@ const GhostModeView = () => {
                 startTimeRef.current = null;
             }
         });
-        const interval = setInterval(() => {
+        return () => {
+            if (cleanup) cleanup();
+        };
+    }, []);
+
+    // Listen for timer updates from main app
+    useEffect(() => {
+        const cleanup = window.electronAPI?.onTimerUpdate((action: string, payload: any) => {
+            switch(action) {
+                case 'START_TIMER':
+                    setIsActive(true);
+                    setMode(payload.mode);
+                    setPhase(payload.phase);
+                    setTimeLeft(payload.timeLeft);
+                    setInitialTime(payload.initialTime);
+                    setSessionLabel(payload.sessionLabel);
+                    setSelectedProjectId(payload.selectedProjectId);
+                    endTimeRef.current = payload.endTime || null;
+                    startTimeRef.current = payload.startTime || null;
+                    break;
+                case 'PAUSE_TIMER':
+                    setIsActive(false);
+                    setTimeLeft(payload.timeLeft);
+                    endTimeRef.current = null;
+                    startTimeRef.current = null;
+                    break;
+                case 'RESET_TIMER':
+                    setIsActive(false);
+                    setMode(payload.mode);
+                    setPhase(payload.phase);
+                    setTimeLeft(payload.initialTime);
+                    setInitialTime(payload.initialTime);
+                    endTimeRef.current = null;
+                    startTimeRef.current = null;
+                    break;
+                case 'SKIP_PHASE':
+                    setTimeLeft(0);
+                    break;
+            }
+        });
+        return () => {
+            if (cleanup) cleanup();
+        };
+    }, []);
+
+    // Local timer sync - update display based on end/start time
+    useEffect(() => {
+        if (!isActive) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            return;
+        }
+
+        timerRef.current = setInterval(() => {
             if (endTimeRef.current) {
                 const now = Date.now();
                 const diff = Math.ceil((endTimeRef.current - now) / 1000);
-                setTimeLeft(diff > 0 ? diff : 0);
+                setTimeLeft(Math.max(0, diff));
             } else if (startTimeRef.current) {
                 const now = Date.now();
                 const elapsed = Math.floor((now - startTimeRef.current) / 1000);
                 setTimeLeft(elapsed);
             }
         }, 1000);
+
         return () => {
-            if (cleanup) cleanup();
-            clearInterval(interval);
+            if (timerRef.current) clearInterval(timerRef.current);
         };
-    }, []);
+    }, [isActive]);
 
     const toggleTimer = () => {
         if (isActive) {
@@ -419,10 +399,13 @@ const GhostModeView = () => {
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
+    const safeTimeLeft = Number.isFinite(timeLeft) ? timeLeft : 0;
+    const safeInitialTime = Number.isFinite(initialTime) ? initialTime : 0;
+
     const progress = mode === 'POMO' 
-        ? (initialTime > 0 ? Math.max(0, Math.min(1, timeLeft / initialTime)) : 0)
-        : (timeLeft % 60) / 60;
-        
+        ? (safeInitialTime > 0 ? Math.max(0, Math.min(1, safeTimeLeft / safeInitialTime)) : 0)
+        : ((safeTimeLeft % 60) / 60);
+
     const hue = Math.floor(progress * 220);
     const primaryColor = `hsl(${hue}, 100%, 60%)`;
     const glowColor = `hsla(${hue}, 100%, 60%, 0.3)`;
@@ -431,916 +414,175 @@ const GhostModeView = () => {
     const strokeDashoffset = circumference * (1 - progress);
 
     return (
-        <div className="fixed inset-0 w-full h-full flex items-center justify-center bg-transparent">
-            <div className="relative flex items-center justify-center w-48 h-48 rounded-full transition-all duration-1000 ease-in-out group" style={{ WebkitAppRegion: 'drag' } as any} onDoubleClick={toggleTimer}>
+        <div className="fixed inset-0 w-full h-full flex items-center justify-center bg-transparent cursor-default select-none" style={{ WebKitAppRegion: 'drag' } as any}>
+            <div className="relative flex items-center justify-center w-48 h-48 rounded-full transition-all duration-1000 ease-in-out group" onDoubleClick={toggleTimer}>
                 <div className="absolute inset-0 rounded-full bg-black/50 backdrop-blur-md animate-pulse-slow" style={{ background: `radial-gradient(circle, ${glowColor} 0%, rgba(0,0,0,0.6) 70%)`, boxShadow: `0 0 30px ${glowColor}` }} />
+                
                 <svg className="absolute inset-0 w-full h-full transform -rotate-90 pointer-events-none">
                     <circle cx="96" cy="96" r={radius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="4" />
-                    <circle cx="96" cy="96" r={radius} fill="none" stroke={primaryColor} strokeWidth="4" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" style={{ filter: `drop-shadow(0 0 4px ${primaryColor})`, transition: 'stroke-dashoffset 1s linear, stroke 1s linear' }} />
+                    <circle cx="96" cy="96" r={radius} fill="none" stroke={primaryColor} strokeWidth="4" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.5s linear' }} />
                 </svg>
-                <div className="z-10 text-center relative flex flex-col items-center justify-center" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                    <div className="text-4xl font-mono font-bold tracking-wider drop-shadow-md select-none" style={{ color: primaryColor, textShadow: '0 2px 4px rgba(0,0,0,0.9)' }}>
-                        {formatTime(timeLeft)}
-                    </div>
-                    <div className="absolute top-12 flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        <button onClick={toggleTimer} className="p-2 hover:text-white text-white/70 transition-colors">
-                            {isActive ? <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
-                        </button>
-                        <button onClick={handleExitGhostMode} className="p-2 hover:text-white text-white/70 transition-colors">
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M20 8V4m0 0h-4M4 16v4m0 0h4M20 16v4m0 0h-4" /></svg>
-                        </button>
-                    </div>
+                
+                <div className="z-10 text-center relative" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                    <div className="text-4xl font-mono font-bold tracking-wider drop-shadow-md select-none" style={{ color: primaryColor, textShadow: '0 2px 4px rgba(0,0,0,0.9)' }}>{formatTime(safeTimeLeft)}</div>
+                </div>
+                
+                <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                    <button onClick={toggleTimer} className="p-2 hover:text-white text-white/70 transition-colors">
+                        {isActive ? <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
+                    </button>
+                    <button onClick={handleExitGhostMode} className="p-2 hover:text-white text-white/70 transition-colors">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M20 8V4m0 0h-4M4 16v4m0 0h4M20 16v4m0 0h-4" /></svg>
+                    </button>
                 </div>
             </div>
         </div>
     );
 };
 
-function FocusFlowContent() {
-  // --- Context Hooks ---
-  const { isDarkMode, toggleTheme, appTheme, setAppTheme } = useTheme();
-  const { projects, currentProjectId, setCurrentProjectId, createProject, deleteProject, updateProjects } = useProjects();
-  const { logs, goals, saveLog, deleteLog, updateGoals, transactions, addTransaction } = useLogs();
-  const { currentView, setCurrentView, settingsTab, setSettingsTab, navConfig, setNavConfig, sidebarConfig, setSidebarConfig, menuBarConfig, setMenuBarConfig } = useUI();
-  const { pendingQuickTimer, setPendingQuickTimer } = useTimerContext();
-  const { countdowns } = useCountdowns();
-
-  // Helper to check if a view is enabled in settings
-  const isViewEnabled = useCallback((view: ViewMode) => {
-      if (navConfig.length === 0) return true; // Default to true while loading
-      const config = navConfig.find(c => c.view === view);
-      return config ? config.isVisible : true;
-  }, [navConfig]);
-
-  // --- OAuth Callback Check ---
-  const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-  const authCode = searchParams.get('code');
-  if (authCode) {
-      return <OAuthCallback code={authCode} />;
-  }
-
-  const [timerViewInitialized, setTimerViewInitialized] = useState(false);
-  
-  // Dashboard state
-  // Use local date string for initial selected date to match heatmap logic
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-      const d = new Date();
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  });
-  const [hoursInput, setHoursInput] = useState<number | string>('');
-  const [notesInput, setNotesInput] = useState<string>('');
-  
-  // Gamification State (Lifted/Shared via LocalStorage)
-  const [freezeDates, setFreezeDates] = useState<string[]>(() => {
-      if (typeof window !== 'undefined') {
-          try {
-              return JSON.parse(localStorage.getItem('focusflow_freeze_dates') || '[]');
-          } catch (e) {
-              return [];
-          }
-      }
-      return [];
-  });
-
-  // Log History State (Moved from StatisticsPanel)
-  const [historyScope, setHistoryScope] = useState<'project' | 'global'>('project');
-  const [historyFilter, setHistoryFilter] = useState<'all' | '7days' | '30days' | 'year'>('30days');
-  const [historyTypeFilter, setHistoryTypeFilter] = useState<'all' | 'study' | 'economy'>('all');
-  const [historySortField, setHistorySortField] = useState<'date' | 'hours'>('date');
-  const [historySortDesc, setHistorySortDesc] = useState(true);
-
-  // Pagination State
-  const [historyPage, setHistoryPage] = useState(1);
-  const ITEMS_PER_PAGE = 10;
-
-  // Toast State
-  const [toast, setToast] = useState<{title: string, subtitle?: string, icon: string} | null>(null);
-  const prevBadgeCount = useRef<number>(-1);
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
-
-  // --- Daily Login Bonus ---
-  useEffect(() => {
-      if (!isViewEnabled(ViewMode.GAMIFICATION)) return;
-
-      const checkDailyBonus = () => {
-          const today = new Date().toISOString().split('T')[0];
-          const lastLogin = localStorage.getItem('focusflow_last_login_date');
-
-          if (lastLogin !== today) {
-              // Randomized Daily Bonus with Jackpot
-              const roll = Math.random();
-              let bonusAmount = 0;
-              let title = '';
-              let icon = '';
-
-              if (roll < 0.02) { // 2% Chance - Mega Jackpot
-                  bonusAmount = 500;
-                  title = 'MEGA JACKPOT!';
-                  icon = '💎';
-              } else if (roll < 0.15) { // 13% Chance - Big Win
-                  bonusAmount = 150;
-                  title = 'Big Bonus!';
-                  icon = '💰';
-              } else {
-                  // 85% Chance - Standard (30-60 gems)
-                  bonusAmount = Math.floor(Math.random() * 31) + 30;
-                  title = 'Daily Login Bonus';
-                  icon = '🎁';
-              }
-              
-              // Update Bonus Gems (Direct localStorage manipulation to sync with GamificationPanel)
-              const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
-              localStorage.setItem('focusflow_bonus_gems', (currentBonus + bonusAmount).toString());
-              
-              // Add Transaction
-              addTransaction({
-                  id: `daily-bonus-${Date.now()}`,
-                  date: new Date().toISOString(),
-                  type: 'EARN',
-                  amount: bonusAmount,
-                  description: title
-              });
-
-              localStorage.setItem('focusflow_last_login_date', today);
-              
-              setToast({ title: `${title}: +${bonusAmount} Gems`, icon, subtitle: "Daily Bonus" });
-              
-              const savedVol = localStorage.getItem('focusflow_timer_volume');
-              const vol = savedVol ? parseFloat(savedVol) : 0.5;
-              playWin(vol);
-              setTimeout(() => setToast(null), 5000);
-          }
-      };
-      const timer = setTimeout(checkDailyBonus, 1500);
-      return () => clearTimeout(timer);
-  }, [addTransaction, isViewEnabled]);
-
-  // --- Auto-Update Listeners ---
-  useEffect(() => {
-      if (!isElectron) return;
-      
-      const unsubAvailable = window.electronAPI?.onUpdateAvailable?.(() => {
-          setToast({ title: 'Downloading Update...', icon: '⬇️', subtitle: 'System Update' });
-      });
-      
-      const unsubDownloaded = window.electronAPI?.onUpdateDownloaded?.(() => {
-          setToast({ title: 'Update Ready. Restarting...', icon: '✅', subtitle: 'System Update' });
-          setTimeout(() => window.electronAPI?.restartApp(), 4000);
-      });
-
-      return () => {
-          unsubAvailable && unsubAvailable();
-          unsubDownloaded && unsubDownloaded();
-      };
-  }, [isElectron]);
-
-  // Sync Global Shortcut on Mount
-  useEffect(() => {
-      const savedShortcut = localStorage.getItem('focusflow_quick_capture_shortcut');
-      if (savedShortcut && window.electronAPI?.updateGlobalShortcut) {
-          window.electronAPI.updateGlobalShortcut(savedShortcut);
-      }
-  }, []);
-
-  // Reset page when filters change
-  useEffect(() => setHistoryPage(1), [historyFilter, historyScope, historySortField, historySortDesc, historyTypeFilter]);
-
-  const formRef = useRef<HTMLDivElement>(null); 
-
-  useEffect(() => {
-    if (currentView === ViewMode.TIMER || pendingQuickTimer) setTimerViewInitialized(true);
-  }, [currentView, pendingQuickTimer]);
-
-  useEffect(() => {
-      const projectLog = logs.find(l => l.date === selectedDate && l.projectId === currentProjectId);
-      setHoursInput(projectLog ? projectLog.hours : '');
-      setNotesInput(projectLog ? projectLog.notes || '' : '');
-  }, [currentProjectId, projects, selectedDate, logs]);
-
-  const activeProject = projects.find(p => p.id === currentProjectId);
-  const activeProjectName = activeProject?.name || 'Project';
-
-  // Effective Goals Logic (Project Specific)
-  const effectiveGoals = useMemo<UserGoals>(() => {
-      if (activeProject?.goals) return activeProject.goals;
-      
-      // Fallback/Legacy support: Use global defaults but override weekly if project has legacy weeklyGoal
-      return {
-          daily: goals.daily,
-          weekly: activeProject?.weeklyGoal || goals.weekly,
-          monthly: goals.monthly,
-          yearly: goals.yearly
-      };
-  }, [activeProject, goals]);
-
-  const handleUpdateGoals = (newGoals: UserGoals) => {
-      if (activeProject) {
-          const now = new Date().toISOString();
-          const currentHistory = activeProject.goalHistory || [];
-          const newHistory = [...currentHistory, { date: now, goals: newGoals }];
-          
-          const updatedProject = { ...activeProject, goals: newGoals, weeklyGoal: newGoals.weekly, goalHistory: newHistory };
-          const updatedProjects = projects.map(p => p.id === activeProject.id ? updatedProject : p);
-          updateProjects(updatedProjects);
-      }
-      // Note: We no longer update global `goals` context for project-specific changes
-  };
-
-  const handleSaveLog = (e: React.FormEvent) => {
-    e.preventDefault();
-    const h = Number(hoursInput);
-    if (isNaN(h) || h < 0 || h > 24) return;
-    saveLog(selectedDate, h, notesInput);
-  };
-
-  const handleTimerSave = async (sessionHours: number, sessionNote?: string, sessionProjectId?: string, taskId?: string) => {
-      const targetProject = sessionProjectId || currentProjectId;
-      if (!targetProject) return;
-      const d = new Date();
-      // Use local date string
-      const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      const existing = logs.find(l => l.date === today && l.projectId === targetProject);
-      const totalHours = (existing ? existing.hours : 0) + sessionHours;
-      const mergedNotes = [existing?.notes, sessionNote]
-          .filter(n => n && n.trim().length > 0)
-          .join('; ');
-
-      saveLog(today, totalHours, mergedNotes, targetProject);
-
-      if (taskId) {
-        const tasks = await storage.getTasks();
-        const task = tasks.find(t => t.id === taskId);
-        if (task) {
-            const updatedTask = { 
-                ...task, 
-                completedPomodoros: (task.completedPomodoros || 0) + 1,
-                lastSessionDate: today,
-            };
-            await storage.saveTask(updatedTask);
-            window.dispatchEvent(new Event('focusflow-task-update'));
-        }
-      }
-  };
-  
-  const handleDeleteLog = () => {
-      const confirmed = window.confirm("Are you sure you want to delete this entry?");
-      if (confirmed && currentProjectId) {
-          deleteLog(selectedDate, currentProjectId);
-          setHoursInput('');
-          setNotesInput('');
-      }
-  };
-
-  const handleDayClick = useCallback((date: string) => {
-    setSelectedDate(date);
-    // Logic to scroll or switch view is handled by effects or user action, 
-    // but here we just set date. The effect above syncs inputs.
-    // If we want to switch view:
-    if (currentView !== ViewMode.DASHBOARD) setCurrentView(ViewMode.DASHBOARD);
-    if (formRef.current) formRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [currentView, setCurrentView]);
-  
-  const handleEditLogFromStats = (date: string) => {
-      handleDayClick(date);
-      setCurrentView(ViewMode.DASHBOARD);
-  };
-
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const date = e.target.value;
-      setSelectedDate(date);
-  };
-
-  const handleThemeChange = (newTheme: HeatmapTheme) => {
-      const updated = projects.map(p => p.id === currentProjectId ? {...p, theme: newTheme} : p);
-      updateProjects(updated);
-      // Note: updateProjects in context also saves to storage
-  };
-
-  const handleConsumeQuickTimer = useCallback(() => {
-      setPendingQuickTimer(null);
-  }, [setPendingQuickTimer]);
-
-  const handleManageProjects = () => {
-      setCurrentView(ViewMode.SETTINGS);
-      setSettingsTab('projects');
-  };
-
-  // --- Calculations ---
-  const currentYear = new Date().getFullYear();
-  const projectLogs = useMemo(() => logs.filter(l => l.projectId === currentProjectId), [logs, currentProjectId]);
-  const activeLog = useMemo(() => projectLogs.find(l => l.date === selectedDate), [projectLogs, selectedDate]);
-
-  // Helper for Streak Calculation
-  const calculateStreaks = (targetLogs: StudyLog[], freezes: string[]) => {
-      const activeLogDates = targetLogs.filter(l => l.hours > 0).map(l => l.date);
-      const combinedDates = Array.from(new Set<string>([...activeLogDates, ...freezes])).sort();
-      
-      if (combinedDates.length === 0) return { current: 0, longest: 0 };
-      
-      const timestamps = combinedDates.map((d: string) => {
-          const [y, m, day] = d.split('-').map(Number);
-          return Date.UTC(y, m - 1, day);
-      });
-
-      let longest = 1;
-      let currentRun = 1;
-      for (let i = 1; i < timestamps.length; i++) {
-          const diffDays = (timestamps[i] - timestamps[i-1]) / (1000 * 60 * 60 * 24);
-          if (Math.round(diffDays) === 1) currentRun++;
-          else currentRun = 1;
-          if (currentRun > longest) longest = currentRun;
-      }
-      
-      const now = new Date();
-      const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-      const yesterday = today - 86400000;
-      const lastLogDate = timestamps[timestamps.length - 1];
-      
-      let current = 0;
-      if (lastLogDate === today || lastLogDate === yesterday) {
-          current = 1;
-          for (let i = timestamps.length - 2; i >= 0; i--) {
-              const diffDays = (timestamps[i+1] - timestamps[i]) / (1000 * 60 * 60 * 24);
-              if (Math.round(diffDays) === 1) current++;
-              else break;
-          }
-      }
-      return { current, longest };
-  };
-
-  // Unified History Item Type
-  type HistoryItem = 
-    | { kind: 'log', date: string, data: StudyLog }
-    | { kind: 'tx', date: string, data: Transaction };
-
-  const unifiedHistory = useMemo(() => {
-      let items: HistoryItem[] = [];
-
-      // 1. Add Study Logs
-      if (historyTypeFilter === 'all' || historyTypeFilter === 'study') {
-          const targetLogs = historyScope === 'global' ? logs : projectLogs;
-          items = items.concat(targetLogs.map(l => ({ kind: 'log', date: l.date, data: l })));
-      }
-
-      // 2. Add Transactions (Only in Global Scope or if explicitly requested, usually global)
-      if (historyScope === 'global' && (historyTypeFilter === 'all' || historyTypeFilter === 'economy')) {
-          items = items.concat((transactions || []).map(t => ({ kind: 'tx', date: t.date, data: t })));
-      }
-
-      // 3. Filter by Date Range
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      let cutoff = new Date(0);
-      
-      if (historyFilter === '7days') {
-          cutoff.setDate(now.getDate() - 7);
-      } else if (historyFilter === '30days') {
-          cutoff.setDate(now.getDate() - 30);
-      } else if (historyFilter === 'year') {
-          cutoff = new Date(now.getFullYear(), 0, 1);
-      }
-
-      if (cutoff.getTime() > 0) {
-          // Optimization: Pre-calculate timestamps for filtering to avoid repeated new Date()
-          items = items.filter(item => {
-              const ts = item.kind === 'log' ? parseDate(item.date).getTime() : new Date(item.date).getTime();
-              return ts >= cutoff.getTime();
-          });
-      }
-
-      // Pre-calculate timestamps for sorting to avoid O(N log N) Date creations
-      const itemsWithTs = items.map(item => ({
-          ...item,
-          timestamp: item.kind === 'log' ? parseDate(item.date).getTime() : new Date(item.date).getTime()
-      }));
-
-      // 4. Sort
-      itemsWithTs.sort((a, b) => {
-          if (historySortField === 'date') {
-              return historySortDesc ? b.timestamp - a.timestamp : a.timestamp - b.timestamp;
-          }
-          
-          // Sort by Value (Hours or Amount)
-          const valA = a.kind === 'log' ? a.data.hours : Math.abs(a.data.amount);
-          const valB = b.kind === 'log' ? b.data.hours : Math.abs(b.data.amount);
-          return historySortDesc ? valB - valA : valA - valB;
-      });
-
-      return itemsWithTs;
-  }, [logs, projectLogs, transactions, historyScope, historyFilter, historyTypeFilter, historySortField, historySortDesc]);
-
-  const paginatedHistory = useMemo(() => {
-      const start = (historyPage - 1) * ITEMS_PER_PAGE;
-      return unifiedHistory.slice(start, start + ITEMS_PER_PAGE);
-  }, [unifiedHistory, historyPage]);
-
-  // Global Stats (For Gamification)
-  const globalTotalHours = useMemo(() => logs.reduce((acc, curr) => acc + curr.hours, 0), [logs]);
-  const globalStreaks = useMemo(() => calculateStreaks(logs, freezeDates), [logs, freezeDates]);
-  
-  const [currentGems, setCurrentGems] = useState(0);
-
-  useEffect(() => {
-      const calculateGems = () => {
-          const spent = parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0;
-          const bonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
-          
-          const achievements = getUnlockedAchievements(logs, globalTotalHours, globalStreaks.current);
-          const achievementGems = achievements.filter(a => a.isUnlocked).reduce((acc, curr) => acc + getAchievementReward(curr).gems, 0);
-          
-          const quests = getDailyQuests(logs);
-          const questGems = quests.filter(q => q.current >= q.target).reduce((acc, curr) => acc + curr.reward, 0);
-          
-          const earningRate = 10;
-          const rawBalance = Math.floor(globalTotalHours * earningRate) + achievementGems + questGems + bonus - spent;
-          setCurrentGems(Math.max(0, rawBalance));
-      };
-      
-      calculateGems();
-      window.addEventListener('focusflow-gem-update', calculateGems);
-      return () => window.removeEventListener('focusflow-gem-update', calculateGems);
-  }, [logs, globalTotalHours, globalStreaks]);
-
-  // Project Stats (For Dashboard/Sidebar)
-  const currentDailyHours = useMemo(() => {
-      const d = new Date();
-      const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      return projectLogs.filter(l => l.date === todayStr).reduce((acc, curr) => acc + curr.hours, 0);
-  }, [projectLogs]);
-
-  const currentWeeklyHours = useMemo(() => {
-      const now = new Date();
-      const day = now.getDay();
-      const diff = now.getDate() - day + (day === 0 ? -6 : 1); 
-      const monday = new Date(now.getTime());
-      monday.setDate(diff);
-      monday.setHours(0,0,0,0);
-      return projectLogs.filter(l => parseDate(l.date) >= monday).reduce((acc, curr) => acc + curr.hours, 0);
-  }, [projectLogs]);
-
-  const currentMonthlyHours = useMemo(() => {
-      const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      return projectLogs.filter(l => parseDate(l.date) >= startOfMonth).reduce((acc, curr) => acc + curr.hours, 0);
-  }, [projectLogs]);
-
-  const currentYearlyHours = useMemo(() => {
-      const now = new Date();
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      return projectLogs.filter(l => parseDate(l.date) >= startOfYear).reduce((acc, curr) => acc + curr.hours, 0);
-  }, [projectLogs]);
-
-  const projectStreaks = useMemo(() => calculateStreaks(projectLogs, freezeDates), [projectLogs, freezeDates]);
-
-  const latestBadge = useMemo<Achievement | null>(() => {
-      const all = getUnlockedAchievements(logs, globalTotalHours, globalStreaks.current);
-      const unlocked = all.filter(a => a.isUnlocked);
-      return unlocked.length > 0 ? unlocked[unlocked.length - 1] : null;
-  }, [logs, globalTotalHours, globalStreaks.current]);
-
-  // Badge Notification Effect
-  useEffect(() => {
-      const all = getUnlockedAchievements(logs, globalTotalHours, globalStreaks.current);
-      const unlocked = all.filter(a => a.isUnlocked);
-      const count = unlocked.length;
-
-      if (prevBadgeCount.current === -1) {
-          prevBadgeCount.current = count;
-          return;
-      }
-
-      if (count > prevBadgeCount.current) {
-          // Only toast if it's a small increment (user action), not a bulk load (import/sync)
-          if (count - prevBadgeCount.current <= 2) {
-              const latest = unlocked[unlocked.length - 1];
-              if (latest) {
-                  setToast({ title: latest.title, icon: latest.icon });
-                  
-                  const savedVol = localStorage.getItem('focusflow_timer_volume');
-                  const vol = savedVol ? parseFloat(savedVol) : 0.5;
-                  playWin(vol);
-
-                  const timer = setTimeout(() => setToast(null), 5000);
-                  return () => clearTimeout(timer);
-              }
-          }
-      }
-      prevBadgeCount.current = count;
-  }, [logs, globalTotalHours, globalStreaks.current]);
-
-  // Streak Freeze Logic: Check on mount/update if we missed yesterday and need to consume a freeze
-  useEffect(() => {
-      const checkStreakFreeze = () => {
-          const inventory = JSON.parse(localStorage.getItem('focusflow_inventory') || '{}');
-          const freezesOwned = inventory.streakFreeze || 0;
-          
-          if (freezesOwned <= 0) return;
-
-          const today = new Date();
-          // Use UTC to determine yesterday's date string consistently
-          const yesterdayTs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() - 1);
-          const yesterdayStr = new Date(yesterdayTs).toISOString().split('T')[0];
-          
-          // Check if yesterday is already logged or frozen
-          const hasLogYesterday = logs.some(l => l.date === yesterdayStr && l.hours > 0);
-          const isFrozenYesterday = freezeDates.includes(yesterdayStr);
-
-          if (!hasLogYesterday && !isFrozenYesterday) {
-              // Only consume if there was a streak to save (day before yesterday was active)
-              // This prevents consuming freezes when the user hasn't been active for weeks
-              
-              // Check day before yesterday
-              const dayBeforeTs = yesterdayTs - 86400000;
-              const dayBeforeStr = new Date(dayBeforeTs).toISOString().split('T')[0];
-              const hasLogDayBefore = logs.some(l => l.date === dayBeforeStr && l.hours > 0) || freezeDates.includes(dayBeforeStr);
-
-              if (hasLogDayBefore) {
-                  // Consume Freeze
-                  inventory.streakFreeze = freezesOwned - 1;
-                  localStorage.setItem('focusflow_inventory', JSON.stringify(inventory));
-                  
-                  const newFreezeDates = [...freezeDates, yesterdayStr];
-                  localStorage.setItem('focusflow_freeze_dates', JSON.stringify(newFreezeDates));
-                  setFreezeDates(newFreezeDates);
-              }
-          }
-      };
-      checkStreakFreeze();
-  }, [logs, freezeDates]); // Check when logs change or freezeDates update
-
-  const heatmapTheme = activeProject?.theme || 'green';
-  const effectiveGoalHistory = activeProject?.goalHistory || [];
-
-  useEffect(() => {
-      if (menuBarConfig.mode === 'none' || menuBarConfig.mode === 'timer') {
-          if (menuBarConfig.mode === 'none') window.electronAPI?.updateTrayTitle('');
-          return;
-      }
-
-      let text = '';
-      const d = new Date();
-      const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      const todayHours = logs.filter(l => l.date === todayStr).reduce((acc, curr) => acc + curr.hours, 0);
-
-      switch (menuBarConfig.mode) {
-          case 'today': text = `Today: ${todayHours.toFixed(1)}h`; break;
-          case 'remaining': 
-              const dailyGoal = effectiveGoals.daily || 4;
-              const remaining = Math.max(0, dailyGoal - todayHours);
-              text = `${remaining.toFixed(1)}h Left`; 
-              break;
-          case 'streak': text = `🔥 ${globalStreaks.current} Day Streak`; break;
-          case 'xp': text = `✨ ${Math.floor(globalTotalHours * 100)} XP`; break;
-          case 'motivation': text = "💪 Focus & Win"; break;
-          case 'countdown_closest':
-              const now = new Date();
-              now.setHours(0,0,0,0);
-              const sorted = countdowns
-                  .filter(c => !c.isArchived)
-                  .map(c => {
-                      const nextDate = getNextDate(c);
-                      const diff = nextDate.getTime() - now.getTime();
-                      return { ...c, diff, nextDate };
-                  })
-                  .filter(c => c.diff >= 0)
-                  .sort((a, b) => a.diff - b.diff);
-              
-              if (sorted.length > 0) {
-                  const closest = sorted[0];
-                  const days = Math.ceil(closest.diff / (1000 * 60 * 60 * 24));
-                  text = `${closest.title}: ${days}d`;
-              } else {
-                  text = 'No Events';
-              }
-              break;
-          case 'countdown_custom':
-              if (menuBarConfig.customCountdownId) {
-                  const item = countdowns.find(c => c.id === menuBarConfig.customCountdownId);
-                  if (item) {
-                      const now = new Date();
-                      now.setHours(0,0,0,0);
-                      const nextDate = getNextDate(item);
-                      const diff = nextDate.getTime() - now.getTime();
-                      const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-                      text = `${item.title}: ${days}d`;
-                  } else {
-                      text = 'Event not found';
-                  }
-              } else {
-                  text = 'Select Event';
-              }
-              break;
-      }
-      
-      if (text) window.electronAPI?.updateTrayTitle(text);
-  }, [menuBarConfig, logs, goals, globalStreaks, globalTotalHours, countdowns]);
-
-  const contentBgClass = appTheme === 'cyberpunk' 
-    ? 'bg-[#050505] text-[#00f0ff] font-mono' 
-    : 'bg-white dark:bg-gray-900';
-
-  return (
-    <div className={isElectron ? "w-screen h-screen overflow-hidden" : "min-h-screen flex items-center justify-center p-4 sm:p-8 transition-colors duration-500"}>
-      {toast && <Toast title={toast.title} subtitle={toast.subtitle} icon={toast.icon} onClose={() => setToast(null)} isCyberpunk={appTheme === 'cyberpunk'} />}
-      <MacWindow 
-        isDarkMode={isDarkMode} 
-        onToggleTheme={toggleTheme} 
-        appTheme={appTheme}
-        icon={<img src="/icon.png" className="w-4 h-4 object-contain" alt="App Icon" />}
-      >
-        <Sidebar 
-            currentView={currentView} 
-            onChangeView={setCurrentView} 
-            weeklyGoal={effectiveGoals.weekly}
-            currentWeeklyHours={currentWeeklyHours}
-            currentDailyHours={currentDailyHours}
-            currentMonthlyHours={currentMonthlyHours}
-            goals={effectiveGoals}
-            projects={projects}
-            currentProjectId={currentProjectId}
-            onSelectProject={setCurrentProjectId}
-            onCreateProject={createProject}
-            onDeleteProject={deleteProject}
-            navConfig={navConfig}
-            onManageProjects={handleManageProjects}
-            sidebarConfig={sidebarConfig}
-            appTheme={appTheme}
-            latestBadge={latestBadge}
-            logs={projectLogs} // Pass project logs to sidebar for project-specific quests
-        />
-        {/* Quick Capture and Mini Overlay Windows */}
-        {pendingQuickTimer && (
-            <QuickTimerOverlay />
-        )}
-        <div className={`flex-1 relative overflow-hidden flex flex-col transition-colors duration-300 ${contentBgClass}`}>
-          
-          {/* TimerPanel must be outside Suspense to prevent unmounting when other tabs load */}
-          {isViewEnabled(ViewMode.TIMER) && (currentView === ViewMode.TIMER || timerViewInitialized) && (
-            <div className={currentView === ViewMode.TIMER ? "h-full" : "hidden"}>
-              <Suspense fallback={<PanelLoader />}>
-                <TimerPanel 
-                  onSaveSession={handleTimerSave} 
-                  projectId={currentProjectId} 
-                  projects={projects}
-                  menuBarConfig={menuBarConfig}
-                  externalStart={pendingQuickTimer}
-                  onConsumeExternalStart={handleConsumeQuickTimer}
-                  currentGems={currentGems}
-                  addTransaction={addTransaction}
-              />
-              </Suspense>
-            </div>
-          )}
-
-          <Suspense fallback={<PanelLoader />}>
-            {currentView === ViewMode.DASHBOARD && (
-              <div className="flex-1 flex flex-col min-h-0 overflow-y-auto bg-gray-50/50 dark:bg-black/20">
-              <div className="p-8 pb-0">
-                <DashboardHeader 
-                    activeProjectName={activeProjectName} 
-                    currentYear={currentYear} 
-                    activeProject={{...activeProject, weeklyGoal: effectiveGoals.weekly}} 
-                    streaks={projectStreaks} 
-                />
-
-                <div ref={formRef} className="w-full bg-white dark:bg-[#1c1c1e] rounded-2xl p-6 border border-gray-200 dark:border-gray-700/50 shadow-lg mb-4 relative overflow-hidden group transition-colors">
-                    <form onSubmit={handleSaveLog} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                        <div className="md:col-span-2 space-y-1.5">
-                            <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-500 uppercase tracking-widest pl-1">Date</label>
-                            <input 
-                                type="date" 
-                                value={selectedDate} 
-                                onChange={handleDateChange} 
-                                className="w-full h-11 px-3 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm text-gray-900 dark:text-gray-200 transition-all [color-scheme:light] dark:[color-scheme:dark]" 
-                            />
-                        </div>
-                        <div className="md:col-span-2 space-y-1.5">
-                            <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-500 uppercase tracking-widest pl-1">Hours</label>
-                            <input 
-                                type="number" 
-                                step="0.1" 
-                                min="0" 
-                                max="24" 
-                                value={hoursInput} 
-                                onChange={(e) => setHoursInput(e.target.value)} 
-                                placeholder="0.0" 
-                                className="w-full h-11 px-3 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm text-gray-900 dark:text-gray-200 transition-all placeholder-gray-400 dark:placeholder-gray-600 font-mono" 
-                            />
-                        </div>
-                        <div className="md:col-span-6 space-y-1.5">
-                            <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-500 uppercase tracking-widest pl-1">Notes</label>
-                            <input 
-                                type="text" 
-                                value={notesInput} 
-                                onChange={(e) => setNotesInput(e.target.value)} 
-                                placeholder="What did you work on?" 
-                                className="w-full h-11 px-3 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm text-gray-900 dark:text-gray-200 transition-all placeholder-gray-400 dark:placeholder-gray-600" 
-                            />
-                        </div>
-                        <div className="md:col-span-2 flex gap-2 h-11">
-                            <button 
-                                type="submit" 
-                                className="flex-1 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-900/20 transition-all active:scale-95 h-full flex items-center justify-center"
-                            >
-                                {activeLog ? 'Update' : 'Save'}
-                            </button>
-                            {activeLog && (
-                                <button 
-                                    type="button" 
-                                    onClick={handleDeleteLog} 
-                                    className="h-11 w-11 shrink-0 bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-600 dark:bg-red-500/10 dark:hover:bg-red-500/20 dark:text-red-400 dark:hover:text-red-300 rounded-xl transition-all active:scale-95 border border-red-200 dark:border-red-500/20 flex items-center justify-center aspect-square" 
-                                    title="Delete Entry"
-                                >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                </button>
-                            )}
-                        </div>
-                    </form>
-                </div>
-
-                <div className="mb-8 w-full"><Heatmap data={projectLogs} year={currentYear} onDayClick={handleDayClick} isDarkMode={isDarkMode} theme={heatmapTheme} onThemeChange={handleThemeChange} /></div>
-                
-                {/* Log History Table */}
-                <div className="mb-8 w-full">
-                    <div className="flex flex-col lg:flex-row justify-between items-center mb-4 gap-4">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">Log History</h3>
-                        <div className="flex gap-2">
-                             <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-lg">
-                                <button onClick={() => setHistoryScope('project')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyScope === 'project' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Project</button>
-                                <button onClick={() => setHistoryScope('global')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyScope === 'global' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Global</button>
-                             </div>
-                             <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-lg">
-                                <button onClick={() => setHistoryTypeFilter('all')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'all' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>All</button>
-                                <button onClick={() => setHistoryTypeFilter('study')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'study' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Study</button>
-                                {historyScope === 'global' && (
-                                    <button onClick={() => setHistoryTypeFilter('economy')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'economy' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Economy</button>
-                                )}
-                             </div>
-                             <select 
-                                value={historyFilter} 
-                                onChange={(e) => setHistoryFilter(e.target.value as any)}
-                                className="bg-gray-200 dark:bg-gray-800 border-none text-xs font-bold rounded-lg px-3 py-1 text-gray-700 dark:text-gray-300 focus:ring-0 outline-none"
-                             >
-                                 <option value="7days">7 Days</option>
-                                 <option value="30days">30 Days</option>
-                                 <option value="year">Year</option>
-                                 <option value="all">All Time</option>
-                             </select>
-                        </div>
-                    </div>
-                    
-                    <LogHistoryTable 
-                        paginatedHistory={paginatedHistory}
-                        historySortField={historySortField}
-                        historySortDesc={historySortDesc}
-                        setHistorySortField={setHistorySortField}
-                        setHistorySortDesc={setHistorySortDesc}
-                        handleDayClick={handleDayClick}
-                        historyScope={historyScope}
-                        projects={projects}
-                        unifiedHistoryLength={unifiedHistory.length}
-                        ITEMS_PER_PAGE={ITEMS_PER_PAGE}
-                        historyPage={historyPage}
-                        setHistoryPage={setHistoryPage}
-                    />
-                </div>
-              </div>
-              </div>
-            )}
-
-            {currentView === ViewMode.STATISTICS && (
-              <StatisticsPanel 
-                  logs={projectLogs} 
-                  allLogs={logs}
-                  projects={projects} 
-                  goals={effectiveGoals} 
-                  onUpdateGoals={handleUpdateGoals}
-                  onEditLog={handleEditLogFromStats}
-                  projectId={currentProjectId}
-                  goalHistory={effectiveGoalHistory}
-              />
-            )}
-
-            {currentView === ViewMode.GOALS && (
-              <GoalsPanel 
-                  goals={effectiveGoals}
-                  onUpdateGoals={handleUpdateGoals}
-                  currentDailyHours={currentDailyHours}
-                  currentWeeklyHours={currentWeeklyHours}
-                  currentMonthlyHours={currentMonthlyHours}
-                  currentYearlyHours={currentYearlyHours}
-                  goalHistory={effectiveGoalHistory}
-              />
-            )}
-
-            {currentView === ViewMode.TASKS && (
-              <TaskPanel projects={projects} />
-            )}
-
-            {currentView === ('QUICK_CAPTURE' as any) && (
-              <QuickCapturePanel />
-            )}
-
-            {currentView === ViewMode.COUNTDOWN && (
-              <CountdownPanel />
-            )}
-
-            {currentView === ViewMode.CALENDAR && (
-              <CalendarPanel 
-                  logs={logs} 
-                  projects={projects}
-              />
-            )}
-
-            {currentView === ViewMode.INSIGHTS && (
-              <InsightsPanel logs={projectLogs} />
-            )}
-
-            {currentView === ViewMode.GAMIFICATION && (
-              <GamificationPanel 
-                  activeProject={activeProject || null}
-                  userState={{
-                      globalBalance: currentGems,
-                      totalFocusTime: globalTotalHours
-                  }}
-                  isCyberpunk={appTheme === 'cyberpunk'}
-                  projects={projects}
-                  onSelectProject={setCurrentProjectId}
-              />
-            )}
-
-            {currentView === ViewMode.SETTINGS && (
-              <SettingsPanel 
-                  navConfig={navConfig} 
-                  onUpdateNavConfig={setNavConfig}
-                  isDarkMode={isDarkMode}
-                  onToggleTheme={toggleTheme}
-                  menuBarConfig={menuBarConfig}
-                  onUpdateMenuBarConfig={setMenuBarConfig}
-                  projects={projects}
-                  onCreateProject={createProject}
-                  onDeleteProject={deleteProject}
-                  onUpdateProjects={updateProjects}
-                  activeTab={settingsTab}
-                  onTabChange={setSettingsTab}
-                  sidebarConfig={sidebarConfig}
-                  onUpdateSidebarConfig={setSidebarConfig}
-                  appTheme={appTheme}
-                  setAppTheme={setAppTheme}
-              />
-            )}
-          </Suspense>
-        </div>
-      </MacWindow>
-    </div>
-  );
-}
-
-// Helper for recurrence calculation
-const getNextDate = (item: CountdownItem): Date => {
-    const now = new Date();
-    now.setHours(0,0,0,0);
-    let target = new Date(item.date);
-    target.setHours(0,0,0,0);
+// Main FocusFlow Content Component
+const FocusFlowContent = () => {
+    const { appTheme } = useTheme();
+    const { projects, currentProjectId } = useProjects();
+    const { logs: allLogs, transactions } = useLogs();
+    const { isShowingTutorial, setIsShowingTutorial, ghostMode } = useUI();
     
-    if (item.recurrence && item.recurrence !== 'none' && target.getTime() < now.getTime()) {
-        if (item.recurrence === 'yearly') {
-            target.setFullYear(now.getFullYear());
-            if (target.getTime() < now.getTime()) target.setFullYear(now.getFullYear() + 1);
-        } else if (item.recurrence === 'monthly') {
-            target.setMonth(now.getMonth());
-            if (target.getTime() < now.getTime()) target.setMonth(now.getMonth() + 1);
-        } else if (item.recurrence === 'weekly') {
-            const oneWeek = 7 * 24 * 60 * 60 * 1000;
-            const diff = now.getTime() - target.getTime();
-            const weeksToAdd = Math.ceil(diff / oneWeek);
-            target = new Date(target.getTime() + weeksToAdd * oneWeek);
-        } else if (item.recurrence === 'daily') {
-            target = new Date(now);
-        }
-    }
-    return target;
-};
+    const [toasts, setToasts] = useState<Array<{ id: string, title: string, subtitle?: string, icon: string }>>([]);
+    const [view, setView] = useState<ViewMode>('TIMER');
 
-export default function App() {
-    const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-    const mode = searchParams.get('mode');
+    const isCyberpunk = appTheme === 'cyberpunk';
+    const activeProject = projects.find(p => p.id === currentProjectId);
+    const activeProjectName = activeProject?.name || 'All Projects';
+    const currentYear = new Date().getFullYear();
+
+    // Track achievements
+    useEffect(() => {
+        const checkAchievements = async () => {
+            const userState = {
+                globalBalance: transactions.reduce((sum, t) => sum + (t.type === 'WIN' ? t.amount : -t.amount), 0),
+                totalFocusTime: allLogs.reduce((sum, log) => sum + log.focusMinutes, 0) * 60
+            };
+
+            const achievements = getUnlockedAchievements(userState);
+            const newAchievements = achievements.filter(a => {
+                const savedIds = JSON.parse(localStorage.getItem('focusflow_achievement_ids') || '[]');
+                return !savedIds.includes(a.id);
+            });
+
+            for (const achievement of newAchievements) {
+                playWin();
+                addToast(achievement.title, achievement.description, achievement.icon);
+                
+                const savedIds = JSON.parse(localStorage.getItem('focusflow_achievement_ids') || '[]');
+                localStorage.setItem('focusflow_achievement_ids', JSON.stringify([...savedIds, achievement.id]));
+            }
+        };
+
+        checkAchievements();
+    }, [allLogs, transactions]);
+
+    const addToast = (title: string, subtitle?: string, icon: string = '⭐') => {
+        const id = Math.random().toString(36).substr(2, 9);
+        setToasts(prev => [...prev, { id, title, subtitle, icon }]);
+        setTimeout(() => {
+            setToasts(prev => prev.filter(t => t.id !== id));
+        }, 5000);
+    };
+
+    if (ghostMode) {
+        return <GhostModeView />;
+    }
 
     return (
-        <AppProvider>
-            <ErrorBoundary>
-                {mode === 'mini-capture' ? (
-                    <MiniCaptureWindow />
-                ) : mode === 'quick' ? (
-                    <div className="fixed inset-0 bg-transparent">
-                        <QuickTimerOverlay />
+        <ErrorBoundary>
+            {isShowingTutorial && (
+                <Tutorial 
+                    onComplete={() => setIsShowingTutorial(false)}
+                    isCyberpunk={isCyberpunk}
+                />
+            )}
+
+            <MacWindow onToggleTheme={() => {}} isDarkMode={appTheme === 'dark'} title="FocusFlow">
+                <div className="flex h-full">
+                    <Sidebar activeView={view} onViewChange={setView} />
+                    
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        <div className="flex-1 overflow-y-auto p-6 md:p-8">
+                            <Suspense fallback={<PanelLoader />}>
+                                {view === 'TIMER' && (
+                                    <div className="max-w-6xl mx-auto">
+                                        <DashboardHeader 
+                                            activeProjectName={activeProjectName}
+                                            currentYear={currentYear}
+                                            activeProject={activeProject}
+                                            streaks={activeProject?.streak}
+                                        />
+                                        <TimerPanel projects={projects} />
+                                    </div>
+                                )}
+                                {view === 'CALENDAR' && <CalendarPanel />}
+                                {view === 'STATISTICS' && <StatisticsPanel />}
+                                {view === 'HEATMAP' && <Heatmap />}
+                                {view === 'COUNTDOWN' && <CountdownPanel />}
+                                {view === 'INSIGHTS' && <InsightsPanel />}
+                                {view === 'GAMIFICATION' && (
+                                    <GamificationPanel 
+                                        activeProject={activeProject} 
+                                        userState={{
+                                            globalBalance: transactions.reduce((sum, t) => sum + (t.type === 'WIN' ? t.amount : -t.amount), 0),
+                                            totalFocusTime: allLogs.reduce((sum, log) => sum + log.focusMinutes, 0)
+                                        }}
+                                        isCyberpunk={isCyberpunk}
+                                        projects={projects}
+                                        onSelectProject={(id) => {}}
+                                    />
+                                )}
+                                {view === 'GOALS' && (
+                                    <GoalsPanel 
+                                        goals={{
+                                            daily: 4,
+                                            weekly: 30,
+                                            monthly: 120,
+                                            yearly: 1460
+                                        }}
+                                        onUpdateGoals={() => {}}
+                                        currentDailyHours={0}
+                                        currentWeeklyHours={0}
+                                        currentMonthlyHours={0}
+                                        currentYearlyHours={0}
+                                    />
+                                )}
+                                {view === 'TASKS' && <TaskPanel projects={projects} />}
+                                {view === 'QUICK_CAPTURE' && <QuickCapturePanel />}
+                                {view === 'SETTINGS' && <SettingsPanel />}
+                            </Suspense>
+                        </div>
                     </div>
-                ) : mode === 'ghost' ? (
-                    <GhostModeView />
-                ) : (
-                    <FocusFlowContent />
-                )}
-            </ErrorBoundary>
+                </div>
+            </MacWindow>
+
+            <QuickTimerOverlay />
+            {isElectron && <MiniCaptureWindow />}
+
+            {toasts.map(toast => (
+                <Toast
+                    key={toast.id}
+                    title={toast.title}
+                    subtitle={toast.subtitle}
+                    icon={toast.icon}
+                    onClose={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+                    isCyberpunk={isCyberpunk}
+                />
+            ))}
+        </ErrorBoundary>
+    );
+};
+
+// Main App Component
+export default function App() {
+    return (
+        <AppProvider>
+            <FocusFlowContent />
         </AppProvider>
     );
 }

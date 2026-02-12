@@ -316,7 +316,8 @@ export const getProjects = async (): Promise<Project[]> => {
         isArchived: false,
         streak: { current: 0, best: 0, lastActiveDate: '' },
         xp: 0,
-        unlockedTrophies: []
+        unlockedTrophies: [],
+        spinsAvailable: 0
     };
     
     let projects = await dbGet<Project[]>(PROJECTS_KEY, [defaultProject]);
@@ -326,6 +327,14 @@ export const getProjects = async (): Promise<Project[]> => {
         await dbSet(PROJECTS_KEY, [defaultProject]);
         projects = [defaultProject];
     }
+
+    projects = projects.map(p => ({
+        ...p,
+        streak: p.streak || { current: 0, best: 0, lastActiveDate: '' },
+        xp: p.xp || 0,
+        unlockedTrophies: p.unlockedTrophies || [],
+        spinsAvailable: p.spinsAvailable || 0
+    }));
 
     // Sort by sortOrder, then by createdAt as fallback
     return projects.sort((a, b) => {
