@@ -116,3 +116,11 @@
 .animate-scale-in {
   animation: scaleIn 0.2s ease-out forwards;
 }
+
+/* index.css */body {
+  background-color: transparent !important; /* Force transparency */
+}#root {
+  background-color: transparent !important;
+  height: 100vh;
+  width: 100vw;
+}

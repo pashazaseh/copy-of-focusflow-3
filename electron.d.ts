@@ -43,7 +43,8 @@ declare global {
       onTimerUpdate: (callback: (event: any, ...args: any[]) => void) => () => void;
       onTrayAction: (callback: (action: { type: string; duration?: number }) => void) => () => void;
       onSyncTimerState: (callback: (state: any) => void) => () => void;
-      getTimerState: () => void;
+      requestTimerState: () => void;
+      send: (channel: string, data?: any) => void; 
       broadcastTimerAction: (action: string, payload: any) => void;
       toggleGhostMode: () => void;
     };

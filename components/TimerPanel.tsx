@@ -60,33 +60,34 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
     const strokeDashoffset = circumference * (1 - progress);
     const isUrgent = mode === 'POMO' && validInitialTime > 0 && (validTimeLeft / validInitialTime) <= 0.15;
     
-    let strokeUrl = "url(#focusGradient)";
-    let filterUrl = "url(#cyberGlow)";
-    let textColor = isCyberpunk ? "text-[#00f0ff]" : "text-blue-500";
-    let subTextColor = isCyberpunk ? "text-[#00f0ff]/60" : "text-gray-400 dark:text-gray-500";
-    let dropShadow = isCyberpunk ? "drop-shadow-[0_0_15px_rgba(0,240,255,0.6)]" : "";
+    let glowColor = 'bg-blue-500/20';
+    let strokeColor = '#3B82F6'; // default blue
 
-    if (isUrgent) {
-        strokeUrl = "url(#urgentGradient)";
-        filterUrl = "url(#glow-red)";
-        textColor = isCyberpunk ? "text-[#ff0055]" : "text-red-500";
-        dropShadow = isCyberpunk ? "drop-shadow-[0_0_15px_rgba(255,0,85,0.6)]" : "";
-    } else if (mode === 'STOPWATCH') {
-        strokeUrl = "url(#stopwatchGradient)";
-        filterUrl = "url(#glow-orange)";
-        textColor = isCyberpunk ? "text-[#F59E0B]" : "text-orange-500";
-        dropShadow = isCyberpunk ? "drop-shadow-[0_0_15px_rgba(245,158,11,0.6)]" : "";
-    } else if (phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') {
-        strokeUrl = "url(#breakGradient)";
-        filterUrl = "url(#glow-green)";
-        textColor = isCyberpunk ? "text-[#10B981]" : "text-green-500";
-        dropShadow = isCyberpunk ? "drop-shadow-[0_0_15px_rgba(16,185,129,0.6)]" : "";
-    } else {
-        filterUrl = "url(#glow-blue)";
-    }
-
-    if (!isCyberpunk) {
-        filterUrl = "drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))";
+    if (isCyberpunk) {
+        if (isUrgent) {
+            strokeColor = '#ff0055'; // red
+            glowColor = 'bg-red-500/20';
+        } else if (mode === 'STOPWATCH') {
+            strokeColor = '#F59E0B'; // orange
+            glowColor = 'bg-orange-500/20';
+        } else if (phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') {
+            strokeColor = '#10B981'; // green
+            glowColor = 'bg-green-500/20';
+        } else {
+            strokeColor = '#00f0ff'; // cyan
+            glowColor = 'bg-cyan-500/20';
+        }
+    } else { // Not cyberpunk
+        if (isUrgent) {
+            strokeColor = '#EF4444'; // red-500
+            glowColor = 'bg-red-500/20';
+        } else if (mode === 'STOPWATCH') {
+            strokeColor = '#F59E0B'; // amber-500
+            glowColor = 'bg-orange-500/20';
+        } else if (phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') {
+            strokeColor = '#10B981'; // emerald-500
+            glowColor = 'bg-green-500/20';
+        }
     }
 
     const timeString = formatTime(validTimeLeft);
@@ -95,38 +96,17 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
 
     return (
         <div className={`relative w-full max-w-[520px] aspect-square flex items-center justify-center mb-8 group ${isGhost ? 'scale-90' : ''}`}>
+            {isActive && (
+                <div className={`absolute -inset-4 rounded-full blur-3xl animate-pulse transition-all duration-1000 pointer-events-none ${glowColor}`}></div>
+            )}
             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 240 240">
-                <defs>
-                    <linearGradient id="focusGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor={isCyberpunk ? "#00f0ff" : "#60A5FA"} />
-                        <stop offset="100%" stopColor={isCyberpunk ? "#0099ff" : "#3B82F6"} />
-                    </linearGradient>
-                    <linearGradient id="breakGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#34D399" />
-                        <stop offset="100%" stopColor="#10B981" />
-                    </linearGradient>
-                    <linearGradient id="stopwatchGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#FBBF24" />
-                        <stop offset="100%" stopColor="#F59E0B" />
-                    </linearGradient>
-                    <linearGradient id="urgentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor={isCyberpunk ? "#ff0055" : "#F87171"} />
-                        <stop offset="100%" stopColor={isCyberpunk ? "#ff0000" : "#EF4444"} />
-                    </linearGradient>
-
-                    <filter id="glow-blue" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-                    <filter id="glow-green" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-                    <filter id="glow-orange" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-                    <filter id="glow-red" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-                </defs>
-
                 <circle cx="120" cy="120" r={radius} className={isCyberpunk ? "stroke-gray-800" : "stroke-gray-200 dark:stroke-gray-800"} strokeWidth="8" fill="transparent" strokeDasharray="5 5" />
                 {Array.from({ length: 12 }).map((_, i) => { const angle = (i / 12) * 2 * Math.PI; const x1 = 120 + Math.cos(angle) * (radius - 5); const y1 = 120 + Math.sin(angle) * (radius - 5); const x2 = 120 + Math.cos(angle) * (radius + 5); const y2 = 120 + Math.sin(angle) * (radius + 5); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className={isCyberpunk ? "stroke-[#00f0ff]/20" : "stroke-gray-300 dark:stroke-gray-700"} strokeWidth="2" />; })}
-                <circle cx="120" cy="120" r={radius} stroke={strokeUrl} strokeWidth="10" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffset) ? 0 : strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: filterUrl }} />
+                <circle cx="120" cy="120" r={radius} stroke={strokeColor} strokeWidth="10" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffset) ? 0 : strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: `drop-shadow(0 0 10px ${strokeColor})` }} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-                <div className={`${fontSize} font-bold tracking-tighter tabular-nums select-none transition-colors duration-300 ${textColor} ${dropShadow} drop-shadow-sm`}>{timeString}</div>
-                <div className={`mt-4 text-sm font-bold uppercase tracking-widest ${subTextColor}`}>{mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus' : phase === 'SHORT_BREAK' ? 'Short Break' : 'Long Break') : 'Stopwatch'}</div>
+                <div className={`${fontSize} font-bold tracking-tighter tabular-nums select-none transition-colors duration-300`} style={{color: strokeColor}}>{timeString}</div>
+                <div className={`mt-4 text-sm font-bold uppercase tracking-widest ${isCyberpunk ? 'text-white/70' : 'text-gray-500'}`}>{mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus' : phase === 'SHORT_BREAK' ? 'Short Break' : 'Long Break') : 'Stopwatch'}</div>
             </div>
         </div>
     );
@@ -224,6 +204,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
   const [manualType, setManualType] = useState<'POMO'|'STOPWATCH'>('POMO');
 
   const [alwaysOnTopActive, setAlwaysOnTopActive] = useState(false);
+  const [globalShortcut, setGlobalShortcut] = useState('');
 
   useEffect(() => {
       const checkSetting = () => {
@@ -232,13 +213,14 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
       };
       checkSetting();
       window.addEventListener('focusflow-aot-setting-update', checkSetting);
+      (window.electronAPI as any)?.getGlobalShortcut?.().then((s: string) => setGlobalShortcut(s));
       return () => window.removeEventListener('focusflow-aot-setting-update', checkSetting);
   }, []);
 
   useEffect(() => {
       if (alwaysOnTopActive) {
           setIsPinned(isActive);
-          window.electronAPI?.setAlwaysOnTop(isActive);
+          (window.electronAPI as any)?.setAlwaysOnTop(isActive);
       }
   }, [isActive, alwaysOnTopActive]);
 
@@ -426,8 +408,8 @@ useEffect(() => {
         cleanupSync = window.electronAPI.onSyncTimerState(handleSyncState);
     }
 
-    if (window.electronAPI?.getTimerState) {
-        window.electronAPI.getTimerState();
+    if ((window.electronAPI as any)?.getTimerState) {
+        (window.electronAPI as any).getTimerState();
     }
 
     return () => {
@@ -1381,6 +1363,20 @@ return (
                         <div className="space-y-2">
                             <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Features</h3>
                             <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><span className="text-sm font-medium text-gray-300">Enable Ghost Mode Button</span><div className="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in"><input type="checkbox" checked={enableGhostButton} onChange={e => toggleGhostButtonSetting(e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer peer checked:right-0 right-5"/><div className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${enableGhostButton ? 'bg-blue-600' : 'bg-gray-600'}`}></div></div></div>
+                        </div>
+                        <div className="space-y-2">
+                             <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Shortcuts</h3>
+                             <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+                                <span className="text-sm font-medium text-gray-300">Quick Capture</span>
+                                <input 
+                                    type="text" 
+                                    value={globalShortcut} 
+                                    onChange={e => setGlobalShortcut(e.target.value)}
+                                    onBlur={() => (window.electronAPI as any)?.updateGlobalShortcut?.(globalShortcut)}
+                                    className="w-40 bg-[#2c2c2e] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none border border-white/10 text-right"
+                                    placeholder="Cmd+Shift+C"
+                                />
+                             </div>
                         </div>
                     </div>
                 </div>

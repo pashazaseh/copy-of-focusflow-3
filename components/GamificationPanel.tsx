@@ -1327,6 +1327,10 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
       return allLogs.filter(l => l.projectId === activeProject.id);
   }, [allLogs, activeProject]);
 
+  const projectTotalHours = useMemo(() => {
+      return projectLogs.reduce((acc, curr) => acc + curr.hours, 0);
+  }, [projectLogs]);
+
   const projectAchievements = useMemo(() => {
       if (!activeProject) return [];
       const unlockedSet = new Set(activeProject.unlockedTrophies || []);
@@ -1413,7 +1417,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
                                         <div>
                                             <h3 className={`text-2xl font-black ${isCyberpunk ? 'text-[#00f0ff]' : 'text-white'}`}>Slot Machine</h3>
                                             <p className={`text-sm ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-slate-400'}`}>
-                                                {activeProject.name} Level {Math.floor((activeProject.totalHours || 0) / 10) + 1} • {activeProject.spinsAvailable || 0} Spins Available
+                                                {activeProject.name} Level {Math.floor((projectTotalHours || 0) / 10) + 1} • {activeProject.spinsAvailable || 0} Spins Available
                                             </p>
                                         </div>
                                     </div>

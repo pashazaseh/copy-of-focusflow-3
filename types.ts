@@ -25,6 +25,7 @@ export interface Project {
   streak: Streak;
   xp: number;
   unlockedTrophies: string[];
+  totalHours?: number;
   spinsAvailable?: number;
 }
 

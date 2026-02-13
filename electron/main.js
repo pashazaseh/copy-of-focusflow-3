@@ -4,31 +4,30 @@ const fs = require('fs');
 const http = require('http');
 const { setDoNotDisturb } = require('./dnd');
 
-// Prevent EPIPE errors when writing to stdout/stderr (common in Electron)
-if (process.stdout && process.stdout.on) {
-  process.stdout.on('error', (err) => { if (err.code !== 'EPIPE') throw err; });
-}
-if (process.stderr && process.stderr.on) {
-  process.stderr.on('error', (err) => { if (err.code !== 'EPIPE') throw err; });
+let currentGlobalShortcut = 'CommandOrControl+Shift+C';
+const configFile = 'settings.json';
+
+function getConfigFile() {
+  return path.join(app.getPath('userData'), configFile);
 }
 
-let tray = null;
-let win = null;
-let quickWin = null;
-let miniCaptureWin = null;
-let ghostWin = null;
-let defaultIcon = null;
-let transparentIcon = null;
-let isQuitting = false;
-let powerSaveBlockerId = null;
-let fileWatcher = null;
-let currentGlobalShortcut = 'CommandOrControl+Shift+O';
-let lastTrayTitle = '';
-let ghostState = null;
-let isTimerActive = false;
-let showInDock = true;
-let minimizeToTray = true;
-const ghostStatePath = path.join(app.getPath('userData'), 'ghost-window-state.json');
+function loadSettings() {
+  try {
+    const p = getConfigFile();
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, 'utf8'));
+    }
+  } catch (e) { console.error('Error loading settings:', e); }
+  return {};
+}
+
+function saveSetting(key, value) {
+  try {
+    const settings = loadSettings();
+    settings[key] = value;
+    fs.writeFileSync(getConfigFile(), JSON.stringify(settings, null, 2));
+  } catch (e) { console.error('Error saving settings:', e); }
+}
 
 // Ensure notifications work on Windows
 if (process.platform === 'win32') {
@@ -299,8 +298,8 @@ function createMiniCaptureWindow() {
 
   const isDev = !app.isPackaged;
   const url = isDev 
-    ? 'http://localhost:5173?mode=mini-capture' 
-    : `file://${path.join(__dirname, '../dist/index.html')}?mode=mini-capture`;
+    ? 'http://localhost:5173#minicapture' 
+    : `file://${path.join(__dirname, '../dist/index.html')}#minicapture`;
   
   miniCaptureWin.loadURL(url);
 
@@ -327,93 +326,42 @@ function triggerQuickCapture() {
   createMiniCaptureWindow();
 }
 
-function createGhostWindow(initialState) {
-  if (ghostWin && !ghostWin.isDestroyed()) {
-    ghostWin.show();
-    ghostWin.focus();
-    return;
-  }
-
-  let savedBounds = { width: 400, height: 400 };
-  try {
-    if (fs.existsSync(ghostStatePath)) {
-      savedBounds = JSON.parse(fs.readFileSync(ghostStatePath, 'utf8'));
-    }
-  } catch (e) {
-    console.error('Failed to load ghost state', e);
-  }
+function createGhostWindow() {
+  if (ghostWin) return;
 
   ghostWin = new BrowserWindow({
-    width: savedBounds.width,
-    height: savedBounds.height,
-    x: savedBounds.x,
-    y: savedBounds.y,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    resizable: true,
-    hasShadow: false,
-    center: !savedBounds.x,
-    show: false,
-    type: 'panel',
-    backgroundColor: '#00000000',
+    width: 220,  // Small size
+    height: 220,
+    frame: false,       // No title bar (CRITICAL)
+    transparent: true,  // See-through background (CRITICAL)
+    alwaysOnTop: true,  // Floating effect
+    resizable: false,
+    hasShadow: false,   // Cleaner look
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false,
-      backgroundThrottling: false
     }
   });
-
-  setupGhostContextMenu(ghostWin);
-
-  if (process.platform === 'darwin') {
-    ghostWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    ghostWin.setAlwaysOnTop(true, 'floating', 1);
-    ghostWin.setFullScreenable(false);
-  } else {
-    ghostWin.setAlwaysOnTop(true, 'floating');
-  }
 
   const isDev = !app.isPackaged;
-  const url = isDev 
-    ? 'http://localhost:5173?mode=ghost' 
-    : `file://${path.join(__dirname, '../dist/index.html')}?mode=ghost`;
-  
-  ghostWin.loadURL(url);
+  // Load the app with the specific HASH
+  const startUrl = isDev 
+    ? 'http://localhost:5173/#ghost' 
+    : `file://${path.join(__dirname, '../dist/index.html')}#ghost`;
 
-  ghostWin.once('ready-to-show', () => {
-    ghostWin.show();
-    ghostWin.focus();
-  });
+  ghostWin.loadURL(startUrl);
 
-  // Failsafe: Show window if ready-to-show doesn't fire
-  setTimeout(() => { if (ghostWin && !ghostWin.isVisible()) ghostWin.show(); }, 500);
-
-  ghostWin.webContents.once('did-finish-load', () => {
-    // Force transparent background for the ghost window
-    ghostWin.webContents.insertCSS('html, body { background: transparent !important; overflow: hidden !important; }');
-    if (initialState) {
-      ghostWin.webContents.send('sync-timer-state', initialState);
-    }
-  });
-
-  ghostWin.on('close', () => {
-    if (ghostWin && !ghostWin.isDestroyed()) {
-      try {
-        const bounds = ghostWin.getBounds();
-        fs.writeFileSync(ghostStatePath, JSON.stringify(bounds));
-      } catch (e) {
-        console.error('Failed to save ghost state', e);
-      }
-    }
-  });
-
-  ghostWin.on('closed', () => { ghostWin = null; });
+  ghostWin.on('closed', () => (ghostWin = null));
 }
 
 function setupIpcHandlers() {
+  // IPC handlers for the Mini Capture Window
+  ipcMain.on('close-mini-capture', () => miniCaptureWin?.hide());
+  ipcMain.on('resize-mini-capture', (event, { height }) => { 
+    if(miniCaptureWin) miniCaptureWin.setSize(600, height); 
+  });
+
   // IPC handlers for the custom traffic light buttons
   ipcMain.on('window-close', (event) => {
     const webContents = event.sender;
@@ -579,10 +527,13 @@ function setupIpcHandlers() {
     app.setLoginItemSettings({ openAtLogin });
   });
 
+  ipcMain.handle('get-global-shortcut', () => currentGlobalShortcut);
+
   ipcMain.handle('update-global-shortcut', async (event, shortcut) => {
     globalShortcut.unregisterAll();
     if (shortcut && shortcut.trim() !== '') {
       currentGlobalShortcut = shortcut;
+      saveSetting('globalShortcut', shortcut);
       try {
         const success = globalShortcut.register(shortcut, triggerQuickCapture);
         return success;
@@ -803,28 +754,23 @@ function setupIpcHandlers() {
     setDoNotDisturb(enable);
   });
 
-  ipcMain.on('toggle-ghost-mode', (event, state) => {
-    try {
-      console.log('[Timer Debug] Toggle ghost mode:', state);
-      ghostState = state;
-      if (ghostWin && !ghostWin.isDestroyed()) {
-        // Exit Ghost Mode
-        if (win && !win.isDestroyed()) {
-          win.show();
-          win.webContents.send('sync-timer-state', state);
-        }
+  ipcMain.on('ghost-mode-enable', () => {
+  createGhostWindow();
+  if (win) win.hide(); // Hide the big window
+});
+
+// Handle disabling Ghost Mode (Expand button)
+ipcMain.on('ghost-mode-disable', () => {
+    if (ghostWin) {
         ghostWin.close();
-      } else {
-        // Enter Ghost Mode
-        createGhostWindow(state);
-        if (win && !win.isDestroyed()) {
-          win.hide();
-        }
-      }
-    } catch (e) {
-      console.error("Error in toggle-ghost-mode:", e);
+        ghostWin = null;
     }
-  });
+    if (win) {
+        win.show();
+        win.focus();
+        win.webContents.send('sync-ui-mode', 'normal');
+    }
+});
 
   ipcMain.on('set-always-on-top', (event, flag) => {
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -842,26 +788,15 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.on('timer-action', (event, { action, payload }) => {
-    try {
-      console.log('[Timer Debug] Timer action:', action, payload);
-      // Update the master state cache
-      ghostState = payload;
-      
-      if (action === 'START_TIMER') isTimerActive = true;
-      else if (action === 'PAUSE_TIMER' || action === 'RESET_TIMER') isTimerActive = false;
-
-      // Relay the action to all other windows
-      const windows = [win, ghostWin].filter(w => w && !w.isDestroyed());
-      windows.forEach(w => {
-        if (w.webContents !== event.sender) {
-          w.webContents.send('timer-update', { action, payload });
-        }
-      });
-    } catch (e) {
-      console.error("Error in timer-action:", e);
-    }
-  });
+// Handle Timer Actions from Ghost Mode
+ipcMain.on('timer-action', (event, { action }) => {
+    // Forward this action to your internal timer logic
+    // Assuming you have a 'timerService' or similar logic handling the main window
+    win.webContents.send('timer-action-forward', action);
+    
+    // If you have shared state management in main.js, update it here
+    console.log(`Timer action received: ${action}`);
+});
 
   ipcMain.on('get-timer-state', (event) => {
     console.log('[Timer Debug] Get timer state:', ghostState);
@@ -1167,16 +1102,6 @@ function showQuickTimer() {
   quickWin.focus();
 }
 
-// Handle Deep Links (focusflow://)
-app.on('open-url', (event, url) => {
-  event.preventDefault();
-  if (win) {
-    if (win.isMinimized()) win.restore();
-    win.focus();
-    win.webContents.send('oauth-code', url);
-  }
-});
-
 // Local Auth Server for OAuth Callbacks (TickTick, etc.)
 function createAuthServer() {
   const server = http.createServer((req, res) => {
@@ -1204,6 +1129,16 @@ function createAuthServer() {
 }
 
 app.whenReady().then(() => {
+    // Handle Deep Links (focusflow://)
+    app.on('open-url', (event, url) => {
+      event.preventDefault();
+      if (win) {
+        if (win.isMinimized()) win.restore();
+        win.focus();
+        win.webContents.send('oauth-code', url);
+      }
+    });
+
     if (process.defaultApp) {
         if (process.argv.length >= 2) {
             app.setAsDefaultProtocolClient('focusflow', process.execPath, [path.resolve(process.argv[1])]);
@@ -1228,6 +1163,11 @@ app.whenReady().then(() => {
     
     // Defer non-critical background windows and tray to prioritize main window render
     setTimeout(() => {
+        const settings = loadSettings();
+        if (settings.globalShortcut) {
+            currentGlobalShortcut = settings.globalShortcut;
+        }
+
         // Register Global Hotkey for Quick Capture
         try {
             if (currentGlobalShortcut && !globalShortcut.isRegistered(currentGlobalShortcut)) {

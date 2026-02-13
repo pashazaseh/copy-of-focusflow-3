@@ -322,135 +322,92 @@ const OAuthCallback = ({ code }: { code: string }) => {
 
 const GhostModeView = () => {
     const [timeLeft, setTimeLeft] = useState(0);
-    const [initialTime, setInitialTime] = useState(0);
-    const [isActive, setIsActive] = useState(false);
-    const [mode, setMode] = useState<'POMO' | 'STOPWATCH'>('POMO');
-    const [phase, setPhase] = useState<'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK'>('FOCUS');
-    const [sessionLabel, setSessionLabel] = useState('');
-    const [selectedProjectId, setSelectedProjectId] = useState('');
-    const endTimeRef = useRef<number | null>(null);
-    const startTimeRef = useRef<number | null>(null);
-    const [timerState, setTimerState] = useState<any>(null);
+    const [initialTime, setInitialTime] = useState(1); // Default to 1 to prevent NaN
+    const [mode, setMode] = useState<'POMO' | 'SHORT_BREAK' | 'LONG_BREAK'>('POMO');
+    const [isRunning, setIsRunning] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
 
     useEffect(() => {
-        window.electronAPI?.getTimerState();
-        const cleanup = window.electronAPI?.onSyncTimerState((state) => {
-            if (!state) return;
-            setTimerState(state);
-            setTimeLeft(state.timeLeft ?? 0);
-            setInitialTime(state.initialTime ?? 0);
-            setIsActive(state.isActive);
-            setMode(state.mode || 'POMO');
-            setPhase(state.phase || 'FOCUS');
-            setSessionLabel(state.sessionLabel || '');
-            setSelectedProjectId(state.selectedProjectId || '');
+        // CRITICAL FIX: Safe Event Listener
+        const cleanup = window.electronAPI?.onSyncTimerState((state: any) => {
+            if (!state) return; // Prevent crash if state is null
             
-            if (state.isActive) {
-                if (state.mode === 'STOPWATCH') {
-                    startTimeRef.current = state.startTime;
-                    endTimeRef.current = null;
-                } else {
-                    endTimeRef.current = state.endTime;
-                    startTimeRef.current = null;
-                }
-            } else {
-                endTimeRef.current = null;
-                startTimeRef.current = null;
-            }
+            setTimeLeft(typeof state.timeLeft === 'number' ? state.timeLeft : 0);
+            setInitialTime(state.initialTime && state.initialTime > 0 ? state.initialTime : 1);
+            setMode(state.mode || 'POMO');
+            setIsRunning(!!state.isRunning);
         });
-        const interval = setInterval(() => {
-            if (endTimeRef.current) {
-                const now = Date.now();
-                const diff = Math.ceil((endTimeRef.current - now) / 1000);
-                setTimeLeft(diff > 0 ? diff : 0);
-            } else if (startTimeRef.current) {
-                const now = Date.now();
-                const elapsed = Math.floor((now - startTimeRef.current) / 1000);
-                setTimeLeft(elapsed);
-            }
-        }, 1000);
-        return () => {
-            if (cleanup) cleanup();
-            clearInterval(interval);
-        };
+
+        // Ask backend for immediate update
+        window.electronAPI?.requestTimerState?.();
+        return cleanup;
     }, []);
 
-    const toggleTimer = () => {
-        if (!timerState) return;
-        const newAction = timerState.isActive ? 'PAUSE_TIMER' : 'START_TIMER';
-        const payload = { ...timerState, isActive: !timerState.isActive };
-        if (newAction === 'START_TIMER') {
-            if (payload.mode === 'POMO') {
-                payload.endTime = Date.now() + (payload.timeLeft * 1000);
-            } else {
-                payload.startTime = Date.now() - (payload.timeLeft * 1000);
-            }
-        }
-        window.electronAPI?.broadcastTimerAction(newAction, payload);
-    };
-    const stopTimer = () => {
-        if (!timerState) return;
-        window.electronAPI?.broadcastTimerAction('RESET_TIMER', timerState);
-    };
-    const expandWindow = () => {
-        if (!timerState) return;
-        window.electronAPI?.toggleGhostMode(timerState);
-    };
+    // Helper functions for buttons
+    const handleToggle = () => window.electronAPI?.send('timer-action', { action: isRunning ? 'pause' : 'start' });
+    const handleStop = () => window.electronAPI?.send('timer-action', { action: 'stop' });
+    const handleExpand = () => window.electronAPI?.send('ghost-mode-disable', {});
 
-    const formatTime = (seconds: number) => {
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
-        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    };
-
-    const safeTimeLeft = Number.isFinite(timeLeft) ? timeLeft : 0;
-    const safeInitialTime = (Number.isFinite(initialTime) && initialTime > 0) ? initialTime : 1;
-
-    let progress = 0;
-    if (mode === 'POMO') {
-        progress = 1 - (safeTimeLeft / safeInitialTime);
-    } else {
-        progress = 1 - (safeTimeLeft / safeInitialTime);
-    }
-    progress = Math.max(0, Math.min(1, progress));
-    
+    // Visual calculations
+    const progress = Math.max(0, Math.min(1, 1 - (timeLeft / initialTime)));
     const radius = 45;
     const circumference = 2 * Math.PI * radius;
     const strokeDashoffset = circumference - (progress * circumference);
-    const safeOffset = Number.isNaN(strokeDashoffset) ? 0 : strokeDashoffset;
-    
-    const getColor = () => {
-        if (mode === 'SHORT_BREAK' || mode === 'LONG_BREAK') return '#10b981';
-        return '#3b82f6';
-    };
+    const safeOffset = Number.isNaN(strokeDashoffset) ? 0 : strokeDashoffset; // NaN Protection
 
+    const getColor = () => {
+        if (mode === 'SHORT_BREAK') return '#34d399'; // Emerald
+        if (mode === 'LONG_BREAK') return '#818cf8'; // Indigo
+        return '#f472b6'; // Pink/Magenta for Pomo
+    };
+    
     return (
         <div 
-            className="w-full h-full flex items-center justify-center relative draggable group"
+            className="w-full h-full flex items-center justify-center relative draggable overflow-hidden bg-transparent"
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             style={{ WebkitAppRegion: 'drag' } as any}
         >
-            <div className={`absolute inset-0 bg-black/40 backdrop-blur-md rounded-full transition-opacity duration-300 ${isHovered ? 'opacity-100' : 'opacity-0'}`} />
-            <svg className="w-full h-full transform -rotate-90 drop-shadow-lg" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r={radius} stroke="rgba(255,255,255,0.1)" strokeWidth="8" fill="transparent" />
-                <circle cx="50" cy="50" r={radius} stroke={getColor()} strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={safeOffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" />
+            {/* 1. Pulsing Background Aura */}
+            <div className={`absolute inset-0 bg-black/60 backdrop-blur-xl rounded-full border border-white/10 transition-all duration-500 ${isHovered ? 'scale-105 border-white/30' : 'scale-100'}`}></div>
+            
+            {/* 2. Glowing SVG Ring */}
+            <svg className="w-full h-full transform -rotate-90 relative z-10" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r={radius} stroke="rgba(255,255,255,0.1)" strokeWidth="6" fill="transparent" />
+                <circle 
+                    cx="50" cy="50" r={radius} 
+                    stroke={getColor()} strokeWidth="6" fill="transparent"
+                    strokeDasharray={circumference} strokeDashoffset={safeOffset} strokeLinecap="round"
+                    className="transition-all duration-1000 ease-linear"
+                    style={{ filter: `drop-shadow(0 0 8px ${getColor()})` }} // Neon Glow
+                />
             </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white pointer-events-none">
-                <span className="text-2xl font-bold font-mono tracking-tighter drop-shadow-md">{formatTime(safeTimeLeft)}</span>
-                {isHovered && (
-                    <span className="text-[8px] uppercase tracking-widest opacity-80 mt-1">
-                        {mode.replace('_', ' ')}
-                    </span>
-                )}
-                 <div className={`absolute bottom-6 flex gap-3 transition-all duration-300 transform ${isHovered ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'}`} style={{ WebkitAppRegion: 'no-drag' }}>
-                    <button onClick={stopTimer} className="p-2 rounded-full bg-white/10 hover:bg-red-500/80 text-white transition-colors"><svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg></button>
-                    <button onClick={toggleTimer} className="p-2 rounded-full bg-white/20 hover:bg-white/40 text-white transition-colors">
-                        {isActive ? (<svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>) : (<svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>)}
-                    </button>
-                    <button onClick={expandWindow} className="p-2 rounded-full bg-white/10 hover:bg-blue-500/80 text-white transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg></button>
-                </div>
+
+            {/* 3. Time Display */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-20 pointer-events-none">
+                <span className="text-3xl font-bold font-mono tracking-tighter drop-shadow-lg">
+                    {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+                </span>
+            </div>
+
+            {/* 4. Control Buttons (Slide Up on Hover) */}
+            <div 
+                className={`absolute bottom-4 flex gap-3 z-30 transition-all duration-300 transform ${isHovered ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}
+                style={{ WebkitAppRegion: 'no-drag' } as any}
+            >
+                <button onClick={handleStop} className="p-2 rounded-full bg-red-500/20 hover:bg-red-500/80 text-red-200 hover:text-white transition-all backdrop-blur-md">
+                    <div className="w-3 h-3 bg-current rounded-sm" />
+                </button>
+                <button onClick={handleToggle} className="p-2 rounded-full bg-white/10 hover:bg-white/30 text-white transition-all backdrop-blur-md">
+                    {isRunning ? (
+                        <div className="w-3 h-3 flex gap-1 justify-center"><div className="w-1 bg-current rounded-full"/><div className="w-1 bg-current rounded-full"/></div>
+                    ) : (
+                        <div className="w-0 h-0 border-t-[5px] border-t-transparent border-l-[8px] border-l-white border-b-[5px] border-b-transparent ml-0.5" />
+                    )}
+                </button>
+                <button onClick={handleExpand} className="p-2 rounded-full bg-blue-500/20 hover:bg-blue-500/80 text-blue-200 hover:text-white transition-all backdrop-blur-md">
+                    <div className="w-3 h-3 border-2 border-current rounded-sm" />
+                </button>
             </div>
         </div>
     );
@@ -468,8 +425,8 @@ function FocusFlowContent() {
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   useEffect(() => {
-    if (window.electronAPI?.onFullScreenChange) {
-      const cleanup = window.electronAPI.onFullScreenChange(setIsFullScreen);
+    if ((window.electronAPI as any)?.onFullScreenChange) {
+      const cleanup = (window.electronAPI as any).onFullScreenChange(setIsFullScreen);
       return () => {
         if (cleanup) cleanup();
       };
@@ -1339,20 +1296,37 @@ const getNextDate = (item: CountdownItem): Date => {
 };
 
 export default function App() {
+    const [currentHash, setCurrentHash] = useState(window.location.hash);
+
+    useEffect(() => {
+        const handleHashChange = () => setCurrentHash(window.location.hash);
+        window.addEventListener('hashchange', handleHashChange);
+        return () => window.removeEventListener('hashchange', handleHashChange);
+    }, []);
+
+    // Explicitly check for Ghost Mode hash
+    if (currentHash === '#ghost') {
+        return <GhostModeView />;
+    }
+
+    if (currentHash === '#minicapture') {
+        return (
+            <AppProvider>
+                <MiniCaptureWindow />
+            </AppProvider>
+        );
+    }
+
     const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     const mode = searchParams.get('mode');
 
     return (
         <AppProvider>
             <ErrorBoundary>
-                {mode === 'mini-capture' ? (
-                    <MiniCaptureWindow />
-                ) : mode === 'quick' ? (
+                {mode === 'quick' ? (
                     <div className="fixed inset-0 bg-transparent">
                         <QuickTimerOverlay />
                     </div>
-                ) : mode === 'ghost' ? (
-                    <GhostModeView />
                 ) : (
                     <FocusFlowContent />
                 )}
