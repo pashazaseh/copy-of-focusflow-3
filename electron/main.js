@@ -5,6 +5,21 @@ const http = require('http');
 const { setDoNotDisturb } = require('./dnd');
 
 let currentGlobalShortcut = 'CommandOrControl+Shift+C';
+let lastTrayTitle = '';
+let tray = null;
+let win = null;
+let miniCaptureWin = null;
+let ghostWin = null;
+let quickWin = null;
+let powerSaveBlockerId = null;
+let fileWatcher = null;
+let showInDock = true;
+let minimizeToTray = false;
+let isQuitting = false;
+let defaultIcon = null;
+let transparentIcon = null;
+let ghostState = null;
+
 const configFile = 'settings.json';
 
 function getConfigFile() {

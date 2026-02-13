@@ -205,6 +205,7 @@ export interface Achievement {
   icon: string;
   condition: (logs: StudyLog[], totalHours: number, streak: number) => boolean;
   isUnlocked?: boolean; // Runtime flag
+  reward?: number;
 }
 
 export interface UserRank {

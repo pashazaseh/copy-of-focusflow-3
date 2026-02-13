@@ -37,7 +37,8 @@ const STATIC_ACHIEVEMENTS: Achievement[] = [
         title: 'First Step',
         description: 'Log your first study session',
         icon: '🌱',
-        condition: (logs) => logs.length > 0
+        condition: (logs) => logs.length > 0,
+        reward: 50
     },
     // --- Streaks ---
     {
@@ -45,28 +46,32 @@ const STATIC_ACHIEVEMENTS: Achievement[] = [
         title: 'Hat Trick',
         description: 'Maintain a 3-day streak',
         icon: '⚡',
-        condition: (_, __, streak) => streak >= 3
+        condition: (_, __, streak) => streak >= 3,
+        reward: 100
     },
     {
         id: 'streak_7',
         title: 'Unstoppable',
         description: 'Maintain a 7-day streak',
         icon: '🚀',
-        condition: (_, __, streak) => streak >= 7
+        condition: (_, __, streak) => streak >= 7,
+        reward: 350
     },
     {
         id: 'streak_14',
         title: 'On Fire',
         description: 'Maintain a 14-day streak',
         icon: '☄️',
-        condition: (_, __, streak) => streak >= 14
+        condition: (_, __, streak) => streak >= 14,
+        reward: 1000
     },
     {
         id: 'streak_30',
         title: 'Habitual',
         description: 'Maintain a 30-day streak',
         icon: '📅',
-        condition: (_, __, streak) => streak >= 30
+        condition: (_, __, streak) => streak >= 30,
+        reward: 3000
     },
     // --- Intensity ---
     {
@@ -74,14 +79,16 @@ const STATIC_ACHIEVEMENTS: Achievement[] = [
         title: 'Marathoner',
         description: 'Study for more than 6 hours in a single day',
         icon: '🏃',
-        condition: (logs) => logs.some(l => l.hours >= 6)
+        condition: (logs) => logs.some(l => l.hours >= 6),
+        reward: 500
     },
     {
         id: 'iron_mind',
         title: 'Iron Mind',
         description: 'Study for more than 10 hours in a single day',
         icon: '🧠',
-        condition: (logs) => logs.some(l => l.hours >= 10)
+        condition: (logs) => logs.some(l => l.hours >= 10),
+        reward: 1500
     },
     // --- Timing ---
     {
@@ -92,21 +99,24 @@ const STATIC_ACHIEVEMENTS: Achievement[] = [
         condition: (logs) => logs.some(l => {
             const d = new Date(l.date).getDay();
             return d === 0 || d === 6;
-        })
+        }),
+        reward: 150
     },
     {
         id: 'early_bird',
         title: 'Early Bird',
         description: 'Log a study session before 8 AM', 
         icon: '🌅',
-        condition: (logs) => logs.some(l => l.notes && l.notes.toLowerCase().includes("morning"))
+        condition: (logs) => logs.some(l => l.notes && l.notes.toLowerCase().includes("morning")),
+        reward: 100
     },
     {
         id: 'night_owl',
         title: 'Night Owl',
         description: 'Log a study session with "Night" in notes',
         icon: '🦉',
-        condition: (logs) => logs.some(l => l.notes && l.notes.toLowerCase().includes("night"))
+        condition: (logs) => logs.some(l => l.notes && l.notes.toLowerCase().includes("night")),
+        reward: 100
     },
     // --- Diversity ---
     {
@@ -114,14 +124,16 @@ const STATIC_ACHIEVEMENTS: Achievement[] = [
         title: 'King of the Jungle',
         description: 'Log time in 3 different projects',
         icon: '🦁',
-        condition: (logs) => new Set(logs.map(l => l.projectId)).size >= 3
+        condition: (logs) => new Set(logs.map(l => l.projectId)).size >= 3,
+        reward: 150
     },
     {
         id: 'diversity_5',
         title: 'Octopus',
         description: 'Log time in 5 different projects',
         icon: '🐙',
-        condition: (logs) => new Set(logs.map(l => l.projectId)).size >= 5
+        condition: (logs) => new Set(logs.map(l => l.projectId)).size >= 5,
+        reward: 300
     },
     // --- Journaling ---
     {
@@ -129,14 +141,16 @@ const STATIC_ACHIEVEMENTS: Achievement[] = [
         title: 'Scribe',
         description: 'Add notes to 10 different sessions',
         icon: '📝',
-        condition: (logs) => logs.filter(l => l.notes && l.notes.length > 0).length >= 10
+        condition: (logs) => logs.filter(l => l.notes && l.notes.length > 0).length >= 10,
+        reward: 100
     },
     {
         id: 'notes_50',
         title: 'Chronicler',
         description: 'Add notes to 50 different sessions',
         icon: '📖',
-        condition: (logs) => logs.filter(l => l.notes && l.notes.length > 0).length >= 50
+        condition: (logs) => logs.filter(l => l.notes && l.notes.length > 0).length >= 50,
+        reward: 300
     },
     // --- Deep Work ---
     {
@@ -144,14 +158,16 @@ const STATIC_ACHIEVEMENTS: Achievement[] = [
         title: 'Deep Diver',
         description: 'Complete a single session > 3 hours',
         icon: '🧘',
-        condition: (logs) => logs.some(l => l.hours >= 3)
+        condition: (logs) => logs.some(l => l.hours >= 3),
+        reward: 200
     },
     {
         id: 'deep_5h',
         title: 'Monk Mode',
         description: 'Complete a single session > 5 hours',
         icon: '⛩️',
-        condition: (logs) => logs.some(l => l.hours >= 5)
+        condition: (logs) => logs.some(l => l.hours >= 5),
+        reward: 400
     },
     // --- Volume & Consistency ---
     {
@@ -159,14 +175,16 @@ const STATIC_ACHIEVEMENTS: Achievement[] = [
         title: 'Centurion',
         description: 'Log 100 total study sessions',
         icon: '💯',
-        condition: (logs) => logs.length >= 100
+        condition: (logs) => logs.length >= 100,
+        reward: 1000
     },
     {
         id: 'streak_5',
         title: 'Consistency Is Key',
         description: 'Maintain a 5-day streak',
         icon: '🗓️',
-        condition: (_, __, streak) => streak >= 5
+        condition: (_, __, streak) => streak >= 5,
+        reward: 200
     },
     // --- Special ---
     {
@@ -174,14 +192,16 @@ const STATIC_ACHIEVEMENTS: Achievement[] = [
         title: 'Midnight Oil',
         description: 'Log a session mentioning "night" or "late" in notes',
         icon: '🌑',
-        condition: (logs) => logs.some(l => l.notes && (l.notes.toLowerCase().includes('night') || l.notes.toLowerCase().includes('late')))
+        condition: (logs) => logs.some(l => l.notes && (l.notes.toLowerCase().includes('night') || l.notes.toLowerCase().includes('late'))),
+        reward: 100
     },
     {
         id: 'gem_hoarder',
         title: 'Gem Hoarder',
         description: 'Accumulate 1,000 Lifetime Gems value (100 hours)',
         icon: '💎',
-        condition: (_, totalHours) => totalHours >= 100
+        condition: (_, totalHours) => totalHours >= 100,
+        reward: 1000
     }
 ];
 
@@ -228,7 +248,8 @@ const RANK_ACHIEVEMENTS: Achievement[] = RANKS.filter(r => r.minHours > 0).map(r
         title: rank.title,
         description: `Reach ${rank.minHours} total study hours`,
         icon: icon,
-        condition: (_, totalHours) => totalHours >= rank.minHours
+        condition: (_, totalHours) => totalHours >= rank.minHours,
+        reward: rank.minHours > 0 ? Math.floor(rank.minHours * 2) : 50
     };
 });
 
@@ -284,7 +305,17 @@ export function getDailyQuests(logs: StudyLog[]) {
     ];
 }
 
-export const getAchievementReward = (achievement: { id: string, title: string, description: string }) => {
+export const getAchievementReward = (achievement: { id: string, title: string, description: string, reward?: number }) => {
+    if (achievement.reward !== undefined) {
+        let rarity = 'common';
+        if (achievement.reward >= 5000) rarity = 'legendary';
+        else if (achievement.reward >= 2500) rarity = 'mythic';
+        else if (achievement.reward >= 1000) rarity = 'epic';
+        else if (achievement.reward >= 500) rarity = 'rare';
+        else if (achievement.reward >= 250) rarity = 'uncommon';
+        return { gems: achievement.reward, rarity, label: rarity.charAt(0).toUpperCase() + rarity.slice(1) };
+    }
+
     const title = achievement.title.toLowerCase();
     const desc = achievement.description.toLowerCase();
     const id = achievement.id.toLowerCase();
