@@ -449,27 +449,8 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('update-tray-title', (event, title) => {
-    let displayTitle = title;
-    if (displayTitle && displayTitle.length > 20) {
-      displayTitle = displayTitle.substring(0, 20) + '...';
-    }
-    lastTrayTitle = displayTitle;
-    if (tray && !tray.isDestroyed()) {
-      if (process.platform === 'darwin') {
-        tray.setTitle(displayTitle);
-        // If title is present (e.g. Timer, Streak), hide icon by using transparent image.
-        // If title is empty (Mode: None), show the default app icon.
-        if (displayTitle && displayTitle.length > 0) {
-          if (transparentIcon) tray.setImage(transparentIcon);
-        } else {
-          if (defaultIcon) tray.setImage(defaultIcon);
-        }
-      } else {
-        // On Windows/Linux, we can't show text next to icon easily.
-        // We should keep the icon visible and update tooltip.
-        if (defaultIcon) tray.setImage(defaultIcon);
-        tray.setToolTip(displayTitle || 'FocusFlow');
-      }
+    if (tray) {
+      tray.setTitle(title);
     }
   });
 

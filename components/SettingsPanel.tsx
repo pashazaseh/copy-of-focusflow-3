@@ -68,6 +68,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         }
     }, []);
 
+    const [shortcut, setShortcut] = useState('');
+
+    useEffect(() => {
+        (window as any).electronAPI?.invoke?.('get-global-shortcut').then((s: string) => setShortcut(s));
+    }, []);
+
     const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'latest' | 'error'>('idle');
     const [latestVersion, setLatestVersion] = useState<string>('');
     const [updateBranch, setUpdateBranch] = useState(() => {
@@ -172,6 +178,29 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         {activeTab === 'timer' && (
                             <>
                                 <TimerSettingsPanel appTheme={appTheme} />
+                                <div className={`p-6 rounded-2xl border shadow-sm ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                                    <h3 className={`text-xl font-bold mb-4 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Shortcuts</h3>
+                                    <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                        <div>
+                                            <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Quick Capture</div>
+                                            <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Global keyboard shortcut</div>
+                                        </div>
+                                        <input 
+                                            type="text" 
+                                            value={shortcut}
+                                            onChange={(e) => setShortcut(e.target.value)}
+                                            onBlur={() => (window as any).electronAPI?.invoke?.('update-global-shortcut', shortcut)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    (window as any).electronAPI?.invoke?.('update-global-shortcut', shortcut);
+                                                    (e.target as HTMLInputElement).blur();
+                                                }
+                                            }}
+                                            className={`px-3 py-1.5 rounded-lg text-sm border focus:outline-none w-32 text-right ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'}`}
+                                            placeholder="Cmd+Shift+C"
+                                        />
+                                    </div>
+                                </div>
                                 <div className={`p-6 rounded-2xl border shadow-sm ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
                                     <h3 className={`text-xl font-bold mb-4 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update App</h3>
                                     <p className={`text-sm mb-6 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>

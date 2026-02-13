@@ -3,14 +3,17 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
     // 1. Timer State Syncing
-    onSyncTimerState: (callback) => ipcRenderer.on('sync-timer-state', (_event, value) => callback(value)),
+    onSyncTimerState: (callback) => {
+        const subscription = (_event, value) => callback(value);
+        ipcRenderer.on('sync-timer-state', subscription);
+        return () => ipcRenderer.removeListener('sync-timer-state', subscription);
+    },
     requestTimerState: () => ipcRenderer.send('request-timer-state'),
+    updateTrayTitle: (title) => ipcRenderer.send('update-tray-title', title),
 
     // 2. Window Controls
     minimizeWindow: () => ipcRenderer.send('minimize-window'),
     closeWindow: () => ipcRenderer.send('close-window'),
-    closeMiniCapture: () => ipcRenderer.send('close-mini-capture'),
-    resizeMiniCapture: (height) => ipcRenderer.send('resize-mini-capture', { height }),
     
     // 3. Ghost Mode Specifics
     send: (channel, data) => {

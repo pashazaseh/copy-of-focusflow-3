@@ -44,7 +44,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
     formatTime,
     isGhost
 }) => {
-    const radius = 110;
+    const radius = 119;
     const circumference = 2 * Math.PI * radius;
     
     const validTimeLeft = Number.isFinite(timeLeft) ? timeLeft : 0;
@@ -59,14 +59,23 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
     
     const strokeDashoffset = circumference * (1 - progress);
     const isUrgent = mode === 'POMO' && validInitialTime > 0 && (validTimeLeft / validInitialTime) <= 0.15;
+    const isWarning = mode === 'POMO' && validInitialTime > 0 && (validTimeLeft / validInitialTime) <= 0.5;
     
     let glowColor = 'bg-blue-500/20';
     let strokeColor = '#3B82F6'; // default blue
 
     if (isCyberpunk) {
-        if (isUrgent) {
-            strokeColor = '#ff0055'; // red
-            glowColor = 'bg-red-500/20';
+        if (mode === 'POMO' && phase === 'FOCUS') {
+            if (isUrgent) {
+                strokeColor = '#ff0055'; // red
+                glowColor = 'bg-red-500/20';
+            } else if (isWarning) {
+                strokeColor = '#F59E0B'; // orange
+                glowColor = 'bg-orange-500/20';
+            } else {
+                strokeColor = '#00f0ff'; // cyan
+                glowColor = 'bg-cyan-500/20';
+            }
         } else if (mode === 'STOPWATCH') {
             strokeColor = '#F59E0B'; // orange
             glowColor = 'bg-orange-500/20';
@@ -78,9 +87,17 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
             glowColor = 'bg-cyan-500/20';
         }
     } else { // Not cyberpunk
-        if (isUrgent) {
-            strokeColor = '#EF4444'; // red-500
-            glowColor = 'bg-red-500/20';
+        if (mode === 'POMO' && phase === 'FOCUS') {
+            if (isUrgent) {
+                strokeColor = '#EF4444'; // red-500
+                glowColor = 'bg-red-500/20';
+            } else if (isWarning) {
+                strokeColor = '#F59E0B'; // amber-500
+                glowColor = 'bg-orange-500/20';
+            } else {
+                strokeColor = '#3B82F6'; // blue-500
+                glowColor = 'bg-blue-500/20';
+            }
         } else if (mode === 'STOPWATCH') {
             strokeColor = '#F59E0B'; // amber-500
             glowColor = 'bg-orange-500/20';
@@ -92,7 +109,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
 
     const timeString = formatTime(validTimeLeft);
     const isLong = timeString.length > 5;
-    const fontSize = isLong ? 'text-7xl md:text-8xl' : 'text-8xl md:text-9xl';
+    const fontSize = isLong ? 'text-6xl md:text-7xl' : 'text-7xl md:text-8xl';
 
     return (
         <div className={`relative w-full max-w-[520px] aspect-square flex items-center justify-center mb-8 group ${isGhost ? 'scale-90' : ''}`}>
@@ -100,9 +117,9 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
                 <div className={`absolute -inset-4 rounded-full blur-3xl animate-pulse transition-all duration-1000 pointer-events-none ${glowColor}`}></div>
             )}
             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 240 240">
-                <circle cx="120" cy="120" r={radius} className={isCyberpunk ? "stroke-gray-800" : "stroke-gray-200 dark:stroke-gray-800"} strokeWidth="8" fill="transparent" strokeDasharray="5 5" />
+                <circle cx="120" cy="120" r={radius} className={isCyberpunk ? "stroke-gray-800" : "stroke-gray-200 dark:stroke-gray-800"} strokeWidth="12" fill="transparent" strokeDasharray="5 5" />
                 {Array.from({ length: 12 }).map((_, i) => { const angle = (i / 12) * 2 * Math.PI; const x1 = 120 + Math.cos(angle) * (radius - 5); const y1 = 120 + Math.sin(angle) * (radius - 5); const x2 = 120 + Math.cos(angle) * (radius + 5); const y2 = 120 + Math.sin(angle) * (radius + 5); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className={isCyberpunk ? "stroke-[#00f0ff]/20" : "stroke-gray-300 dark:stroke-gray-700"} strokeWidth="2" />; })}
-                <circle cx="120" cy="120" r={radius} stroke={strokeColor} strokeWidth="10" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffset) ? 0 : strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: `drop-shadow(0 0 10px ${strokeColor})` }} />
+                <circle cx="120" cy="120" r={radius} stroke={strokeColor} strokeWidth="16" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffset) ? 0 : strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: `drop-shadow(0 0 10px ${strokeColor})` }} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
                 <div className={`${fontSize} font-bold tracking-tighter tabular-nums select-none transition-colors duration-300`} style={{color: strokeColor}}>{timeString}</div>

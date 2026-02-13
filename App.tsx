@@ -385,7 +385,7 @@ const GhostModeView = () => {
 
             {/* 3. Time Display */}
             <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-20 pointer-events-none">
-                <span className="text-3xl font-bold font-mono tracking-tighter drop-shadow-lg">
+                <span className="text-3xl font-bold font-mono tracking-tighter drop-shadow-lg" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
                     {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
                 </span>
             </div>

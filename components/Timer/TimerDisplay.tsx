@@ -34,7 +34,7 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
       return '';
   };
 
-  const radius = isGhost ? 85 : 110;
+  const radius = isGhost ? 85 : 115;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - progress);
 
@@ -65,7 +65,7 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
   const ticks = Array.from({ length: 60 }, (_, i) => {
     const angle = i * 6;
     const isFiveMinMark = i % 5 === 0;
-    const center = isGhost ? 100 : 120;
+    const center = isGhost ? 100 : 125;
     return (
         <line
             key={i}
@@ -83,7 +83,7 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
 
   return (
     <div className={`flex items-center justify-center ${isGhost ? 'relative w-full h-full' : 'relative w-96 h-96 mb-2'}`}>
-        <svg className="absolute inset-0 w-full h-full" viewBox={isGhost ? "0 0 200 200" : "0 0 240 240"}>
+        <svg className="absolute inset-0 w-full h-full" viewBox={isGhost ? "0 0 200 200" : "0 0 250 250"}>
             <defs>
                 <linearGradient id="progress-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
                     <stop offset="0%" stopColor={isCyberpunk ? "#00f0ff" : "#60a5fa"} />
@@ -115,8 +115,8 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
             </defs>
 
             <circle
-                cx={isGhost ? 100 : 120}
-                cy={isGhost ? 100 : 120}
+                cx={isGhost ? 100 : 125}
+                cy={isGhost ? 100 : 125}
                 r={radius}
                 fill="url(#dark-blue-glow)"
                 className={isCyberpunk && isActive ? 'animate-pulse-glow' : 'opacity-0'}
@@ -128,16 +128,16 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
 
             <g style={{ transformOrigin: 'center', transform: 'rotate(-90deg)' }}>
                 <circle
-                    cx={isGhost ? 100 : 120}
-                    cy={isGhost ? 100 : 120}
+                    cx={isGhost ? 100 : 125}
+                    cy={isGhost ? 100 : 125}
                     r={radius}
                     strokeWidth={isGhost ? 8 : 12}
                     fill="transparent"
                     className={isCyberpunk ? "stroke-cyan-400/10" : "stroke-gray-200 dark:stroke-gray-700/50"}
                 />
                 <circle
-                    cx={isGhost ? 100 : 120}
-                    cy={isGhost ? 100 : 120}
+                    cx={isGhost ? 100 : 125}
+                    cy={isGhost ? 100 : 125}
                     r={radius}
                     strokeWidth={isGhost ? 8 : 12}
                     fill="transparent"
@@ -152,7 +152,7 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
             </g>
         </svg>
         <div className="z-10 flex flex-col items-center justify-center text-center">
-            <div className={`font-orbitron font-bold tracking-tighter tabular-nums transition-colors ${isGhost ? 'text-5xl' : 'text-6xl'} ${
+            <div className={`font-[ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace] font-bold tracking-widest tabular-nums transition-colors ${isGhost ? 'text-5xl' : 'text-6xl'} ${
                 isCyberpunk
                     ? 'text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.4)]'
                     : 'text-gray-800 dark:text-white'
