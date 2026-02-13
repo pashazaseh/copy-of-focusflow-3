@@ -12,6 +12,8 @@ const easeOutElastic = (x: number): number => {
 export const QuickTimerOverlay: React.FC = () => {
     const [isDragging, setIsDragging] = useState(false);
     const [isSnapping, setIsSnapping] = useState(false);
+    const [isConfirmed, setIsConfirmed] = useState(false);
+    const [confirmedMinutes, setConfirmedMinutes] = useState(0);
     const [startPoint, setStartPoint] = useState({ x: 0, y: 0 });
     const [cursor, setCursor] = useState({ x: 0, y: 0 });
 
@@ -32,6 +34,7 @@ export const QuickTimerOverlay: React.FC = () => {
             startPointRef.current = point;
             cursorRef.current = point;
 
+            setIsConfirmed(false);
             setIsDragging(true);
         };
 
@@ -59,10 +62,16 @@ export const QuickTimerOverlay: React.FC = () => {
             if (distance > 50) { // Threshold to commit
                 setIsDragging(false);
                 setIsSnapping(true);
+                setConfirmedMinutes(minutes);
                 
                 setTimeout(() => {
-                    window.electronAPI?.startQuickTimer(minutes);
                     setIsSnapping(false);
+                    setIsConfirmed(true);
+                    
+                    setTimeout(() => {
+                        const validMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : 25;
+                        window.electronAPI?.startQuickTimer(validMinutes);
+                    }, 800);
                 }, 400);
             } else {
                 window.electronAPI?.cancelQuickTimer();
@@ -101,7 +110,7 @@ export const QuickTimerOverlay: React.FC = () => {
         }
     }, [isSnapping]);
 
-    if (!isDragging && !isSnapping) return null;
+    if (!isDragging && !isSnapping && !isConfirmed) return null;
 
     const distance = Math.sqrt(Math.pow(cursor.x - startPoint.x, 2) + Math.pow(cursor.y - startPoint.y, 2));
     const minutes = Math.max(5, Math.round(distance / 10));
@@ -110,6 +119,7 @@ export const QuickTimerOverlay: React.FC = () => {
 
     return (
         <div className="fixed inset-0 pointer-events-none z-[9999]">
+            {(isDragging || isSnapping) && (
             <svg className="w-full h-full overflow-visible">
                 <defs>
                     <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
@@ -138,7 +148,8 @@ export const QuickTimerOverlay: React.FC = () => {
                 <circle cx={cursor.x} cy={cursor.y} r="5" fill="#00f0ff" fillOpacity="0.2" stroke="#00f0ff" strokeWidth="1.5" filter="url(#glow)" />
                 <circle cx={cursor.x} cy={cursor.y} r="2" fill="#fff" />
             </svg>
-            {!isSnapping && (
+            )}
+            {!isSnapping && !isConfirmed && isDragging && (
             <div 
                 className="absolute text-[#00f0ff] font-mono font-bold text-xl bg-black/90 px-4 py-2 rounded-xl backdrop-blur-md border border-[#00f0ff]/30 shadow-[0_0_20px_rgba(0,240,255,0.4)] flex flex-col items-center"
                 style={{ 
@@ -150,6 +161,21 @@ export const QuickTimerOverlay: React.FC = () => {
                 <span>{minutes}m</span>
                 <div className="text-[10px] text-[#00f0ff]/60 uppercase tracking-widest mt-0.5">Release to Start</div>
             </div>
+            )}
+            {isConfirmed && (
+                <div 
+                    className="absolute flex flex-col items-center justify-center animate-bounce"
+                    style={{ 
+                        left: startPoint.x, 
+                        top: startPoint.y + 40, 
+                        transform: 'translateX(-50%)' 
+                    }}
+                >
+                    <div className="bg-[#00f0ff] text-black font-bold px-4 py-2 rounded-xl shadow-[0_0_20px_rgba(0,240,255,0.6)] flex items-center gap-2 border border-white/20">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                        <span>{confirmedMinutes}m Started</span>
+                    </div>
+                </div>
             )}
         </div>
     );

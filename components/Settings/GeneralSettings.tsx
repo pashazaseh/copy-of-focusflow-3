@@ -15,6 +15,8 @@ interface GeneralSettingsProps {
     menuBarConfig: MenuBarConfig;
     onUpdateMenuBarConfig: (config: MenuBarConfig) => void;
     countdowns: CountdownItem[];
+    onUnlockTheme?: (key: string, cost: number, name: string) => void;
+    currentGems?: number;
 }
 
 // A small helper for the section headers
@@ -26,13 +28,13 @@ const SectionHeader: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
 const widgetLabels: Record<string, string> = {
     showQuestsWidget: 'Daily Quests',
+    showGemWidget: 'Gem Bank',
     showTimerWidget: 'Quick Timer',
     showCountdownWidget: 'Closest Countdown',
     showDailyGoalWidget: 'Daily Goal',
     showWeeklyGoalWidget: 'Weekly Goal',
     showMonthlyGoalWidget: 'Monthly Goal',
     showStreakWidget: 'Current Streak',
-    showXpWidget: 'Project XP',
     showRankWidget: 'Global Rank',
     showLatestBadgeWidget: 'Latest Badge'
 };
@@ -49,7 +51,9 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     onUpdateSidebarConfig,
     menuBarConfig,
     onUpdateMenuBarConfig,
-    countdowns
+    countdowns,
+    onUnlockTheme,
+    currentGems = 0
 }) => {
     const [localNavConfig, setLocalNavConfig] = useState<StoredNavConfig[]>(() => {
         const safeNavConfig = navConfig || [];
@@ -179,14 +183,22 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                             >
                                 Default
                             </button>
-                            <button 
-                                onClick={() => setAppTheme('cyberpunk')}
-                                disabled={!inventory.theme_cyber}
-                                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border flex items-center gap-1.5 ${appTheme === 'cyberpunk' ? 'bg-slate-900 border-[#00f0ff] text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed'}`}
-                            >
-                                <span>Cyberpunk</span>
-                                {!inventory.theme_cyber && <span className="text-[9px] bg-gray-200 dark:bg-gray-700 px-1 rounded">Locked</span>}
-                            </button>
+                            {inventory.theme_cyber ? (
+                                <button 
+                                    onClick={() => setAppTheme('cyberpunk')}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border flex items-center gap-1.5 ${appTheme === 'cyberpunk' ? 'bg-slate-900 border-[#00f0ff] text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800'}`}
+                                >
+                                    <span>Cyberpunk</span>
+                                </button>
+                            ) : (
+                                <button 
+                                    onClick={() => onUnlockTheme && onUnlockTheme('theme_cyber', 500, 'Cyberpunk')}
+                                    disabled={currentGems < 500}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border flex items-center gap-1.5 ${currentGems >= 500 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white border-transparent hover:shadow-lg' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 border-transparent cursor-not-allowed'}`}
+                                >
+                                    <span>Unlock Cyberpunk (500 💎)</span>
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -200,14 +212,14 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                         <label className="block text-xs font-medium text-gray-500 mb-1">Display Mode</label>
                         <select 
                             value={menuBarConfig.mode} 
-                            onChange={(e) => onUpdateMenuBarConfig({ ...menuBarConfig, mode: e.target.value as MenuBarMode, customCountdownId: menuBarConfig.mode === 'countdown_custom' ? menuBarConfig.customCountdownId : '' })}
+                            onChange={(e) => onUpdateMenuBarConfig({ ...menuBarConfig, mode: e.target.value as any, customCountdownId: menuBarConfig.mode === 'countdown_custom' ? menuBarConfig.customCountdownId : '' })}
                             className={`w-full px-3 py-2 text-sm rounded-lg focus:outline-none focus:ring-1 ${isCyberpunk ? 'bg-black border-[#00f0ff]/30 text-[#00f0ff] focus:ring-[#00f0ff]' : 'bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-indigo-500'}`}
                         >
                             <option value="none">None (Icon Only)</option>
                             <option value="today">Today's Hours</option>
                             <option value="remaining">Remaining (Daily Goal)</option>
                             <option value="streak">Current Streak</option>
-                            <option value="xp">Total XP</option>
+                            <option value="gems">Total Gems</option>
                             <option value="motivation">Motivation</option>
                             <option value="timer">Active Timer</option>
                             <option value="countdown_closest">Closest Countdown</option>

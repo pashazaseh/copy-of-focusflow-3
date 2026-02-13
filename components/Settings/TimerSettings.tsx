@@ -25,7 +25,7 @@ const SettingRow: React.FC<{ label: string; description?: string; children: Reac
 
 export const TimerSettingsPanel: React.FC<TimerSettingsProps> = ({ appTheme }) => {
     const isCyberpunk = appTheme === 'cyberpunk';
-    const [timerSettings, setTimerSettings] = useState<TimerSettings>({ pomoDuration: 25, shortBreakDuration: 5, longBreakDuration: 15, pomosPerLongBreak: 4, autoStartNextPomo: false, autoStartBreak: false, quickDurations: [25, 45, 60], shortBreakPresets: [5, 10, 15] });
+    const [timerSettings, setTimerSettings] = useState<TimerSettings>({ pomoDuration: 25, shortBreakDuration: 5, longBreakDuration: 15, pomosPerLongBreak: 4, autoStartNextPomo: false, autoStartBreak: false, quickDurations: [25, 45, 60], shortBreakPresets: [5, 10, 15], autoMinimize: false } as any);
     const [timerVolume, setTimerVolume] = useState<number>(0.5);
     
     // For inline preset adding
@@ -72,6 +72,7 @@ export const TimerSettingsPanel: React.FC<TimerSettingsProps> = ({ appTheme }) =
         const newSettings = { ...timerSettings, [key]: value };
         setTimerSettings(newSettings);
         await storage.saveTimerSettings(newSettings);
+        window.dispatchEvent(new Event('focusflow-timer-settings-update'));
     };
 
     const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -160,6 +161,14 @@ export const TimerSettingsPanel: React.FC<TimerSettingsProps> = ({ appTheme }) =
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${isCyberpunk ? 'focus:ring-offset-black focus:ring-[#00f0ff]' : 'focus:ring-blue-500'} ${timerSettings.autoStartBreak ? (isCyberpunk ? 'bg-[#00f0ff]' : 'bg-blue-600') : 'bg-gray-200 dark:bg-gray-600'}`}
                         >
                             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${timerSettings.autoStartBreak ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                    </SettingRow>
+                    <SettingRow label="Auto-minimize on Start">
+                         <button 
+                            onClick={() => handleTimerSettingChange('autoMinimize' as any, !(timerSettings as any).autoMinimize)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${isCyberpunk ? 'focus:ring-offset-black focus:ring-[#00f0ff]' : 'focus:ring-blue-500'} ${(timerSettings as any).autoMinimize ? (isCyberpunk ? 'bg-[#00f0ff]' : 'bg-blue-600') : 'bg-gray-200 dark:bg-gray-600'}`}
+                        >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(timerSettings as any).autoMinimize ? 'translate-x-6' : 'translate-x-1'}`} />
                         </button>
                     </SettingRow>
                 </div>

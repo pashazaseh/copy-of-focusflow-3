@@ -167,7 +167,7 @@ export interface SidebarConfig {
     widgetOrder: string[];
 }
 
-export type SettingsTab = 'general' | 'timer' | 'projects' | 'integrations' | 'data' | 'configuration';
+export type SettingsTab = 'general' | 'timer' | 'projects' | 'integrations' | 'data' | 'configuration' | 'sync' | 'debug';
 
 // Calendar Types
 export interface CustomEvent {

@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, powerSaveBlocker, dialog, globalShortcut, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, powerSaveBlocker, dialog, globalShortcut, shell, TouchBar } = require('electron');
+const { TouchBarLabel, TouchBarButton, TouchBarSpacer } = TouchBar;
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -19,6 +20,10 @@ let isQuitting = false;
 let defaultIcon = null;
 let transparentIcon = null;
 let ghostState = null;
+
+let tbLabel = null;
+let tbPlayPauseButton = null;
+let tbSkipButton = null;
 
 const configFile = 'settings.json';
 
@@ -273,10 +278,6 @@ function hideQuickTimer() {
 
 function createMiniCaptureWindow() {
   if (miniCaptureWin && !miniCaptureWin.isDestroyed()) {
-    if (process.platform === 'darwin') {
-      miniCaptureWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-      miniCaptureWin.setAlwaysOnTop(true, 'floating', 1); // Verified: floating + visibleOnFullScreen keeps it on top
-    }
     miniCaptureWin.show();
     miniCaptureWin.focus();
     return;
@@ -289,60 +290,52 @@ function createMiniCaptureWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     resizable: true,
-    show: false,
+    show: false, // Start hidden
     alwaysOnTop: true,
+    skipTaskbar: true,
     type: 'panel',
-    vibrancy: 'under-window',
-    visualEffectState: 'active',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false, // Allow external API calls (Gemini)
       backgroundThrottling: false
     }
   });
 
   if (process.platform === 'darwin') {
     miniCaptureWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    miniCaptureWin.setAlwaysOnTop(true, 'floating', 1); // Verified: floating + visibleOnFullScreen keeps it on top
-    miniCaptureWin.setFullScreenable(false);
-  } else {
-    miniCaptureWin.setAlwaysOnTop(true, 'floating');
   }
 
-  const isDev = !app.isPackaged;
-  const url = isDev 
-    ? 'http://localhost:5173#minicapture' 
-    : `file://${path.join(__dirname, '../dist/index.html')}#minicapture`;
-  
-  miniCaptureWin.loadURL(url);
+  // Load the specific route
+  const startUrl = app.isPackaged 
+    ? `file://${path.join(__dirname, '../dist/index.html')}#minicapture`
+    : 'http://localhost:5173/#minicapture';
 
-  setupContextMenu(miniCaptureWin);
+  miniCaptureWin.loadURL(startUrl);
 
-  miniCaptureWin.once('ready-to-show', () => {
-    miniCaptureWin.show();
-    miniCaptureWin.focus();
-  });
-
+  // Clean up when closed
   miniCaptureWin.on('closed', () => {
     miniCaptureWin = null;
   });
 }
 
 function triggerQuickCapture() {
-  // Toggle behavior: If open and focused, hide it.
-  if (miniCaptureWin && !miniCaptureWin.isDestroyed() && miniCaptureWin.isVisible() && miniCaptureWin.isFocused()) {
+  if (miniCaptureWin && !miniCaptureWin.isDestroyed() && miniCaptureWin.isVisible()) {
     miniCaptureWin.hide();
-    if (process.platform === 'darwin') app.hide();
-    return;
+    if (process.platform === 'darwin') app.hide(); // Hide dock icon on Mac
+  } else {
+    createMiniCaptureWindow();
+    miniCaptureWin.show();
+    miniCaptureWin.focus();
   }
-
-  createMiniCaptureWindow();
 }
 
 function createGhostWindow() {
   if (ghostWin) return;
+
+  // Get the display where the cursor is currently located
+  const cursorPoint = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursorPoint);
 
   ghostWin = new BrowserWindow({
     width: 220,  // Small size
@@ -352,12 +345,22 @@ function createGhostWindow() {
     alwaysOnTop: true,  // Floating effect
     resizable: false,
     hasShadow: false,   // Cleaner look
+    type: 'panel',      // macOS optimization: floats above full-screen apps
+    x: display.bounds.x + (display.bounds.width / 2) - 110, // Center horizontally
+    y: display.bounds.y + (display.bounds.height / 2) - 110, // Center vertically
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false, // Critical for timer accuracy in background
     }
   });
+
+  // Ensure it stays on top of full-screen apps on macOS
+  if (process.platform === 'darwin') {
+    ghostWin.setAlwaysOnTop(true, 'screen-saver', 1);
+    ghostWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
 
   const isDev = !app.isPackaged;
   // Load the app with the specific HASH
@@ -372,9 +375,16 @@ function createGhostWindow() {
 
 function setupIpcHandlers() {
   // IPC handlers for the Mini Capture Window
-  ipcMain.on('close-mini-capture', () => miniCaptureWin?.hide());
+  ipcMain.on('close-mini-capture', () => {
+    if (miniCaptureWin && !miniCaptureWin.isDestroyed()) {
+      miniCaptureWin.hide();
+      if (process.platform === 'darwin') app.hide();
+    }
+  });
   ipcMain.on('resize-mini-capture', (event, { height }) => { 
-    if(miniCaptureWin) miniCaptureWin.setSize(600, height); 
+    if(miniCaptureWin && !miniCaptureWin.isDestroyed()) {
+      miniCaptureWin.setSize(600, height);
+    }
   });
 
   // IPC handlers for the custom traffic light buttons
@@ -382,9 +392,10 @@ function setupIpcHandlers() {
     const webContents = event.sender;
     const window = BrowserWindow.fromWebContents(webContents);
     
+    // Specific check for mini capture
     if (window === miniCaptureWin) {
-        window.close();
-        return;
+        miniCaptureWin.hide(); // Hide instead of close
+        return; 
     }
 
     if (window === ghostWin) {
@@ -458,9 +469,15 @@ function setupIpcHandlers() {
   ipcMain.on('quick-timer-set', (event, minutes) => {
     console.log('[Timer Debug] Quick timer set:', minutes);
     hideQuickTimer();
+    
+    if (!win || win.isDestroyed()) {
+        const allWindows = BrowserWindow.getAllWindows();
+        win = allWindows.find(w => w !== quickWin && w !== miniCaptureWin && w !== ghostWin && !w.isDestroyed()) || null;
+    }
+
     if (win && !win.isDestroyed()) {
       // Don't force show window, let it run in background (tray updates)
-      win.webContents.send('start-timer-from-quick', minutes);
+      win.webContents.send('tray-action', { type: 'START_FOCUS', duration: minutes });
 
       // If main window is minimized, prevent it from restoring/focusing by hiding the app (macOS)
       if (win.isMinimized() && process.platform === 'darwin') {
@@ -526,19 +543,47 @@ function setupIpcHandlers() {
   ipcMain.handle('get-global-shortcut', () => currentGlobalShortcut);
 
   ipcMain.handle('update-global-shortcut', async (event, shortcut) => {
-    globalShortcut.unregisterAll();
-    if (shortcut && shortcut.trim() !== '') {
-      currentGlobalShortcut = shortcut;
-      saveSetting('globalShortcut', shortcut);
-      try {
-        const success = globalShortcut.register(shortcut, triggerQuickCapture);
-        return success;
-      } catch (e) {
-        console.error('Failed to register shortcut:', e);
+    const oldShortcut = currentGlobalShortcut;
+
+    // Case 1: Disable shortcut
+    if (!shortcut || shortcut.trim() === '') {
+      if (oldShortcut) {
+        globalShortcut.unregister(oldShortcut);
+        currentGlobalShortcut = '';
+        saveSetting('globalShortcut', '');
+      }
+      return true;
+    }
+
+    // Case 2: Change shortcut
+    if (shortcut === oldShortcut) return true;
+
+    // Unregister old one first
+    if (oldShortcut) {
+      globalShortcut.unregister(oldShortcut);
+    }
+
+    try {
+      const success = globalShortcut.register(shortcut, triggerQuickCapture);
+      if (success) {
+        currentGlobalShortcut = shortcut;
+        saveSetting('globalShortcut', shortcut);
+        return true;
+      } else {
+        // Registration failed (likely taken), restore old one
+        if (oldShortcut) {
+          globalShortcut.register(oldShortcut, triggerQuickCapture);
+        }
         return false;
       }
+    } catch (e) {
+      console.error('Failed to register shortcut:', e);
+      // Restore old one on error
+      if (oldShortcut) {
+        try { globalShortcut.register(oldShortcut, triggerQuickCapture); } catch {}
+      }
+      return false;
     }
-    return true;
   });
 
   ipcMain.on('open-quick-capture', triggerQuickCapture);
@@ -750,7 +795,10 @@ function setupIpcHandlers() {
     setDoNotDisturb(enable);
   });
 
-  ipcMain.on('ghost-mode-enable', () => {
+  ipcMain.on('ghost-mode-enable', (event, state) => {
+  if (state) {
+      ghostState = state;
+  }
   createGhostWindow();
   if (win) win.hide(); // Hide the big window
 });
@@ -794,6 +842,25 @@ ipcMain.on('timer-action', (event, { action }) => {
     console.log(`Timer action received: ${action}`);
 });
 
+  ipcMain.on('broadcast-timer-action', (event, { action, payload }) => {
+    // Update global ghost state so new windows get correct data immediately
+    if (['START_TIMER', 'PAUSE_TIMER', 'RESET_TIMER', 'SKIP_PHASE', 'UPDATE_LABEL'].includes(action)) {
+        ghostState = {
+            ...payload,
+            isRunning: action === 'START_TIMER',
+            lastUpdated: Date.now()
+        };
+        
+        // If Ghost Window is open, sync it immediately
+        if (ghostWin && !ghostWin.isDestroyed()) {
+            ghostWin.webContents.send('sync-timer-state', ghostState);
+        }
+
+        // Update macOS System UI
+        updateMacSystemUI(ghostState);
+    }
+  });
+
   ipcMain.on('get-timer-state', (event) => {
     console.log('[Timer Debug] Get timer state:', ghostState);
     if (ghostState) {
@@ -836,7 +903,7 @@ function createWindow() {
     width: 1200,
     height: 800,
     icon: createAppIcon(),
-    backgroundColor: '#121212', // Dark background for instant non-white paint
+    backgroundColor: process.platform === 'darwin' ? '#00000000' : '#121212', // Transparent on Mac for vibrancy
     frame: process.platform === 'darwin',
     titleBarStyle: 'hidden', 
     titleBarOverlay: {
@@ -871,7 +938,8 @@ function createWindow() {
     if (isQuitting) {
       return;
     }
-    if (minimizeToTray) {
+    // On macOS, standard behavior is to hide the window on close, unless quitting
+    if (process.platform === 'darwin' || minimizeToTray) {
       event.preventDefault();
       win.hide();
     }
@@ -1160,19 +1228,16 @@ app.whenReady().then(() => {
     // Defer non-critical background windows and tray to prioritize main window render
     setTimeout(() => {
         const settings = loadSettings();
-        if (settings.globalShortcut) {
-            currentGlobalShortcut = settings.globalShortcut;
-        }
+        const shortcut = settings.globalShortcut || 'CommandOrControl+Shift+C';
 
-        // Register Global Hotkey for Quick Capture
         try {
-            if (currentGlobalShortcut && !globalShortcut.isRegistered(currentGlobalShortcut)) {
-                globalShortcut.register(currentGlobalShortcut, triggerQuickCapture);
-            }
+          globalShortcut.register(shortcut, triggerQuickCapture);
         } catch (e) {
-            console.error('Failed to register global shortcut:', e);
+          console.error('Failed to register shortcut:', e);
         }
 
+        // Pre-load the window so it opens instantly
+        createMiniCaptureWindow();
         createQuickWindow();
         
         // Create Tray

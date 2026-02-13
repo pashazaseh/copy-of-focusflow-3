@@ -6,6 +6,7 @@ import { useTheme, useProjects } from '../AppContext';
 import { handleSessionComplete } from '../services/gamificationService';
 import { ControlDock } from './Timer/ControlDock';
 import { TimerActionButtons } from './Timer/TimerControls';
+import { TimerDisplay } from './Timer/TimerDisplay';
 import { TimeWheel } from './TimeWheel';
 
 interface TimerPanelProps {
@@ -23,112 +24,6 @@ interface TimerPanelProps {
 type TimerMode = 'POMO' | 'STOPWATCH';
 type TimerPhase = 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
 
-interface TimerDisplayProps {
-    timeLeft: number;
-    initialTime: number;
-    mode: TimerMode;
-    phase: TimerPhase;
-    isActive: boolean;
-    isCyberpunk: boolean;
-    formatTime: (seconds: number) => string;
-    isGhost?: boolean;
-}
-
-const TimerDisplay: React.FC<TimerDisplayProps> = ({
-    timeLeft,
-    initialTime,
-    mode,
-    phase,
-    isActive,
-    isCyberpunk,
-    formatTime,
-    isGhost
-}) => {
-    const radius = 119;
-    const circumference = 2 * Math.PI * radius;
-    
-    const validTimeLeft = Number.isFinite(timeLeft) ? timeLeft : 0;
-    const validInitialTime = Number.isFinite(initialTime) ? initialTime : 0;
-
-    let progress = 0;
-    if (mode === 'POMO') {
-        progress = validInitialTime > 0 ? (validInitialTime - validTimeLeft) / validInitialTime : 0;
-    } else {
-        progress = (validTimeLeft % 60) / 60;
-    }
-    
-    const strokeDashoffset = circumference * (1 - progress);
-    const isUrgent = mode === 'POMO' && validInitialTime > 0 && (validTimeLeft / validInitialTime) <= 0.15;
-    const isWarning = mode === 'POMO' && validInitialTime > 0 && (validTimeLeft / validInitialTime) <= 0.5;
-    
-    let glowColor = 'bg-blue-500/20';
-    let strokeColor = '#3B82F6'; // default blue
-
-    if (isCyberpunk) {
-        if (mode === 'POMO' && phase === 'FOCUS') {
-            if (isUrgent) {
-                strokeColor = '#ff0055'; // red
-                glowColor = 'bg-red-500/20';
-            } else if (isWarning) {
-                strokeColor = '#F59E0B'; // orange
-                glowColor = 'bg-orange-500/20';
-            } else {
-                strokeColor = '#00f0ff'; // cyan
-                glowColor = 'bg-cyan-500/20';
-            }
-        } else if (mode === 'STOPWATCH') {
-            strokeColor = '#F59E0B'; // orange
-            glowColor = 'bg-orange-500/20';
-        } else if (phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') {
-            strokeColor = '#10B981'; // green
-            glowColor = 'bg-green-500/20';
-        } else {
-            strokeColor = '#00f0ff'; // cyan
-            glowColor = 'bg-cyan-500/20';
-        }
-    } else { // Not cyberpunk
-        if (mode === 'POMO' && phase === 'FOCUS') {
-            if (isUrgent) {
-                strokeColor = '#EF4444'; // red-500
-                glowColor = 'bg-red-500/20';
-            } else if (isWarning) {
-                strokeColor = '#F59E0B'; // amber-500
-                glowColor = 'bg-orange-500/20';
-            } else {
-                strokeColor = '#3B82F6'; // blue-500
-                glowColor = 'bg-blue-500/20';
-            }
-        } else if (mode === 'STOPWATCH') {
-            strokeColor = '#F59E0B'; // amber-500
-            glowColor = 'bg-orange-500/20';
-        } else if (phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') {
-            strokeColor = '#10B981'; // emerald-500
-            glowColor = 'bg-green-500/20';
-        }
-    }
-
-    const timeString = formatTime(validTimeLeft);
-    const isLong = timeString.length > 5;
-    const fontSize = isLong ? 'text-6xl md:text-7xl' : 'text-7xl md:text-8xl';
-
-    return (
-        <div className={`relative w-full max-w-[520px] aspect-square flex items-center justify-center mb-8 group ${isGhost ? 'scale-90' : ''}`}>
-            {isActive && (
-                <div className={`absolute -inset-4 rounded-full blur-3xl animate-pulse transition-all duration-1000 pointer-events-none ${glowColor}`}></div>
-            )}
-            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 240 240">
-                <circle cx="120" cy="120" r={radius} className={isCyberpunk ? "stroke-gray-800" : "stroke-gray-200 dark:stroke-gray-800"} strokeWidth="12" fill="transparent" strokeDasharray="5 5" />
-                {Array.from({ length: 12 }).map((_, i) => { const angle = (i / 12) * 2 * Math.PI; const x1 = 120 + Math.cos(angle) * (radius - 5); const y1 = 120 + Math.sin(angle) * (radius - 5); const x2 = 120 + Math.cos(angle) * (radius + 5); const y2 = 120 + Math.sin(angle) * (radius + 5); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className={isCyberpunk ? "stroke-[#00f0ff]/20" : "stroke-gray-300 dark:stroke-gray-700"} strokeWidth="2" />; })}
-                <circle cx="120" cy="120" r={radius} stroke={strokeColor} strokeWidth="16" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffset) ? 0 : strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-linear" style={{ filter: `drop-shadow(0 0 10px ${strokeColor})` }} />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-                <div className={`${fontSize} font-bold tracking-tighter tabular-nums select-none transition-colors duration-300`} style={{color: strokeColor}}>{timeString}</div>
-                <div className={`mt-4 text-sm font-bold uppercase tracking-widest ${isCyberpunk ? 'text-white/70' : 'text-gray-500'}`}>{mode === 'POMO' ? (phase === 'FOCUS' ? 'Focus' : phase === 'SHORT_BREAK' ? 'Short Break' : 'Long Break') : 'Stopwatch'}</div>
-            </div>
-        </div>
-    );
-};
-
 interface TimerModeTabsProps {
     mode: TimerMode;
     onModeSwitch: (mode: TimerMode) => void;
@@ -137,7 +32,7 @@ interface TimerModeTabsProps {
 
 const TimerModeTabs: React.FC<TimerModeTabsProps> = ({ mode, onModeSwitch, isCyberpunk }) => {
     return (
-        <div className={`flex p-1 rounded-2xl mb-8 transition-all duration-300 ${isCyberpunk ? 'bg-black/40 border border-[#00f0ff]/20 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-gray-100 dark:bg-white/5'}`}>
+        <div className={`flex p-1 rounded-2xl mb-4 md:mb-8 transition-all duration-300 ${isCyberpunk ? 'bg-black/40 border border-[#00f0ff]/20 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-gray-100 dark:bg-white/5'}`}>
             {(['POMO', 'STOPWATCH'] as TimerMode[]).map((m) => (
                 <button
                     key={m}
@@ -173,7 +68,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
   const [sessionLabel, setSessionLabel] = useState('');
   
   const [selectedProjectId, setSelectedProjectId] = useState(projectId);
-  const [settings, setSettings] = useState<TimerSettings>({ pomoDuration: 25, shortBreakDuration: 5, longBreakDuration: 15, pomosPerLongBreak: 4, autoStartNextPomo: false, autoStartBreak: false, quickDurations: [15, 25, 30, 45, 60, 90], shortBreakPresets: [5, 10, 15, 20, 30] });
+  const [settings, setSettings] = useState<TimerSettings>({ pomoDuration: 25, shortBreakDuration: 5, longBreakDuration: 15, pomosPerLongBreak: 4, autoStartNextPomo: false, autoStartBreak: false, quickDurations: [15, 25, 30, 45, 60, 90], shortBreakPresets: [5, 10, 15, 20, 30], focusMode: true, autoMinimize: false } as any);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string>('');
@@ -221,7 +116,6 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
   const [manualType, setManualType] = useState<'POMO'|'STOPWATCH'>('POMO');
 
   const [alwaysOnTopActive, setAlwaysOnTopActive] = useState(false);
-  const [globalShortcut, setGlobalShortcut] = useState('');
 
   useEffect(() => {
       const checkSetting = () => {
@@ -230,7 +124,6 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
       };
       checkSetting();
       window.addEventListener('focusflow-aot-setting-update', checkSetting);
-      (window.electronAPI as any)?.getGlobalShortcut?.().then((s: string) => setGlobalShortcut(s));
       return () => window.removeEventListener('focusflow-aot-setting-update', checkSetting);
   }, []);
 
@@ -271,10 +164,10 @@ useEffect(() => {
   }, [isActive]);
 
   useEffect(() => {
-      const shouldDND = isActive && mode === 'POMO' && phase === 'FOCUS';
+      const shouldDND = isActive && mode === 'POMO' && phase === 'FOCUS' && (settings as any).focusMode;
       (window.electronAPI as any)?.setDoNotDisturb?.(shouldDND);
       return () => { (window.electronAPI as any)?.setDoNotDisturb?.(false); };
-  }, [isActive, mode, phase]);
+  }, [isActive, mode, phase, settings]);
 
   useEffect(() => {
 
@@ -285,8 +178,10 @@ useEffect(() => {
               setSettings({
                   ...sSettings,
                   quickDurations: sSettings.quickDurations && sSettings.quickDurations.length > 0 ? sSettings.quickDurations : [15, 25, 30, 45, 60, 90],
-                  shortBreakPresets: sSettings.shortBreakPresets && sSettings.shortBreakPresets.length > 0 ? sSettings.shortBreakPresets : [5, 10, 15, 20, 30]
-              });
+                  shortBreakPresets: sSettings.shortBreakPresets && sSettings.shortBreakPresets.length > 0 ? sSettings.shortBreakPresets : [5, 10, 15, 20, 30],
+                  focusMode: (sSettings as any).focusMode ?? true,
+                  autoMinimize: (sSettings as any).autoMinimize ?? false
+              } as any);
               setWorkDuration(sSettings.pomoDuration);
               setRestDuration(sSettings.shortBreakDuration);
 
@@ -310,6 +205,17 @@ useEffect(() => {
 
                       setIsActive(true);
                       setTimeLeft(Math.ceil((end - Date.now()) / 1000));
+                      
+                      // Broadcast restored state to main process for Ghost Mode
+                      window.electronAPI?.broadcastTimerAction('START_TIMER', {
+                          mode: 'POMO',
+                          phase: localStorage.getItem('focusflow_timer_phase') || 'FOCUS',
+                          timeLeft: Math.ceil((end - Date.now()) / 1000),
+                          initialTime: parseInt(savedInitial || '1500', 10),
+                          sessionLabel: localStorage.getItem('focusflow_timer_label') || '',
+                          selectedProjectId: localStorage.getItem('focusflow_timer_project') || projectId,
+                          endTime: end
+                      });
                   } else {
                       localStorage.removeItem('focusflow_timer_end_time');
                       localStorage.removeItem('focusflow_timer_initial_time');
@@ -347,6 +253,25 @@ useEffect(() => {
           document.removeEventListener('mousedown', handleClickOutside);
           window.removeEventListener('focusflow-task-update', handleTaskUpdate);
       };
+  }, []);
+
+  useEffect(() => {
+      const handleSettingsUpdate = async () => {
+          const sSettings = await storage.getTimerSettings();
+          if (isMounted.current) {
+              setSettings({
+                  ...sSettings,
+                  quickDurations: sSettings.quickDurations && sSettings.quickDurations.length > 0 ? sSettings.quickDurations : [15, 25, 30, 45, 60, 90],
+                  shortBreakPresets: sSettings.shortBreakPresets && sSettings.shortBreakPresets.length > 0 ? sSettings.shortBreakPresets : [5, 10, 15, 20, 30],
+                  focusMode: (sSettings as any).focusMode ?? true,
+                  autoMinimize: (sSettings as any).autoMinimize ?? false
+              } as any);
+              setWorkDuration(sSettings.pomoDuration);
+              setRestDuration(sSettings.shortBreakDuration);
+          }
+      };
+      window.addEventListener('focusflow-timer-settings-update', handleSettingsUpdate);
+      return () => window.removeEventListener('focusflow-timer-settings-update', handleSettingsUpdate);
   }, []);
 
   useEffect(() => {
@@ -512,6 +437,18 @@ useEffect(() => {
       }
   }, [externalStart, onConsumeExternalStart, isActive, mode, phase, timeLeft, initialTime, sessionLabel, selectedProjectId, projectId]);
 
+  const handleTrayAction = useCallback((action: { type: string; duration?: number }) => {
+      if (action.type === 'TOGGLE_TIMER') {
+          toggleTimer();
+      } else if (action.type === 'SKIP_PHASE') {
+          skipPhase();
+      }
+      // START_FOCUS is handled by App.tsx setting externalStart via pendingQuickTimer
+  }, [isActive, mode, phase, timeLeft, initialTime, sessionLabel, selectedProjectId]);
+
+  useEffect(() => {
+      trayActionHandlerRef.current = handleTrayAction;
+  }, [handleTrayAction]);
 
   useEffect(() => {
     // This effect sets up the listener once
@@ -833,6 +770,10 @@ const handleTimerComplete = async () => {
           setIsWagerActive(true);
       }
 
+      if ((settings as any).autoMinimize) {
+          (window.electronAPI as any)?.minimizeWindow();
+      }
+
       const payload = {
         mode,
         phase,
@@ -875,7 +816,7 @@ const handleTimerComplete = async () => {
           endTime: endTimeRef.current,
           startTime: startTimeRef.current
       };
-      (window.electronAPI as any)?.toggleGhostMode(state);
+      (window.electronAPI as any)?.send('ghost-mode-enable', state);
   };
 
   const togglePin = () => {
@@ -932,6 +873,7 @@ const handleTimerComplete = async () => {
           setInitialTime(newDuration);
       }
       setIsSettingsOpen(false);
+      window.dispatchEvent(new Event('focusflow-timer-settings-update'));
   };
 
   const toggleGhostButtonSetting = (checked: boolean) => {
@@ -1354,6 +1296,8 @@ return (
                             <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Automation</h3>
                             <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><span className="text-sm font-medium text-gray-300">Auto-start next Pomo</span><div className="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in"><input type="checkbox" checked={tempSettings.autoStartNextPomo} onChange={e => handleSettingChange('autoStartNextPomo', e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer peer checked:right-0 right-5"/><div className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${tempSettings.autoStartNextPomo ? 'bg-blue-600' : 'bg-gray-600'}`}></div></div></div>
                             <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><span className="text-sm font-medium text-gray-300">Auto-start Break</span><div className="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in"><input type="checkbox" checked={tempSettings.autoStartBreak} onChange={e => handleSettingChange('autoStartBreak', e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer peer checked:right-0 right-5"/><div className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${tempSettings.autoStartBreak ? 'bg-blue-600' : 'bg-gray-600'}`}></div></div></div>
+                            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><span className="text-sm font-medium text-gray-300">Focus Mode (Auto DND)</span><div className="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in"><input type="checkbox" checked={(tempSettings as any).focusMode ?? true} onChange={e => handleSettingChange('focusMode' as any, e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer peer checked:right-0 right-5"/><div className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${(tempSettings as any).focusMode ?? true ? 'bg-blue-600' : 'bg-gray-600'}`}></div></div></div>
+                            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><span className="text-sm font-medium text-gray-300">Auto-minimize on Start</span><div className="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in"><input type="checkbox" checked={(tempSettings as any).autoMinimize ?? false} onChange={e => handleSettingChange('autoMinimize' as any, e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer peer checked:right-0 right-5"/><div className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${(tempSettings as any).autoMinimize ?? false ? 'bg-blue-600' : 'bg-gray-600'}`}></div></div></div>
                         </div>
                         <div className="space-y-2">
                             <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Work Presets</h3>
@@ -1380,20 +1324,6 @@ return (
                         <div className="space-y-2">
                             <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Features</h3>
                             <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><span className="text-sm font-medium text-gray-300">Enable Ghost Mode Button</span><div className="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in"><input type="checkbox" checked={enableGhostButton} onChange={e => toggleGhostButtonSetting(e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer peer checked:right-0 right-5"/><div className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${enableGhostButton ? 'bg-blue-600' : 'bg-gray-600'}`}></div></div></div>
-                        </div>
-                        <div className="space-y-2">
-                             <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Shortcuts</h3>
-                             <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
-                                <span className="text-sm font-medium text-gray-300">Quick Capture</span>
-                                <input 
-                                    type="text" 
-                                    value={globalShortcut} 
-                                    onChange={e => setGlobalShortcut(e.target.value)}
-                                    onBlur={() => (window.electronAPI as any)?.updateGlobalShortcut?.(globalShortcut)}
-                                    className="w-40 bg-[#2c2c2e] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none border border-white/10 text-right"
-                                    placeholder="Cmd+Shift+C"
-                                />
-                             </div>
                         </div>
                     </div>
                 </div>
@@ -1472,7 +1402,7 @@ return (
                  </div>
              </div>
         )}
-        <div className={`flex-1 flex flex-col items-center justify-center p-8 pb-32 pl-24 relative transition-colors duration-300 group ${isCyberpunk ? 'bg-radial-cyber' : 'bg-radial-light dark:bg-radial-dark'}`}>
+        <div className={`flex-1 flex flex-col items-center justify-center p-4 md:p-8 md:pb-32 md:pl-24 relative transition-colors duration-300 group ${isCyberpunk ? 'bg-radial-cyber' : 'bg-radial-light dark:bg-radial-dark'}`}>
              <div className="flex flex-col items-center justify-center w-full max-w-xl z-10">
                  
                  <div className="flex flex-col items-center w-full mb-6 min-h-[24px] z-20">
@@ -1520,7 +1450,7 @@ return (
                     isCyberpunk={isCyberpunk}
                 />
                  
-                 <div className="relative flex justify-center items-center">
+                 <div className="relative flex justify-center items-center w-full max-w-[300px] md:max-w-[520px] aspect-square mx-auto mb-4 md:mb-8">
                     {isActive && (
                         <div className={`absolute -inset-4 rounded-full blur-3xl animate-pulse transition-all duration-1000 pointer-events-none ${isCyberpunk ? 'bg-[#00f0ff]/20' : 'bg-blue-500/20 dark:bg-blue-400/10'}`}></div>
                     )}
@@ -1596,7 +1526,7 @@ return (
              </div>
         </div>
 
-        {/* {wagerWinAmount !== null && (
+        {wagerWinAmount !== null && (
             <div className="absolute inset-0 z-[9999] flex flex-col items-center justify-center bg-black/80 backdrop-blur-md animate-fade-in pointer-events-none">
                 <div className="text-9xl mb-6 animate-bounce filter drop-shadow-[0_0_30px_rgba(250,204,21,0.6)]">💎</div>
                 <h2 className={`text-7xl font-black mb-4 animate-pulse ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_30px_rgba(0,240,255,0.8)]' : 'text-transparent bg-clip-text bg-gradient-to-b from-yellow-300 to-yellow-600 drop-shadow-2xl'}`}>
@@ -1606,7 +1536,7 @@ return (
                     Wager Won
                 </p>
             </div>
-        )} */}
+        )}
     </div>
   );
 };

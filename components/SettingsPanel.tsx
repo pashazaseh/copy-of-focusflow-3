@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, lazy } from 'react';
 import { StoredNavConfig } from './Sidebar';
-import { MenuBarConfig, Project, HeatmapTheme, SidebarConfig, SettingsTab, AppTheme } from '../types';
+import { MenuBarConfig, Project, HeatmapTheme, SidebarConfig, SettingsTab, AppTheme, Transaction } from '../types';
 import { useCountdowns } from '../AppContext';
 import { GeneralSettings } from './Settings/GeneralSettings';
 import { TimerSettingsPanel } from './Settings/TimerSettings';
@@ -26,6 +26,8 @@ interface SettingsPanelProps {
     onUpdateSidebarConfig: (config: SidebarConfig) => void;
     appTheme: AppTheme;
     setAppTheme: (theme: AppTheme) => void;
+    currentGems: number;
+    addTransaction: (t: Transaction) => void;
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
@@ -44,7 +46,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     sidebarConfig,
     onUpdateSidebarConfig,
     appTheme,
-    setAppTheme
+    setAppTheme,
+    currentGems,
+    addTransaction
 }) => {
     const { countdowns } = useCountdowns();
     const isCyberpunk = appTheme === 'cyberpunk';
@@ -69,10 +73,102 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }, []);
 
     const [shortcut, setShortcut] = useState('');
+    const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+    const [isRecording, setIsRecording] = useState(false);
 
     useEffect(() => {
         (window as any).electronAPI?.invoke?.('get-global-shortcut').then((s: string) => setShortcut(s));
     }, []);
+
+    const handleSaveShortcut = async (value?: string) => {
+        const s = value !== undefined ? value : shortcut;
+        setShortcutStatus('saving');
+        try {
+            const success = await (window as any).electronAPI?.invoke?.('update-global-shortcut', s);
+            if (success) {
+                setShortcutStatus('success');
+                setTimeout(() => setShortcutStatus('idle'), 2000);
+            } else {
+                setShortcutStatus('error');
+                // Revert to fetched if failed
+                (window as any).electronAPI?.invoke?.('get-global-shortcut').then((s: string) => setShortcut(s));
+            }
+        } catch (e) {
+            setShortcutStatus('error');
+        }
+    };
+
+    useEffect(() => {
+        if (!isRecording) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (e.key === 'Escape') {
+                setIsRecording(false);
+                // Revert visual state to saved
+                (window as any).electronAPI?.invoke?.('get-global-shortcut').then((s: string) => setShortcut(s));
+                return;
+            }
+
+            const modifiers: string[] = [];
+            const isMac = (window.electronAPI as any)?.platform === 'darwin' || (navigator.platform && navigator.platform.toLowerCase().includes('mac'));
+
+            if (e.metaKey) modifiers.push(isMac ? 'CommandOrControl' : 'Super');
+            if (e.ctrlKey) modifiers.push(isMac ? 'Control' : 'CommandOrControl');
+            if (e.altKey) modifiers.push('Alt');
+            if (e.shiftKey) modifiers.push('Shift');
+
+            let key = '';
+            const code = e.code;
+
+            if (code.startsWith('Key')) key = code.slice(3);
+            else if (code.startsWith('Digit')) key = code.slice(5);
+            else if (code.startsWith('Numpad')) key = 'Num' + code.slice(6);
+            else if (code.startsWith('F') && code.length <= 3) key = code;
+            else {
+                const map: Record<string, string> = {
+                    'ArrowUp': 'Up', 'ArrowDown': 'Down', 'ArrowLeft': 'Left', 'ArrowRight': 'Right',
+                    'Space': 'Space', 'Enter': 'Return', 'Backspace': 'Backspace', 'Delete': 'Delete', 'Tab': 'Tab',
+                    'Insert': 'Insert', 'Home': 'Home', 'End': 'End', 'PageUp': 'PageUp', 'PageDown': 'PageDown',
+                    'Minus': '-', 'Equal': '=', 'BracketLeft': '[', 'BracketRight': ']', 'Backslash': '\\',
+                    'Semicolon': ';', 'Quote': '\'', 'Backquote': '`', 'Comma': ',', 'Period': '.', 'Slash': '/'
+                };
+                key = map[code] || '';
+            }
+
+            // If only modifiers, show them with placeholder
+            if (!key && modifiers.length > 0) {
+                setShortcut(modifiers.join('+') + ' + ...');
+                return;
+            }
+
+            if (key) {
+                const combo = [...new Set([...modifiers, key])].join('+');
+                setShortcut(combo);
+                handleSaveShortcut(combo);
+                setIsRecording(false);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isRecording]);
+
+    const formatShortcut = (s: string) => {
+        if (!s) return 'None';
+        const isMac = (window.electronAPI as any)?.platform === 'darwin' || (navigator.platform && navigator.platform.toLowerCase().includes('mac'));
+        return s.split('+').map(part => {
+            if (part === 'CommandOrControl') return isMac ? '⌘' : 'Ctrl';
+            if (part === 'Command') return '⌘';
+            if (part === 'Control') return '⌃';
+            if (part === 'Alt') return isMac ? '⌥' : 'Alt';
+            if (part === 'Shift') return '⇧';
+            if (part === 'Super') return 'Win';
+            return part;
+        }).join(isMac ? '' : ' + ');
+    };
 
     const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'latest' | 'error'>('idle');
     const [latestVersion, setLatestVersion] = useState<string>('');
@@ -139,6 +235,34 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         }
     };
 
+    const handleUnlockTheme = (themeKey: string, cost: number, name: string) => {
+        if (currentGems >= cost) {
+            // 1. Update Inventory
+            const newInventory = { ...inventory, [themeKey]: true };
+            setInventory(newInventory);
+            localStorage.setItem('focusflow_inventory', JSON.stringify(newInventory));
+            
+            // 2. Update Spent
+            const currentSpent = parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0;
+            localStorage.setItem('focusflow_spent_gems', (currentSpent + cost).toString());
+            
+            // 3. Add Transaction
+            addTransaction({
+                id: `unlock-${themeKey}-${Date.now()}`,
+                date: new Date().toISOString(),
+                type: 'SPEND',
+                amount: -cost,
+                description: `Unlocked ${name} Theme`
+            });
+            
+            // 4. Trigger Update
+            window.dispatchEvent(new Event('focusflow-gem-update'));
+        }
+    };
+
+    const cardClass = `p-6 rounded-2xl border shadow-sm ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`;
+    const itemClass = `p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`;
+
     return (
         <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50/50 dark:bg-gray-900 transition-colors duration-300">
             <div className="p-8 h-full overflow-y-auto custom-scrollbar">
@@ -150,12 +274,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         </div>
                         
                         {/* Tab Navigation */}
-                        <div className={`flex p-1 rounded-2xl shadow-inner transition-all duration-300 ${isCyberpunk ? 'bg-black/40 border border-[#00f0ff]/20 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-gray-200 dark:bg-gray-800'}`}>
+                        <div className={`flex p-1 rounded-2xl shadow-inner transition-all duration-300 overflow-x-auto no-scrollbar ${isCyberpunk ? 'bg-black/40 border border-[#00f0ff]/20 shadow-[0_0_15px_rgba(0,240,255,0.1)]' : 'bg-gray-200 dark:bg-gray-800'}`}>
                             {(['general', 'timer', 'projects', 'sync', 'data', 'debug'] as any[]).map(tab => (
                                 <button
                                     key={tab}
                                     onClick={() => onTabChange(tab as SettingsTab)}
-                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 uppercase tracking-wide whitespace-nowrap ${
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 uppercase tracking-wide whitespace-nowrap flex-shrink-0 ${
                                         activeTab === tab 
                                         ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)] border border-[#00f0ff]/50 animate-pulse' : 'bg-white dark:bg-gray-700 text-blue-600 dark:text-white shadow-sm')
                                         : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff] hover:bg-[#00f0ff]/5' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200')
@@ -171,82 +295,137 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     <div className="space-y-6">
                         {activeTab === 'general' && (
                             <>
-                                <GeneralSettings navConfig={navConfig} onUpdateNavConfig={onUpdateNavConfig} isDarkMode={isDarkMode} onToggleTheme={onToggleTheme} appTheme={appTheme} setAppTheme={setAppTheme} inventory={inventory} sidebarConfig={sidebarConfig} onUpdateSidebarConfig={onUpdateSidebarConfig} menuBarConfig={menuBarConfig} onUpdateMenuBarConfig={onUpdateMenuBarConfig} countdowns={countdowns} />
+                                <GeneralSettings navConfig={navConfig} onUpdateNavConfig={onUpdateNavConfig} isDarkMode={isDarkMode} onToggleTheme={onToggleTheme} appTheme={appTheme} setAppTheme={setAppTheme} inventory={inventory} sidebarConfig={sidebarConfig} onUpdateSidebarConfig={onUpdateSidebarConfig} menuBarConfig={menuBarConfig} onUpdateMenuBarConfig={onUpdateMenuBarConfig} countdowns={countdowns} onUnlockTheme={handleUnlockTheme} currentGems={currentGems} />
                             </>
                         )}
                         {activeTab === 'projects' && <ProjectSettings projects={projects} onCreateProject={onCreateProject} onDeleteProject={onDeleteProject} onUpdateProjects={onUpdateProjects} appTheme={appTheme} />}
                         {activeTab === 'timer' && (
                             <>
                                 <TimerSettingsPanel appTheme={appTheme} />
-                                <div className={`p-6 rounded-2xl border shadow-sm ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                                <div className={cardClass}>
                                     <h3 className={`text-xl font-bold mb-4 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Shortcuts</h3>
-                                    <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                    <div className={itemClass}>
                                         <div>
-                                            <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Quick Capture</div>
+                                            <div className="flex items-center gap-2">
+                                                <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Quick Capture</div>
+                                                <div className="group relative">
+                                                    <svg className={`w-3.5 h-3.5 cursor-help ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                    <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 text-[10px] rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30 text-[#00f0ff]' : 'bg-gray-900 text-white'}`}>
+                                                        Click to record. Press keys (e.g. Cmd+Shift+C). Esc to cancel.
+                                                    </div>
+                                                </div>
+                                            </div>
                                             <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Global keyboard shortcut</div>
                                         </div>
-                                        <input 
-                                            type="text" 
-                                            value={shortcut}
-                                            onChange={(e) => setShortcut(e.target.value)}
-                                            onBlur={() => (window as any).electronAPI?.invoke?.('update-global-shortcut', shortcut)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    (window as any).electronAPI?.invoke?.('update-global-shortcut', shortcut);
-                                                    (e.target as HTMLInputElement).blur();
-                                                }
-                                            }}
-                                            className={`px-3 py-1.5 rounded-lg text-sm border focus:outline-none w-32 text-right ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'}`}
-                                            placeholder="Cmd+Shift+C"
-                                        />
+                                        <div className="flex flex-col items-end">
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        setIsRecording(true);
+                                                        setShortcutStatus('idle');
+                                                    }}
+                                                    className={`min-w-[140px] px-4 py-2 rounded-lg text-sm font-mono font-bold border transition-all relative overflow-hidden ${
+                                                        isRecording 
+                                                        ? (isCyberpunk ? 'bg-[#00f0ff]/20 border-[#00f0ff] text-[#00f0ff] animate-pulse' : 'bg-blue-100 border-blue-500 text-blue-700 animate-pulse')
+                                                        : (isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] hover:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-gray-400')
+                                                    }`}
+                                                >
+                                                    {isRecording ? (shortcut || 'Press keys...') : (formatShortcut(shortcut) || 'Click to Record')}
+                                                    {isRecording && <div className="absolute inset-0 bg-current opacity-10"></div>}
+                                                </button>
+                                                
+                                                {isRecording && (
+                                                    <div className="fixed inset-0 z-50 cursor-default" onClick={() => setIsRecording(false)}></div>
+                                                )}
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-2 mt-2">
+                                                <button
+                                                    onClick={() => {
+                                                        const def = 'CommandOrControl+Shift+C';
+                                                        setShortcut(def);
+                                                        handleSaveShortcut(def);
+                                                    }}
+                                                    className={`text-[10px] px-2 py-1 rounded border transition-colors ${isCyberpunk ? 'border-[#00f0ff]/30 text-[#00f0ff]/60 hover:text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                                                >
+                                                    Reset Default
+                                                </button>
+                                                <button
+                                                    onClick={() => (window as any).electronAPI?.send('open-quick-capture')}
+                                                    className={`text-[10px] px-2 py-1 rounded border transition-colors ${isCyberpunk ? 'border-[#00f0ff]/30 text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                                                >
+                                                    Test Capture
+                                                </button>
+                                            </div>
+                                            {shortcutStatus === 'error' && <span className="text-[10px] text-red-500 mt-1">Invalid or taken</span>}
+                                            {shortcutStatus === 'success' && <span className="text-[10px] text-green-500 mt-1">Saved</span>}
+                                            {shortcutStatus === 'saving' && <span className="text-[10px] text-gray-500 mt-1">Saving...</span>}
+                                        </div>
                                     </div>
                                 </div>
-                                <div className={`p-6 rounded-2xl border shadow-sm ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                                <div className={cardClass}>
                                     <h3 className={`text-xl font-bold mb-4 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update App</h3>
                                     <p className={`text-sm mb-6 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>
                                         Update FocusFlow to the latest version. Your data will be preserved.
                                     </p>
                                     
                                     <div className="space-y-4">
-                                        <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                        <div className={itemClass}>
                                             <div>
                                                 <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>GitHub Repository</div>
                                                 <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>owner/repo name</div>
                                             </div>
-                                            <div className="flex gap-2">
-                                                <input 
-                                                    type="text" 
-                                                    value={repoName}
-                                                    onChange={(e) => { 
-                                                        let val = e.target.value;
-                                                        let isUrl = false;
-                                                        if (val.includes('github.com/')) {
-                                                            val = val.replace(/^(?:https?:\/\/)?(?:www\.)?github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '');
-                                                            isUrl = true;
-                                                        }
-                                                        setRepoName(val); 
-                                                        localStorage.setItem('focusflow_github_repo', val); 
-                                                        if (isUrl && val.includes('/')) {
-                                                            testRepoConnection(val);
-                                                        }
-                                                    }}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm border focus:outline-none w-48 text-right ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'}`}
-                                                />
-                                                <button 
-                                                    onClick={() => testRepoConnection()}
-                                                    disabled={testStatus === 'testing' || !repoName}
-                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                                        testStatus === 'success' ? 'bg-green-500 text-white' :
-                                                        testStatus === 'error' ? 'bg-red-500 text-white' :
-                                                        (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600')
-                                                    }`}
-                                                >
-                                                    {testStatus === 'testing' ? '...' : testStatus === 'success' ? 'OK' : testStatus === 'error' ? 'Fail' : 'Test'}
-                                                </button>
+                                            <div className="flex flex-col items-end gap-2">
+                                                <div className="flex gap-2">
+                                                    <input 
+                                                        type="text" 
+                                                        value={repoName}
+                                                        onChange={(e) => { 
+                                                            let val = e.target.value;
+                                                            let isUrl = false;
+                                                            if (val.includes('github.com/')) {
+                                                                val = val.replace(/^(?:https?:\/\/)?(?:www\.)?github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '');
+                                                                isUrl = true;
+                                                            }
+                                                            setRepoName(val); 
+                                                            localStorage.setItem('focusflow_github_repo', val); 
+                                                            if (isUrl && val.includes('/')) {
+                                                                testRepoConnection(val);
+                                                            }
+                                                        }}
+                                                        className={`px-3 py-1.5 rounded-lg text-sm border focus:outline-none w-48 text-right ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30 text-[#00f0ff] focus:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'}`}
+                                                        placeholder="owner/repo"
+                                                    />
+                                                    {/* Auto-test on paste/type if it looks like a repo is handled in onChange */}
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            const def = 'yourname/focusflow';
+                                                            setRepoName(def);
+                                                            localStorage.setItem('focusflow_github_repo', def);
+                                                            setTestStatus('idle');
+                                                        }}
+                                                        className={`text-[10px] hover:underline ${isCyberpunk ? 'text-[#00f0ff]/60 hover:text-[#00f0ff]' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                                                    >
+                                                        Reset Default
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => testRepoConnection()}
+                                                        disabled={testStatus === 'testing' || !repoName}
+                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                                            testStatus === 'success' ? 'bg-green-500 text-white' :
+                                                            testStatus === 'error' ? 'bg-red-500 text-white' :
+                                                            (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600')
+                                                        }`}
+                                                    >
+                                                        {testStatus === 'testing' ? '...' : testStatus === 'success' ? 'OK' : testStatus === 'error' ? 'Fail' : 'Test'}
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
 
-                                        <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                        <div className={itemClass}>
                                             <div>
                                                 <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update Branch</div>
                                                 <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Branch to check for updates</div>
@@ -259,7 +438,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                             />
                                         </div>
 
-                                        <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                        <div className={itemClass}>
                                             <div>
                                                 <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Check for Updates</div>
                                                 <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>
@@ -275,7 +454,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                             </button>
                                         </div>
 
-                                        <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                        <div className={itemClass}>
                                             <div>
                                                 <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update from Local File</div>
                                                 <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Select a .dmg, .pkg, or .zip file</div>
@@ -283,7 +462,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                             <button onClick={async () => { const path = await (window.electronAPI as any)?.selectUpdateFile(); if (path) (window.electronAPI as any)?.installUpdate(path); }} className={`px-4 py-2 rounded-lg text-sm font-bold ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] hover:bg-[#00f0ff]/30' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>Select File</button>
                                         </div>
 
-                                        <div className={`p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                                        <div className={itemClass}>
                                             <div>
                                                 <div className={`font-bold ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Update from GitHub</div>
                                                 <div className={`text-xs ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Download latest release</div>
@@ -294,9 +473,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                 </div>
                             </>
                         )}
-                        {(activeTab as string) === 'sync' && <SyncSettings appTheme={appTheme} setLastBackup={setLastBackup} />}
+                        {activeTab === 'sync' && <SyncSettings appTheme={appTheme} setLastBackup={setLastBackup} />}
                         {activeTab === 'data' && <DataSettings appTheme={appTheme} lastBackup={lastBackup} setLastBackup={setLastBackup} />}
-                        {(activeTab as string) === 'debug' && (
+                        {activeTab === 'debug' && (
                             <DebugSettings 
                                 sidebarConfig={sidebarConfig} 
                                 menuBarConfig={menuBarConfig} 

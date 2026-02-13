@@ -23,6 +23,7 @@ interface SidebarProps {
   logs?: StudyLog[];
   goals: UserGoals;
   onSync?: () => void;
+  currentGems: number;
 }
 
 // Configuration structure for navigation items
@@ -161,7 +162,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     goals,
     currentDailyHours,
     currentMonthlyHours,
-    onSync
+    onSync,
+    currentGems
 }) => {
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -189,13 +191,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       const defaultOrder = [
           'showTimerWidget',
           'showQuestsWidget',
+          'showGemWidget',
           'showCountdownWidget',
           'showDailyGoalWidget',
           'showWeeklyGoalWidget',
           'showMonthlyGoalWidget',
           'showLatestBadgeWidget',
           'showStreakWidget',
-          'showXpWidget',
           'showRankWidget'
       ];
 
@@ -206,9 +208,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           showTimerWidget: false,
           showCountdownWidget: false,
           showQuestsWidget: true,
+          showGemWidget: true,
           showLatestBadgeWidget: true,
           showStreakWidget: true,
-          showXpWidget: true,
           showRankWidget: true,
           questsWidgetSize: 'standard',
           widgetOrder: defaultOrder,
@@ -470,6 +472,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <div className="flex gap-2">{[25, 45, 60].map(min => (<button key={min} onClick={(e) => { e.stopPropagation(); setPendingQuickTimer({ duration: min, timestamp: Date.now() }); onChangeView(ViewMode.TIMER); }} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20 border border-[#00f0ff]/30' : 'bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40'}`}>{min}m</button>))}</div>
                   </div>
               );
+          case 'showGemWidget':
+              return (
+                  <button key="gems" onClick={() => onChangeView(ViewMode.GAMIFICATION)} className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm text-left transition-all hover:shadow-md ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'}`}>
+                      <div className="text-2xl">💎</div>
+                      <div className="overflow-hidden">
+                          <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Bank</p>
+                          <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{currentGems.toLocaleString()} Gems</p>
+                      </div>
+                  </button>
+              );
           case 'showLatestBadgeWidget':
               if (!latestBadge) return null;
               return (
@@ -489,17 +501,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <div className="overflow-hidden">
                           <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Project Streak</p>
                           <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{activeProject.streak.current} Days</p>
-                      </div>
-                  </div>
-              );
-          case 'showXpWidget':
-              if (!activeProject || activeProject.id === 'loading' || activeProject.xp === undefined) return null;
-              return (
-                  <div key="xp" className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
-                      <div className="text-2xl">✨</div>
-                      <div className="overflow-hidden">
-                          <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Project XP</p>
-                          <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{activeProject.xp.toLocaleString()} XP</p>
                       </div>
                   </div>
               );

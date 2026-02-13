@@ -8,7 +8,7 @@ import { ViewMode, HeatmapTheme, UserGoals, CountdownItem, Achievement, Transact
 import { AppProvider, useTheme, useProjects, useLogs, useUI, useTimerContext, useCountdowns } from './AppContext';
 import { getUnlockedAchievements, getAchievementReward, getDailyQuests } from './services/gamificationService';
 import * as storage from './services/storageService';
-import { playWin } from './services/audioService';
+import { playWin, playTone } from './services/audioService';
 
 const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
@@ -324,8 +324,9 @@ const GhostModeView = () => {
     const [timeLeft, setTimeLeft] = useState(0);
     const [initialTime, setInitialTime] = useState(1); // Default to 1 to prevent NaN
     const [mode, setMode] = useState<'POMO' | 'SHORT_BREAK' | 'LONG_BREAK'>('POMO');
-    const [isRunning, setIsRunning] = useState(false);
+    const [isRunning, setIsRunning] = useState(true); // Assume running if ghost mode is active usually
     const [isHovered, setIsHovered] = useState(false);
+    const [isUrgent, setIsUrgent] = useState(false);
 
     useEffect(() => {
         // CRITICAL FIX: Safe Event Listener
@@ -336,12 +337,48 @@ const GhostModeView = () => {
             setInitialTime(state.initialTime && state.initialTime > 0 ? state.initialTime : 1);
             setMode(state.mode || 'POMO');
             setIsRunning(!!state.isRunning);
+            // Urgent calculation will happen in the render/effect cycle based on these new values
         });
 
         // Ask backend for immediate update
         window.electronAPI?.requestTimerState?.();
-        return cleanup;
+        
+        // Local tick for smooth countdown if running
+        const interval = setInterval(() => {
+            setIsRunning(running => {
+                if (running) {
+                    setTimeLeft(prev => Math.max(0, prev - 1));
+                }
+                return running;
+            });
+        }, 1000);
+
+        return () => {
+            if (cleanup) cleanup();
+            clearInterval(interval);
+        };
     }, []);
+
+    // Update Urgent State
+    useEffect(() => {
+        const urgent = mode === 'POMO' && initialTime > 0 && (timeLeft / initialTime) <= 0.15;
+        setIsUrgent(urgent);
+    }, [timeLeft, initialTime, mode]);
+
+    // Heartbeat Sound Effect for Urgent Mode
+    useEffect(() => {
+        if (!isRunning || !isUrgent) return;
+
+        const playHeartbeat = () => {
+            // Double thump
+            playTone(150, 0.1, 0.2, 'sine');
+            setTimeout(() => playTone(100, 0.1, 0.15, 'sine'), 150);
+        };
+
+        const interval = setInterval(playHeartbeat, 3000); // Every 3 seconds
+        playHeartbeat(); // Play immediately
+        return () => clearInterval(interval);
+    }, [isRunning, isUrgent]);
 
     // Helper functions for buttons
     const handleToggle = () => window.electronAPI?.send('timer-action', { action: isRunning ? 'pause' : 'start' });
@@ -358,6 +395,7 @@ const GhostModeView = () => {
     const getColor = () => {
         if (mode === 'SHORT_BREAK') return '#34d399'; // Emerald
         if (mode === 'LONG_BREAK') return '#818cf8'; // Indigo
+        if (isUrgent) return '#ef4444'; // Red for Urgent
         return '#f472b6'; // Pink/Magenta for Pomo
     };
     
@@ -369,7 +407,7 @@ const GhostModeView = () => {
             style={{ WebkitAppRegion: 'drag' } as any}
         >
             {/* 1. Pulsing Background Aura */}
-            <div className={`absolute inset-0 bg-black/60 backdrop-blur-xl rounded-full border border-white/10 transition-all duration-500 ${isHovered ? 'scale-105 border-white/30' : 'scale-100'}`}></div>
+            <div className={`absolute inset-0 bg-black/80 backdrop-blur-xl rounded-full border border-white/10 transition-all duration-500 ${isHovered ? 'scale-105 border-white/30' : 'scale-100'} ${isRunning ? (isUrgent ? 'animate-pulse' : 'animate-pulse-slow') : ''}`}></div>
             
             {/* 2. Glowing SVG Ring */}
             <svg className="w-full h-full transform -rotate-90 relative z-10" viewBox="0 0 100 100">
@@ -379,13 +417,13 @@ const GhostModeView = () => {
                     stroke={getColor()} strokeWidth="6" fill="transparent"
                     strokeDasharray={circumference} strokeDashoffset={safeOffset} strokeLinecap="round"
                     className="transition-all duration-1000 ease-linear"
-                    style={{ filter: `drop-shadow(0 0 8px ${getColor()})` }} // Neon Glow
+                    style={{ filter: `drop-shadow(0 0 ${isUrgent ? '15px' : '8px'} ${getColor()})` }} // Neon Glow
                 />
             </svg>
 
             {/* 3. Time Display */}
             <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-20 pointer-events-none">
-                <span className="text-3xl font-bold font-mono tracking-tighter drop-shadow-lg" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
+                <span className={`text-3xl font-bold font-[ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace] tracking-tighter drop-shadow-lg transition-colors ${isUrgent ? 'text-red-400' : 'text-white'}`} style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
                     {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
                 </span>
             </div>
@@ -559,6 +597,19 @@ function FocusFlowContent() {
           unsubDownloaded && unsubDownloaded();
       };
   }, [isElectron]);
+
+  // --- Tray/Quick Timer Action Listener ---
+  useEffect(() => {
+      if (window.electronAPI?.onTrayAction) {
+          const cleanup = window.electronAPI.onTrayAction((action: any) => {
+              if (action.type === 'START_FOCUS' && action.duration) {
+                  setPendingQuickTimer({ duration: action.duration, timestamp: Date.now() });
+                  setCurrentView(ViewMode.TIMER);
+              }
+          });
+          return cleanup;
+      }
+  }, [setPendingQuickTimer, setCurrentView]);
 
   // Sync Global Shortcut on Mount
   useEffect(() => {
@@ -954,7 +1005,7 @@ function FocusFlowContent() {
       const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
       const todayHours = logs.filter(l => l.date === todayStr).reduce((acc, curr) => acc + curr.hours, 0);
 
-      switch (menuBarConfig.mode) {
+      switch (menuBarConfig.mode as any) {
           case 'today': text = `Today: ${todayHours.toFixed(1)}h`; break;
           case 'remaining': 
               const dailyGoal = effectiveGoals.daily || 4;
@@ -962,7 +1013,7 @@ function FocusFlowContent() {
               text = `${remaining.toFixed(1)}h Left`; 
               break;
           case 'streak': text = `🔥 ${globalStreaks.current} Day Streak`; break;
-          case 'xp': text = `✨ ${Math.floor(globalTotalHours * 100)} XP`; break;
+          case 'gems': text = `💎 ${currentGems.toLocaleString()}`; break;
           case 'motivation': text = "💪 Focus & Win"; break;
           case 'countdown_closest':
               const now = new Date();
@@ -1040,6 +1091,7 @@ function FocusFlowContent() {
             appTheme={appTheme}
             latestBadge={latestBadge}
             logs={projectLogs} // Pass project logs to sidebar for project-specific quests
+            currentGems={currentGems}
         />
         {/* Quick Capture and Mini Overlay Windows */}
         {pendingQuickTimer && (
@@ -1260,6 +1312,8 @@ function FocusFlowContent() {
                   onUpdateSidebarConfig={setSidebarConfig}
                   appTheme={appTheme}
                   setAppTheme={setAppTheme}
+                  currentGems={currentGems}
+                  addTransaction={addTransaction}
               />
             )}
           </Suspense>
