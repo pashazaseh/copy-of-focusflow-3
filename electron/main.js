@@ -12,7 +12,7 @@ let tray = null;
 let win = null;
 let miniCaptureWin = null;
 let ghostWin = null;
-let quickWin = null;
+let trayWindow = null;
 let powerSaveBlockerId = null;
 let fileWatcher = null;
 let showInDock = true;
@@ -28,6 +28,7 @@ let tbSkipButton = null;
 
 let trackingInterval = null;
 let ghostSnapCorner = 'top-right';
+const activeModeListeners = new WeakMap();
 
 function startActiveWindowTracking() {
   if (trackingInterval) clearInterval(trackingInterval);
@@ -349,12 +350,12 @@ function setupGhostContextMenu(window) {
   });
 }
 
-function hideQuickTimer() {
-  if (quickWin && !quickWin.isDestroyed()) {
-    quickWin.hide();
-    quickWin.blur();
-    quickWin.setAlwaysOnTop(false);
-    quickWin.setIgnoreMouseEvents(true);
+function hideTrayWindow() {
+  if (trayWindow && !trayWindow.isDestroyed()) {
+    trayWindow.hide();
+    trayWindow.blur();
+    trayWindow.setAlwaysOnTop(false);
+    trayWindow.setIgnoreMouseEvents(true);
   }
 }
 
@@ -496,11 +497,8 @@ function setupIpcHandlers() {
         return;
     }
 
-    if (tray && !tray.isDestroyed()) {
-        if (win && !win.isDestroyed()) win.hide();
-    } else if (win && !win.isDestroyed()) {
-        win.close();
-    }
+    // Delegate to window.close() to trigger the close event handler which handles minimize-to-tray logic
+    if (window && !window.isDestroyed()) window.close();
   });
   ipcMain.on('window-minimize', (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
@@ -558,19 +556,22 @@ function setupIpcHandlers() {
     }
   });
 
-  // Quick Timer IPC
-  ipcMain.on('quick-timer-set', (event, minutes) => {
-    console.log('[Timer Debug] Quick timer set:', minutes);
-    hideQuickTimer();
-    
-    if (!win || win.isDestroyed()) {
+  ipcMain.on('update-dock-visibility', (event, visible) => {
+    showInDock = visible;
+    saveSetting('showInDock', visible);
+    if (process.platform === 'darwin') {
+      if (visible) app.dock.show();
+      else app.dock.hide();
+    }
+  });
+
         const allWindows = BrowserWindow.getAllWindows();
-        win = allWindows.find(w => w !== quickWin && w !== miniCaptureWin && w !== ghostWin && !w.isDestroyed()) || null;
+        win = allWindows.find(w => w !== trayWindow && w !== miniCaptureWin && w !== ghostWin && !w.isDestroyed()) || null;
     }
 
     if (win && !win.isDestroyed()) {
       // Don't force show window, let it run in background (tray updates)
-      win.webContents.send('tray-action', { type: 'START_FOCUS', duration: minutes });
+      win.webContents.send('quick-start', minutes);
 
       // If main window is minimized, prevent it from restoring/focusing by hiding the app (macOS)
       if (win.isMinimized() && process.platform === 'darwin') {
@@ -579,9 +580,26 @@ function setupIpcHandlers() {
     }
   });
 
+  // Tray Drag End (New Handler)
+  ipcMain.on('tray-drag-end', (event, duration) => {
+    hideTrayWindow();
+    
+    if (!win || win.isDestroyed()) {
+        const allWindows = BrowserWindow.getAllWindows();
+        win = allWindows.find(w => w !== trayWindow && w !== miniCaptureWin && w !== ghostWin && !w.isDestroyed()) || null;
+    }
+
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('quick-start', duration);
+      if (win.isMinimized() && process.platform === 'darwin') {
+        app.hide();
+      }
+    }
+  });
+
   ipcMain.on('quick-timer-cancel', () => {
     console.log('[Timer Debug] Quick timer canceled');
-    hideQuickTimer();
+    hideTrayWindow();
   });
 
   ipcMain.on('factory-reset', async (event) => {
@@ -612,17 +630,6 @@ function setupIpcHandlers() {
 
   ipcMain.handle('get-open-at-login', () => {
     return app.getLoginItemSettings().openAtLogin;
-  });
-
-  ipcMain.on('set-show-in-dock', (event, show) => {
-    showInDock = show;
-    if (process.platform === 'darwin') {
-      if (show) {
-        app.dock.show();
-      } else {
-        app.dock.hide();
-      }
-    }
   });
 
   ipcMain.on('set-minimize-to-tray', (event, minimize) => {
@@ -914,18 +921,41 @@ ipcMain.on('ghost-mode-disable', () => {
     }
 });
 
-  ipcMain.on('set-always-on-top', (event, flag) => {
+  ipcMain.on('set-always-on-top', (event, mode) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win) {
-      if (flag) {
+      // Cleanup existing listeners
+      if (activeModeListeners.has(win)) {
+        const { onFocus, onBlur } = activeModeListeners.get(win);
+        win.removeListener('focus', onFocus);
+        win.removeListener('blur', onBlur);
+        activeModeListeners.delete(win);
+      }
+
+      if (mode === 'active') {
+        const onFocus = () => win.setAlwaysOnTop(true, 'floating');
+        const onBlur = () => win.setAlwaysOnTop(false);
+        
+        win.on('focus', onFocus);
+        win.on('blur', onBlur);
+        activeModeListeners.set(win, { onFocus, onBlur });
+        
+        if (win.isFocused()) win.setAlwaysOnTop(true, 'floating');
+        else win.setAlwaysOnTop(false);
+
         if (process.platform === 'darwin') {
-          win.setAlwaysOnTop(true, 'floating', 1);
           win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-        } else {
-          win.setAlwaysOnTop(true, 'floating');
+        }
+      } else if (mode === true || mode === 'standard') {
+        win.setAlwaysOnTop(true, 'floating');
+        if (process.platform === 'darwin') {
+          win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
         }
       } else {
         win.setAlwaysOnTop(false);
+        if (process.platform === 'darwin') {
+          win.setVisibleOnAllWorkspaces(false);
+        }
       }
     }
   });
@@ -1038,10 +1068,24 @@ function createWindow() {
     if (isQuitting) {
       return;
     }
-    // On macOS, standard behavior is to hide the window on close, unless quitting
+    // On macOS, standard behavior is to hide the window on close.
+    // If Minimize to Tray is enabled, we also hide instead of close.
     if (process.platform === 'darwin' || minimizeToTray) {
       event.preventDefault();
       win.hide();
+    }
+  });
+
+  // Dock Sync: Hide dock icon when window is hidden (if minimize to tray is enabled)
+  win.on('hide', () => {
+    if (process.platform === 'darwin' && minimizeToTray) {
+      app.dock.hide();
+    }
+  });
+
+  win.on('show', () => {
+    if (process.platform === 'darwin') {
+      app.dock.show();
     }
   });
 
@@ -1158,25 +1202,20 @@ function createWindow() {
   return win;
 }
 
-function createQuickWindow() {
+function createTrayWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.bounds; // Use bounds, not workArea
+  const { height } = primaryDisplay.bounds;
 
-  quickWin = new BrowserWindow({
-    width: width,
-    height: height,
-    x: 0,
-    y: 0,
+  trayWindow = new BrowserWindow({
+    width: 300,
+    height: height, // Full screen height for drag space
+    show: false,
     frame: false,
     transparent: true,
-    backgroundColor: '#00000000',
     alwaysOnTop: true,
-    resizable: true, // Critical for correct bounds on macOS
-    show: false,
-    hasShadow: false,
     skipTaskbar: true,
-    type: 'panel',
-    enableLargerThanScreen: true,
+    resizable: false,
+    movable: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -1190,45 +1229,37 @@ function createQuickWindow() {
     ? 'http://localhost:5173?mode=quick' 
     : `file://${path.join(__dirname, '../dist/index.html')}?mode=quick`;
   
-  quickWin.loadURL(url);
+  trayWindow.loadURL(url);
 
   // Force transparency
-  quickWin.webContents.on('did-finish-load', () => {
-    quickWin.webContents.insertCSS('html, body { background: transparent !important; }');
+  trayWindow.webContents.on('did-finish-load', () => {
+    trayWindow.webContents.insertCSS('html, body { background: transparent !important; }');
   });
 
-  quickWin.on('hide', () => {
-    if (quickWin && !quickWin.isDestroyed()) {
-      quickWin.setIgnoreMouseEvents(true);
+  trayWindow.on('hide', () => {
+    if (trayWindow && !trayWindow.isDestroyed()) {
+      trayWindow.setIgnoreMouseEvents(true);
+      globalShortcut.unregister('Escape'); // Unregister Esc
     }
   });
 
-  quickWin.on('show', () => {
-    if (quickWin && !quickWin.isDestroyed()) {
-      quickWin.setIgnoreMouseEvents(false);
+  trayWindow.on('show', () => {
+    if (trayWindow && !trayWindow.isDestroyed()) {
+      trayWindow.setIgnoreMouseEvents(false);
+      globalShortcut.register('Escape', hideTrayWindow); // Register Esc to close
     }
   });
 
-  quickWin.on('closed', () => {
-    quickWin = null;
+  trayWindow.on('closed', () => {
+    trayWindow = null;
   });
 }
 
-function showQuickTimer() {
-  if (!quickWin) createQuickWindow();
+function showTrayWindow() {
+  if (!trayWindow) createTrayWindow();
   
   const cursorPoint = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursorPoint);
-  
-  // Critical: Set bounds to the full display bounds (including menu bar space)
-  quickWin.setBounds(display.bounds);
-
-  if (process.platform === 'darwin') {
-    quickWin.setAlwaysOnTop(true, 'screen-saver', 1);
-    quickWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  } else {
-    quickWin.setAlwaysOnTop(true, 'screen-saver');
-  }
   
   let startX = cursorPoint.x;
   let startY = cursorPoint.y;
@@ -1237,31 +1268,27 @@ function showQuickTimer() {
       try {
           const bounds = tray.getBounds();
           if (bounds && bounds.width > 0) {
-              const trayX = Math.round(bounds.x + bounds.width / 2);
-              const trayY = Math.round(bounds.y + bounds.height / 2);
-              
-              // Ensure tray is on the active display
-              if (trayX >= display.bounds.x && trayX <= (display.bounds.x + display.bounds.width) &&
-                  trayY >= display.bounds.y && trayY <= (display.bounds.y + display.bounds.height)) {
-                  startX = trayX;
-                  startY = trayY;
-              }
+              startX = Math.round(bounds.x + bounds.width / 2);
+              startY = Math.round(bounds.y + bounds.height / 2);
           }
       } catch (e) {
           console.error("Tray bounds error:", e);
       }
   }
 
-  // Convert Global (Screen) -> Local (Window) coordinates
-  const localX = Math.round(startX - display.bounds.x);
-  const localY = Math.round(startY - display.bounds.y);
-    
-  quickWin.show();
-  quickWin.focus();
+  const width = 300;
+  const height = display.bounds.height;
+  const x = Math.round(startX - width / 2);
+  const y = display.bounds.y; // Start at top of screen
 
-  quickWin.webContents.executeJavaScript(`
+  trayWindow.setPosition(x, y);
+  trayWindow.setSize(width, height);
+  trayWindow.show();
+  trayWindow.focus();
+
+  trayWindow.webContents.executeJavaScript(`
     window.dispatchEvent(new CustomEvent('tray-position', { 
-        detail: { x: ${localX}, y: ${localY} } 
+        detail: { x: 150, y: 0 } 
     }));
   `).catch(() => {});
 }
@@ -1293,6 +1320,15 @@ function createAuthServer() {
 }
 
 app.whenReady().then(() => {
+    // Initialize Dock Visibility from Settings
+    const settings = loadSettings();
+    if (settings.showInDock !== undefined) {
+        showInDock = settings.showInDock;
+        if (process.platform === 'darwin' && !showInDock) {
+            app.dock.hide();
+        }
+    }
+
     // Handle Deep Links (focusflow://)
     app.on('open-url', (event, url) => {
       event.preventDefault();
@@ -1339,7 +1375,7 @@ app.whenReady().then(() => {
 
         // Pre-load the window so it opens instantly
         createMiniCaptureWindow();
-        createQuickWindow();
+        createTrayWindow();
         
         // Create Tray
         defaultIcon = createTrayIcon();
@@ -1378,6 +1414,7 @@ app.whenReady().then(() => {
                 { label: '📝 Quick Capture', click: () => triggerQuickCapture() },
                 { type: 'separator' },
                 { label: 'Show App', click: () => {
+                    if (process.platform === 'darwin') app.dock.show();
                     if (win) {
                         if (win.isMinimized()) win.restore();
                         win.show();
@@ -1395,7 +1432,7 @@ app.whenReady().then(() => {
             if (event.altKey || event.ctrlKey) {
                 tray.popUpContextMenu(getDynamicMenu());
             } else {
-                showQuickTimer();
+                showTrayWindow();
             }
         });
         
@@ -1407,7 +1444,7 @@ app.whenReady().then(() => {
         // macOS Dock Menu
         if (process.platform === 'darwin') {
             app.dock.setMenu(Menu.buildFromTemplate([
-                { label: 'New Timer (Drag)', click: () => showQuickTimer() },
+                { label: 'New Timer (Drag)', click: () => showTrayWindow() },
                 { label: 'Show Window', click: () => win.show() }
             ]));
         }

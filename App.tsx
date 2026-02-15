@@ -2,7 +2,7 @@
 import React, { Component, useState, useEffect, useMemo, useRef, lazy, Suspense, useCallback } from 'react';
 import { MacWindow } from './components/MacWindow';
 import { Sidebar } from './components/Sidebar';
-import { QuickTimerOverlay } from './components/QuickTimerOverlay';
+import { RubberBandTimer } from './components/Tray/RubberBandTimer';
 import { MiniCaptureWindow } from './components/MiniCaptureWindow';
 import { ViewMode, HeatmapTheme, UserGoals, CountdownItem, Achievement, Transaction, StudyLog } from './types';
 import { AppProvider, useTheme, useProjects, useLogs, useUI, useTimerContext, useCountdowns } from './AppContext';
@@ -753,6 +753,8 @@ function FocusFlowContent() {
 
   // --- Tray/Quick Timer Action Listener ---
   useEffect(() => {
+      const cleanups: Array<() => void> = [];
+
       if (window.electronAPI?.onTrayAction) {
           const cleanup = (window.electronAPI as any).onTrayAction((action: any) => {
               if (action.type === 'START_FOCUS' && action.duration) {
@@ -760,8 +762,21 @@ function FocusFlowContent() {
                   setCurrentView(ViewMode.TIMER);
               }
           });
-          return cleanup;
+          if (cleanup) cleanups.push(cleanup);
       }
+
+      // Listener for Tray Timer (Rubber Band)
+      if (window.electronAPI?.onQuickStart) {
+          const cleanup = (window.electronAPI as any).onQuickStart((duration: number) => {
+              setPendingQuickTimer({ duration, timestamp: Date.now() });
+              setCurrentView(ViewMode.TIMER);
+          });
+          if (cleanup) cleanups.push(cleanup);
+      }
+
+      return () => {
+          cleanups.forEach(c => c());
+      };
   }, [setPendingQuickTimer, setCurrentView]);
 
   // Sync Global Shortcut on Mount
@@ -1220,9 +1235,6 @@ function FocusFlowContent() {
             logs={projectLogs} // Pass project logs to sidebar for project-specific quests
         />
         {/* Quick Capture and Mini Overlay Windows */}
-        {pendingQuickTimer && (
-            <QuickTimerOverlay />
-        )}
         <div className={`flex-1 relative overflow-hidden flex flex-col transition-colors duration-300 ${contentBgClass}`}>
           
           {/* TimerPanel must be outside Suspense to prevent unmounting when other tabs load */}
@@ -1506,8 +1518,8 @@ export default function App() {
         <AppProvider>
             <ErrorBoundary>
                 {mode === 'quick' ? (
-                    <div className="fixed inset-0 bg-transparent">
-                        <QuickTimerOverlay />
+                    <div className="fixed inset-0 bg-transparent overflow-hidden">
+                        <RubberBandTimer />
                     </div>
                 ) : (
                     <FocusFlowContent />
