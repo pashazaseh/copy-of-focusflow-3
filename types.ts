@@ -41,6 +41,7 @@ export interface Task {
   projectId?: string; // Links to your existing Projects
   isCompleted: boolean;
   tickTickId?: string; // Optional: For future syncing
+  tickTickProjectId?: string;
   dueDate?: string;
   estimatedPomodoros?: number;
   completedPomodoros?: number;
@@ -65,13 +66,6 @@ export interface DayStats {
   dateStr: string;
   value: number;
   notes?: string;
-}
-
-export interface GeminiAnalysis {
-  summary: string;
-  strengths: string[];
-  improvements: string[];
-  tip: string;
 }
 
 export enum ViewMode {
@@ -203,7 +197,7 @@ export interface Achievement {
   title: string;
   description: string;
   icon: string;
-  condition: (logs: StudyLog[], totalHours: number, streak: number) => boolean;
+  condition?: (logs: StudyLog[], totalHours: number, streak: number) => boolean;
   isUnlocked?: boolean; // Runtime flag
   reward?: number;
 }
@@ -239,6 +233,13 @@ export interface CustomPrompt {
     id: string;
     label: string;
     prompt: string;
+}
+
+export interface GeminiAnalysis {
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  tip: string;
 }
 
 export interface CaptureDestination {

@@ -1,180 +1,181 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const easeOutElastic = (x: number): number => {
-    const c4 = (2 * Math.PI) / 3;
-    return x === 0
-      ? 0
-      : x === 1
-      ? 1
-      : Math.pow(2, -10 * x) * Math.sin((x * 10 - 0.75) * c4) + 1;
-};
-
 export const QuickTimerOverlay: React.FC = () => {
+    const [trayPos, setTrayPos] = useState<{ x: number, y: number } | null>(null);
+    const [cursorPos, setCursorPos] = useState<{ x: number, y: number } | null>(null);
+    const [minutes, setMinutes] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
-    const [isSnapping, setIsSnapping] = useState(false);
-    const [isConfirmed, setIsConfirmed] = useState(false);
-    const [confirmedMinutes, setConfirmedMinutes] = useState(0);
-    const [startPoint, setStartPoint] = useState({ x: 0, y: 0 });
-    const [cursor, setCursor] = useState({ x: 0, y: 0 });
 
-    // Refs to access latest state in event handlers without re-binding
-    const startPointRef = useRef({ x: 0, y: 0 });
-    const cursorRef = useRef({ x: 0, y: 0 });
+    // Refs to access latest state in event handlers without re-binding listeners
+    const stateRef = useRef({
+        trayPos: null as { x: number, y: number } | null,
+        minutes: 0,
+        isDragging: false
+    });
 
     useEffect(() => {
-        const handleTrayPosition = (e: Event) => {
-            const customEvent = e as CustomEvent;
-            const { x, y } = customEvent.detail;
-            
-            console.log("Tray Position Received:", { x, y });
+        stateRef.current = { trayPos, minutes, isDragging };
+    }, [trayPos, minutes, isDragging]);
 
-            const point = { x, y };
-            setStartPoint(point);
-            setCursor(point);
-            startPointRef.current = point;
-            cursorRef.current = point;
-
-            setIsConfirmed(false);
+    useEffect(() => {
+        const handleTrayPos = (e: CustomEvent) => {
+            const { x, y } = e.detail;
+            setTrayPos({ x, y });
+            setCursorPos({ x, y });
+            setMinutes(0);
             setIsDragging(true);
+            stateRef.current = { trayPos: { x, y }, minutes: 0, isDragging: true };
         };
 
-        window.addEventListener('tray-position', handleTrayPosition);
-        return () => window.removeEventListener('tray-position', handleTrayPosition);
+        window.addEventListener('tray-position', handleTrayPos as any);
+        return () => window.removeEventListener('tray-position', handleTrayPos as any);
     }, []);
 
     useEffect(() => {
-        if (!isDragging) return;
-
         const handleMouseMove = (e: MouseEvent) => {
-            const newCursor = { x: e.clientX, y: e.clientY };
-            setCursor(newCursor);
-            cursorRef.current = newCursor;
+            if (!stateRef.current.isDragging || !stateRef.current.trayPos) return;
+            
+            setCursorPos({ x: e.clientX, y: e.clientY });
+
+            const tray = stateRef.current.trayPos;
+            const dy = Math.max(0, e.clientY - tray.y);
+            
+            // Physics: Bezier Resistance
+            // We want the timer duration to increase quickly at first, then slow down (resistance).
+            // This mimics a rubber band getting tighter.
+            
+            const MAX_PIXELS = 600; // Distance to reach "max" standard time
+            const MAX_MINUTES = 60; 
+            
+            // Normalized drag distance (0 to 1)
+            const t = Math.min(dy / MAX_PIXELS, 1);
+            
+            // Cubic Ease-Out: 1 - (1-t)^3
+            // Slope starts high and decreases to 0.
+            const easedT = 1 - Math.pow(1 - t, 3);
+            
+            let rawMinutes = easedT * MAX_MINUTES;
+            
+            // Over-drag logic: If dragging beyond MAX_PIXELS, add time linearly but very slowly
+            if (dy > MAX_PIXELS) {
+                const extraPixels = dy - MAX_PIXELS;
+                rawMinutes += extraPixels / 20; // 1 min per 20px
+            }
+
+            // Snapping logic
+            let snapped = 0;
+            if (rawMinutes <= 15) {
+                snapped = Math.round(rawMinutes); // 1m increments
+            } else if (rawMinutes <= 45) {
+                snapped = Math.round(rawMinutes / 5) * 5; // 5m increments
+            } else {
+                snapped = Math.round(rawMinutes / 10) * 10; // 10m increments
+            }
+            
+            setMinutes(Math.max(0, snapped));
+            stateRef.current.minutes = Math.max(0, snapped);
         };
 
         const handleMouseUp = () => {
+            if (!stateRef.current.isDragging) return;
+
+            const mins = stateRef.current.minutes;
             setIsDragging(false);
-            const start = startPointRef.current;
-            const cur = cursorRef.current;
-            const distance = Math.sqrt(Math.pow(cur.x - start.x, 2) + Math.pow(cur.y - start.y, 2));
-            // Map distance to time: 10px = 1 minute, min 5 minutes
-            const minutes = Math.max(5, Math.round(distance / 10));
+            setTrayPos(null); // Clear visuals immediately
+            setCursorPos(null);
+            stateRef.current.isDragging = false;
+            setMinutes(0);
+            stateRef.current.minutes = 0;
             
-            if (distance > 50) { // Threshold to commit
-                setIsDragging(false);
-                setIsSnapping(true);
-                setConfirmedMinutes(minutes);
-                
-                setTimeout(() => {
-                    setIsSnapping(false);
-                    setIsConfirmed(true);
-                    
-                    setTimeout(() => {
-                        const validMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : 25;
-                        window.electronAPI?.startQuickTimer(validMinutes);
-                    }, 800);
-                }, 400);
+            if (mins > 0) {
+                (window as any).electronAPI?.send?.('quick-timer-set', mins);
             } else {
-                window.electronAPI?.cancelQuickTimer();
+                (window as any).electronAPI?.send?.('quick-timer-cancel');
+            }
+        };
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setIsDragging(false);
+                stateRef.current.isDragging = false;
+                setTrayPos(null);
+                setCursorPos(null);
+                (window as any).electronAPI?.send?.('quick-timer-cancel');
             }
         };
 
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
+        window.addEventListener('keydown', handleKeyDown);
 
         return () => {
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [isDragging]);
+    }, []); // Listeners bound once, using refs for state access
 
-    useEffect(() => {
-        if (isSnapping) {
-            const start = startPointRef.current;
-            const initial = cursor;
-            const startTime = performance.now();
-            const duration = 400;
+    if (!trayPos || !cursorPos) return null;
 
-            const animate = (time: number) => {
-                const elapsed = time - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const ease = easeOutElastic(progress);
-                
-                setCursor({
-                    x: initial.x + (start.x - initial.x) * ease,
-                    y: initial.y + (start.y - initial.y) * ease
-                });
-
-                if (progress < 1) requestAnimationFrame(animate);
-            };
-            requestAnimationFrame(animate);
-        }
-    }, [isSnapping]);
-
-    if (!isDragging && !isSnapping && !isConfirmed) return null;
-
-    const distance = Math.sqrt(Math.pow(cursor.x - startPoint.x, 2) + Math.pow(cursor.y - startPoint.y, 2));
-    const minutes = Math.max(5, Math.round(distance / 10));
-    const tension = Math.min(distance / 800, 1); // 0 to 1 based on stretch distance
-    const strokeWidth = Math.max(1, 3 * (1 - tension * 0.5)); // Thins as it stretches
+    const dy = cursorPos.y - trayPos.y;
+    const dx = cursorPos.x - trayPos.x;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // Dynamic color interpolation
+    const getColor = (m: number) => {
+        if (m <= 15) return '#34d399'; // Green
+        if (m <= 45) return '#fbbf24'; // Yellow
+        return '#f87171'; // Red
+    };
+    
+    const color = getColor(minutes);
 
     return (
-        <div className="fixed inset-0 pointer-events-none z-[9999]">
-            {(isDragging || isSnapping) && (
+        <div className="fixed inset-0 z-50 pointer-events-none font-sans">
             <svg className="w-full h-full overflow-visible">
                 <defs>
                     <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                        <feGaussianBlur stdDeviation="4" result="coloredBlur" />
                         <feMerge>
-                            <feMergeNode in="coloredBlur"/>
-                            <feMergeNode in="SourceGraphic"/>
+                            <feMergeNode in="coloredBlur" />
+                            <feMergeNode in="SourceGraphic" />
                         </feMerge>
                     </filter>
-                    <linearGradient id="elasticGradient" x1={startPoint.x} y1={startPoint.y} x2={cursor.x} y2={cursor.y} gradientUnits="userSpaceOnUse">
-                        <stop offset="0%" stopColor="#00f0ff" stopOpacity="0.9" />
-                        <stop offset="100%" stopColor="#00f0ff" stopOpacity="0.4" />
-                    </linearGradient>
                 </defs>
+                
+                {/* Rubber Band Line */}
                 <line 
-                    x1={startPoint.x} 
-                    y1={startPoint.y} 
-                    x2={cursor.x} 
-                    y2={cursor.y} 
-                    stroke="url(#elasticGradient)" 
-                    strokeWidth={strokeWidth}
+                    x1={trayPos.x} 
+                    y1={trayPos.y} 
+                    x2={cursorPos.x} 
+                    y2={cursorPos.y} 
+                    stroke={color} 
+                    strokeWidth={Math.max(2, 6 - distance / 200)} 
+                    strokeOpacity={0.8}
                     strokeLinecap="round"
-                    filter="url(#glow)"
                 />
-                <circle cx={startPoint.x} cy={startPoint.y} r="3" fill="#00f0ff" filter="url(#glow)" />
-                <circle cx={cursor.x} cy={cursor.y} r="5" fill="#00f0ff" fillOpacity="0.2" stroke="#00f0ff" strokeWidth="1.5" filter="url(#glow)" />
-                <circle cx={cursor.x} cy={cursor.y} r="2" fill="#fff" />
+                
+                {/* Drag Handle / Bubble */}
+                <g transform={`translate(${cursorPos.x}, ${cursorPos.y})`}>
+                    <circle r="28" fill="rgba(20, 20, 20, 0.9)" stroke={color} strokeWidth="3" filter="url(#glow)" />
+                    <text 
+                        x="0" 
+                        y="6" 
+                        textAnchor="middle" 
+                        fill="white" 
+                        fontSize="16" 
+                        fontWeight="bold"
+                        style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'Inter, sans-serif' }}
+                    >
+                        {minutes}m
+                    </text>
+                </g>
             </svg>
-            )}
-            {!isSnapping && !isConfirmed && isDragging && (
-            <div 
-                className="absolute text-[#00f0ff] font-mono font-bold text-xl bg-black/90 px-4 py-2 rounded-xl backdrop-blur-md border border-[#00f0ff]/30 shadow-[0_0_20px_rgba(0,240,255,0.4)] flex flex-col items-center"
-                style={{ 
-                    left: cursor.x, 
-                    top: cursor.y + 30, 
-                    transform: 'translateX(-50%)' 
-                }}
-            >
-                <span>{minutes}m</span>
-                <div className="text-[10px] text-[#00f0ff]/60 uppercase tracking-widest mt-0.5">Release to Start</div>
-            </div>
-            )}
-            {isConfirmed && (
-                <div 
-                    className="absolute flex flex-col items-center justify-center animate-bounce"
-                    style={{ 
-                        left: startPoint.x, 
-                        top: startPoint.y + 40, 
-                        transform: 'translateX(-50%)' 
-                    }}
-                >
-                    <div className="bg-[#00f0ff] text-black font-bold px-4 py-2 rounded-xl shadow-[0_0_20px_rgba(0,240,255,0.6)] flex items-center gap-2 border border-white/20">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                        <span>{confirmedMinutes}m Started</span>
-                    </div>
+            
+            {/* Helper Text */}
+            {minutes === 0 && (
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white/70 text-lg font-medium animate-pulse drop-shadow-md">
+                    Drag down to set timer
                 </div>
             )}
         </div>

@@ -67,7 +67,7 @@ export const GoalsPanel: React.FC<GoalsPanelProps> = ({
   const yearlyPercent = Math.min(100, (currentYearlyHours / goals.yearly) * 100);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50/50 dark:bg-gray-900">
+    <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50 dark:bg-[#09090b] text-gray-900 dark:text-white'}`}>
       <div className="p-8 h-full overflow-y-auto">
         <div className="max-w-3xl mx-auto">
           <div className="mb-8">

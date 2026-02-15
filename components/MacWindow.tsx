@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AppTheme } from '../types';
+import { OfflineIndicator } from './OfflineIndicator';
 
 interface MacWindowProps {
   children: React.ReactNode;
@@ -21,9 +22,19 @@ export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMod
   const isSpecialMode = mode === 'ghost' || mode === 'mini-capture' || mode === 'quick';
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-        setIsElectron(true);
-        setPlatform(window.electronAPI.platform || '');
+    if (typeof window !== 'undefined') {
+        const isElectronUA = navigator.userAgent.toLowerCase().includes(' electron/');
+        if (window.electronAPI || isElectronUA) {
+            setIsElectron(true);
+            if (window.electronAPI) {
+                setPlatform(window.electronAPI.platform || '');
+            } else {
+                const plat = navigator.platform.toLowerCase();
+                if (plat.includes('mac')) setPlatform('darwin');
+                else if (plat.includes('win')) setPlatform('win32');
+                else setPlatform('linux');
+            }
+        }
     }
   }, []);
 
@@ -36,8 +47,20 @@ export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMod
     }
   }, [isDarkMode, isElectron, platform]);
 
+  useEffect(() => {
+    if (isSpecialMode) {
+        document.body.style.backgroundColor = 'transparent';
+        document.documentElement.style.backgroundColor = 'transparent';
+    }
+  }, [isSpecialMode]);
+
   if (isSpecialMode) {
-      return <>{children}</>;
+      return (
+          <>
+            {children}
+            <OfflineIndicator />
+          </>
+      );
   }
 
   const handleClose = () => window.electronAPI?.close();
@@ -47,20 +70,20 @@ export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMod
   // Determine background based on theme
   const bgClass = appTheme === 'cyberpunk' 
     ? 'bg-[#050505] text-[#00f0ff] font-mono' 
-    : 'bg-white dark:bg-gray-900';
+    : 'bg-white dark:bg-[#09090b] text-gray-900 dark:text-gray-100';
 
   const borderClass = appTheme === 'cyberpunk'
     ? 'border-[#00f0ff]/40 shadow-[0_0_30px_rgba(0,240,255,0.15)] rounded-lg'
-    : 'border-gray-200 dark:border-gray-700 dark:shadow-black/50 rounded-xl';
+    : 'border-gray-200 dark:border-white/10 dark:shadow-black/50 rounded-xl';
 
   const headerClass = appTheme === 'cyberpunk'
     ? 'bg-[#0a0a0a] border-b border-[#00f0ff]/20'
-    : 'bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700';
+    : 'bg-gray-50/80 dark:bg-[#121214] border-b border-gray-200 dark:border-white/5 backdrop-blur-md';
 
   // Enforce solid backgrounds: bg-white or bg-gray-900 (removed opacity values like /80)
   const containerClass = isElectron
     ? `w-screen h-screen flex flex-col overflow-hidden ${bgClass}`
-    : `w-full max-w-6xl h-[85vh] rounded-xl shadow-2xl border flex flex-col overflow-hidden animate-fade-in-up ${bgClass} ${borderClass}`;
+    : `w-full max-w-6xl h-[85vh] rounded-2xl shadow-2xl border flex flex-col overflow-hidden animate-fade-in-up backdrop-blur-xl ${bgClass} ${borderClass}`;
 
   return (
     <div className={containerClass}>
@@ -117,6 +140,7 @@ export const MacWindow: React.FC<MacWindowProps> = ({ children, title, isDarkMod
       <div className="flex-1 flex overflow-hidden relative">
         {children}
       </div>
+      <OfflineIndicator />
     </div>
   );
 };

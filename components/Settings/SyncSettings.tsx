@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AppTheme } from '../../types';
 import * as storage from '../../services/storageService';
 import { useCountdowns } from '../../AppContext';
-import { exchangeCodeForToken, fetchTickTickTasks } from '../../services/tickTickService';
+import { exchangeCodeForToken, fetchTickTickTasks, getTickTickAuthUrl } from '../../services/tickTickService';
 import { getGoogleAuthUrl, exchangeGoogleCode, GOOGLE_REDIRECT_URI } from '../../services/googleService';
 import ObsidianSection from '../Settings/sync/ObsidianSection';
 
@@ -145,6 +145,15 @@ export const SyncSettings: React.FC<SyncSettingsProps> = ({ appTheme, setLastBac
         localStorage.setItem('ticktick_client_secret', tickTickClientSecret);
         localStorage.setItem('ticktick_redirect_uri', tickTickRedirectUri);
         alert("TickTick Configuration Saved.");
+    };
+
+    const handleConnectTickTick = () => {
+        if (!tickTickClientId || !tickTickClientSecret) {
+            alert("Please enter Client ID and Secret first.");
+            return;
+        }
+        const url = getTickTickAuthUrl(tickTickClientId, tickTickRedirectUri);
+        window.open(url, '_blank');
     };
 
     const handleManualTickTickCode = async () => {
@@ -466,6 +475,12 @@ ${todaySessions.length === 0 ? '_No sessions yet today._' : todaySessions.map(s 
                                     <input type="text" value={tickTickRedirectUri} onChange={(e) => setTickTickRedirectUri(e.target.value)} placeholder={typeof window !== 'undefined' && window.electronAPI ? "http://localhost:54321/callback" : "http://localhost"} className="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white transition-all font-mono" />
                                     <button onClick={handleSaveTickTickConfig} className="px-5 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-white dark:text-gray-900 dark:border-transparent dark:hover:bg-gray-200 text-gray-900 text-sm font-bold rounded-xl transition-colors">Save</button>
                                 </div>
+                            <div className="mt-2 flex justify-end">
+                                <button onClick={handleConnectTickTick} className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
+                                    <span>Open Authorization Page</span>
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                </button>
+                            </div>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Manual Auth Code</label>

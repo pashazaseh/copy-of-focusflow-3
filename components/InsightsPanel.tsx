@@ -1,22 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { StudyLog, GeminiAnalysis } from '../types';
 import { analyzeStudyHabits } from '../services/geminiService';
+import { useTheme } from '../AppContext';
 
 interface InsightsPanelProps {
   logs: StudyLog[];
 }
 
 export const InsightsPanel: React.FC<InsightsPanelProps> = ({ logs }) => {
+  const { appTheme } = useTheme();
+  const isCyberpunk = appTheme === 'cyberpunk';
   const [analysis, setAnalysis] = useState<GeminiAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    // On mount, try to load cached analysis
+    const cachedAnalysis = localStorage.getItem('focusflow_ai_analysis');
+    if (cachedAnalysis) {
+      try {
+        const parsed = JSON.parse(cachedAnalysis);
+        setAnalysis(parsed);
+      } catch (e) { console.error("Failed to parse cached analysis", e); }
+    }
+  }, []);
+
   const runAnalysis = async () => {
+    if (!navigator.onLine) {
+        setError("You are offline. AI analysis requires an internet connection.");
+        return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       const result = await analyzeStudyHabits(logs);
       setAnalysis(result);
+      localStorage.setItem('focusflow_ai_analysis', JSON.stringify(result)); // Cache the result
     } catch (err: any) {
       setError(`Unable to generate insights: ${err.message || "Check API key"}`);
       console.error(err);
@@ -26,7 +46,8 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({ logs }) => {
   };
 
   return (
-    <div className="p-8 h-full overflow-y-auto">
+    <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50 dark:bg-[#09090b] text-gray-900 dark:text-white'}`}>
+    <div className="p-8 h-full overflow-y-auto custom-scrollbar">
       <div className="max-w-3xl mx-auto">
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">AI Performance Coach</h2>
@@ -55,6 +76,12 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({ logs }) => {
           </div>
         )}
 
+        {analysis && !loading && !navigator.onLine && (
+            <div className="p-3 mb-4 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 rounded-xl border border-yellow-200 dark:border-yellow-800/50 text-xs text-center">
+                You are currently offline. These insights are from the last time you were connected.
+            </div>
+        )}
+
         {loading && (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mb-4"></div>
@@ -74,7 +101,7 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({ logs }) => {
         {analysis && !loading && (
           <div className="space-y-6 animate-fade-in-up">
             {/* Summary Card */}
-            <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-6 text-white shadow-lg">
+            <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-6 text-white shadow-lg relative">
               <h3 className="text-lg font-semibold mb-2 flex items-center">
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -82,6 +109,9 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({ logs }) => {
                 Summary
               </h3>
               <p className="text-blue-50 text-lg leading-relaxed">"{analysis.summary}"</p>
+              <button onClick={runAnalysis} className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors" title="Re-analyze">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -132,11 +162,12 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({ logs }) => {
             </div>
             
             <div className="flex justify-end">
-                <button onClick={() => setAnalysis(null)} className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline">Reset Analysis</button>
+                <button onClick={() => { setAnalysis(null); localStorage.removeItem('focusflow_ai_analysis'); }} className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline">Clear Insights</button>
             </div>
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 };

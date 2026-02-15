@@ -281,6 +281,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             localStorage.setItem('focusflow_transactions', JSON.stringify(updated));
             return updated;
         });
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('focusflow-transaction-added', { detail: t }));
+        }
     }, []);
 
     const clearTransactions = useCallback(() => {

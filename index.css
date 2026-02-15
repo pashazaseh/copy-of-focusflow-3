@@ -1,119 +1,63 @@
-@import url('https://fonts.cdnfonts.com/css/gelato-script');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  html {
-    @apply font-sans antialiased;
-  }
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
-
-/* Custom Scrollbar Styles */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: transparent;
 }
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(156, 163, 175, 0.5);
-  border-radius: 20px;
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 4px;
 }
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(107, 114, 128, 0.8);
-}
-
-/* Hide scrollbar for Chrome, Safari and Opera */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-
-/* Hide scrollbar for IE, Edge and Firefox */
-.no-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.7);
 }
 
 /* Animations */
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes fadeInUp {
+@keyframes fade-in-up {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+.animate-fade-in-up {
+  animation: fade-in-up 0.3s ease-out forwards;
+}
 
-@keyframes scaleIn {
+@keyframes fade-in-down {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-down {
+  animation: fade-in-down 0.3s ease-out forwards;
+}
+
+@keyframes scale-in {
   from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
 }
-
-@keyframes shimmer {
-  0% { 
-    transform: translateX(-100%); 
-  }
-  100% { 
-    transform: translateX(100%); 
-  }
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    opacity: 0.7;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.05);
-  }
-}
-
-@keyframes ghost-pulse {
-  0%, 100% { opacity: 0.6; transform: scale(0.95); }
-  50% { opacity: 0.9; transform: scale(1.0); }
-}
-
-.animate-ghost-pulse {
-  animation: ghost-pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out forwards;
 }
 
 @keyframes pulse-slow {
-  0%, 100% { opacity: 0.8; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.02); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
-
 .animate-pulse-slow {
   animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Add smooth shimmer gradient */
-.shimmer-gradient {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0) 20%,
-    rgba(255, 255, 255, 0.4) 50%,
-    rgba(255, 255, 255, 0) 80%,
-    transparent 100%
-  );
-  will-change: transform;
+/* Cyberpunk Glows */
+.bg-radial-cyber {
+  background-image: radial-gradient(circle at center, rgba(0, 240, 255, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
 }
-
-.animate-fade-in {
-  animation: fadeIn 0.2s ease-out forwards;
+.bg-radial-light {
+  background-image: radial-gradient(circle at center, rgba(59, 130, 246, 0.05) 0%, rgba(255, 255, 255, 0) 70%);
 }
-
-.animate-fade-in-up {
-  animation: fadeInUp 0.3s ease-out forwards;
-}
-
-.animate-scale-in {
-  animation: scaleIn 0.2s ease-out forwards;
+.bg-radial-dark {
+  background-image: radial-gradient(circle at center, rgba(59, 130, 246, 0.1) 0%, rgba(0, 0, 0, 0) 70%);
 }

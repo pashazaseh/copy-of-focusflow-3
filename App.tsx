@@ -4,13 +4,17 @@ import { MacWindow } from './components/MacWindow';
 import { Sidebar } from './components/Sidebar';
 import { QuickTimerOverlay } from './components/QuickTimerOverlay';
 import { MiniCaptureWindow } from './components/MiniCaptureWindow';
-import { ViewMode, HeatmapTheme, UserGoals, CountdownItem, Achievement, Transaction, StudyLog, Task } from './types';
+import { ViewMode, HeatmapTheme, UserGoals, CountdownItem, Achievement, Transaction, StudyLog } from './types';
 import { AppProvider, useTheme, useProjects, useLogs, useUI, useTimerContext, useCountdowns } from './AppContext';
-import { getUnlockedAchievements, getAchievementReward, getDailyQuests } from './services/gamificationService';
-import * as storage from './services/storageService';
+import { getUnlockedAchievements, getAchievementReward } from './features/gamification/services/achievementService';
+import { getDailyQuests } from './features/gamification/services/questService';
 import { playWin, playTone } from './services/audioService';
+import { calculateStreaks } from './services/streakService';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useEconomy, validateEconomy } from './features/gamification/hooks/useEconomy';
+import * as storage from './services/storageService';
 
-const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
+const isElectron = typeof window !== 'undefined' && (!!window.electronAPI || navigator.userAgent.toLowerCase().includes(' electron/'));
 
 // Lazy load heavy components
 const TimerPanel = lazy(() => import('./components/TimerPanel').then(m => ({ default: m.TimerPanel })));
@@ -58,6 +62,41 @@ const Toast = ({ title, subtitle = "Achievement Unlocked", icon, onClose, isCybe
     </div>
 );
 
+const TransactionToast = ({ transaction, onClose, isCyberpunk }: { transaction: Transaction, onClose: () => void, isCyberpunk: boolean }) => {
+    const isWin = transaction.amount >= 0;
+    const borderColor = isWin 
+        ? (isCyberpunk ? 'border-[#00ff00]' : 'border-green-500') 
+        : (isCyberpunk ? 'border-[#ff0055]' : 'border-red-500');
+    
+    const bgColor = isCyberpunk ? 'bg-black' : (isWin ? 'bg-green-50 dark:bg-green-900/90' : 'bg-red-50 dark:bg-red-900/90');
+    const textColor = isCyberpunk 
+        ? (isWin ? 'text-[#00ff00]' : 'text-[#ff0055]') 
+        : (isWin ? 'text-green-800 dark:text-green-100' : 'text-red-800 dark:text-red-100');
+    
+    const shadow = isCyberpunk 
+        ? (isWin ? 'shadow-[0_0_20px_rgba(0,255,0,0.4)]' : 'shadow-[0_0_20px_rgba(255,0,85,0.4)]')
+        : 'shadow-2xl';
+
+    return (
+        <div className="fixed bottom-8 right-8 z-[110] animate-fade-in-up pointer-events-none">
+            <div className={`px-6 py-4 rounded-2xl border-2 flex items-center gap-4 backdrop-blur-xl pointer-events-auto transition-all ${borderColor} ${bgColor} ${textColor} ${shadow}`}>
+                <div className="text-3xl filter drop-shadow-sm">{isWin ? '💰' : '💸'}</div>
+                <div>
+                    <p className="font-black text-lg leading-none tracking-tight">
+                        {isWin ? '+' : ''}{transaction.amount} Gems
+                    </p>
+                    <p className={`text-xs font-bold uppercase tracking-wider mt-1 opacity-80`}>
+                        {transaction.description}
+                    </p>
+                </div>
+                <button onClick={onClose} className="ml-2 p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+        </div>
+    );
+};
+
 // Interfaces defined OUTSIDE the class for clarity
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -102,8 +141,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 const DashboardHeader = React.memo(({ activeProjectName, currentYear, activeProject, streaks }: { activeProjectName: string, currentYear: number, activeProject: any, streaks: any }) => (
     <header className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white dark:bg-[#1c1c1e] rounded-3xl p-6 border border-gray-200 dark:border-gray-700/50 shadow-sm flex flex-col justify-center h-32">
-        <h2 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
+        <div className="bg-white dark:bg-[#121214] rounded-3xl p-6 border border-gray-200 dark:border-white/5 shadow-sm flex flex-col justify-center h-32">
+        <h2 className="text-4xl font-bold text-gray-900 dark:text-white flex items-center tracking-tight">
             {activeProjectName} 
             <span className="mx-3 text-gray-300 dark:text-gray-700 font-light text-2xl">|</span>
             <span className="text-gray-400 dark:text-gray-500 font-normal">{currentYear}</span>
@@ -153,10 +192,10 @@ const LogHistoryTable = React.memo(({
     historyPage,
     setHistoryPage
 }: any) => (
-    <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl border border-gray-200 dark:border-gray-700/50 shadow-sm overflow-hidden">
+    <div className="bg-white dark:bg-[#121214] rounded-2xl border border-gray-200 dark:border-white/5 shadow-sm overflow-hidden">
         <table className="w-full text-left border-collapse">
             <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
+                <tr className="border-b border-gray-200 dark:border-white/5 bg-gray-50/50 dark:bg-white/[0.02]">
                     <th className="p-4 font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                         onClick={() => {
                             if (historySortField === 'date') setHistorySortDesc(!historySortDesc);
@@ -183,12 +222,12 @@ const LogHistoryTable = React.memo(({
                     <th className="p-4 w-10"></th>
                 </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+            <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                 {paginatedHistory.length === 0 ? (
                     <tr><td colSpan={4} className="p-8 text-center text-gray-500 dark:text-gray-400">No logs found for this period.</td></tr>
                 ) : (
                     paginatedHistory.map((item: any) => (
-                        <tr key={item.kind === 'log' ? `log-${item.data.date}-${item.data.projectId}` : item.data.id} className="group hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                        <tr key={item.kind === 'log' ? `log-${item.data.date}-${item.data.projectId}` : item.data.id} className="group hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors">
                             <td className="p-4 text-sm text-gray-900 dark:text-gray-200 font-medium">
                                 {item.kind === 'log' ? item.data.date : new Date(item.data.date).toLocaleDateString()}
                                 <div className="text-[10px] text-gray-400 font-normal mt-0.5">
@@ -205,7 +244,7 @@ const LogHistoryTable = React.memo(({
                                             {item.data.hours} hrs
                                         </span>
                                         <span className="text-[10px] font-bold text-yellow-600 dark:text-yellow-500 ml-0.5">
-                                            +{Math.floor(item.data.hours * 20)} 💎
+                                            +{Math.floor(item.data.hours * 10)} 💎
                                         </span>
                                     </div>
                                 ) : (
@@ -245,11 +284,11 @@ const LogHistoryTable = React.memo(({
         
         {/* Pagination Controls */}
         {unifiedHistoryLength > ITEMS_PER_PAGE && (
-            <div className="flex justify-between items-center p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
+            <div className="flex justify-between items-center p-4 border-t border-gray-200 dark:border-white/5 bg-gray-50/50 dark:bg-white/[0.02]">
                 <button 
                     onClick={() => setHistoryPage((p: number) => Math.max(1, p - 1))}
                     disabled={historyPage === 1}
-                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                 >
                     Previous
                 </button>
@@ -259,7 +298,7 @@ const LogHistoryTable = React.memo(({
                 <button 
                     onClick={() => setHistoryPage((p: number) => Math.min(Math.ceil(unifiedHistoryLength / ITEMS_PER_PAGE), p + 1))}
                     disabled={historyPage >= Math.ceil(unifiedHistoryLength / ITEMS_PER_PAGE)}
-                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                 >
                     Next
                 </button>
@@ -327,6 +366,12 @@ const GhostModeView = () => {
     const [isRunning, setIsRunning] = useState(true); // Assume running if ghost mode is active usually
     const [isHovered, setIsHovered] = useState(false);
     const [isUrgent, setIsUrgent] = useState(false);
+    const [gems, setGems] = useState(0);
+
+    // Refs for accurate timing
+    const endTimeRef = useRef<number | null>(null);
+    const startTimeRef = useRef<number | null>(null);
+    const modeRef = useRef<string>('POMO');
 
     useEffect(() => {
         // CRITICAL FIX: Safe Event Listener
@@ -336,8 +381,17 @@ const GhostModeView = () => {
             setTimeLeft(typeof state.timeLeft === 'number' ? state.timeLeft : 0);
             setInitialTime(state.initialTime && state.initialTime > 0 ? state.initialTime : 1);
             setMode(state.mode || 'POMO');
-            setIsRunning(!!state.isRunning);
-            // Urgent calculation will happen in the render/effect cycle based on these new values
+            
+            // Fix: Handle both isRunning and isActive
+            const running = state.isRunning !== undefined ? !!state.isRunning : !!state.isActive;
+            setIsRunning(running);
+            
+            if (typeof state.currentGems === 'number') setGems(state.currentGems);
+            
+            // Update refs
+            endTimeRef.current = state.endTime || null;
+            startTimeRef.current = state.startTime || null;
+            modeRef.current = state.mode || 'POMO';
         });
 
         // Ask backend for immediate update
@@ -347,7 +401,18 @@ const GhostModeView = () => {
         const interval = setInterval(() => {
             setIsRunning(running => {
                 if (running) {
-                    setTimeLeft(prev => Math.max(0, prev - 1));
+                    const now = Date.now();
+                    // Use timestamps if available for accuracy
+                    if (modeRef.current === 'STOPWATCH' && startTimeRef.current) {
+                        const elapsed = Math.floor((now - startTimeRef.current) / 1000);
+                        setTimeLeft(elapsed);
+                    } else if (endTimeRef.current) {
+                        const remaining = Math.ceil((endTimeRef.current - now) / 1000);
+                        setTimeLeft(Math.max(0, remaining));
+                    } else {
+                        // Fallback
+                        setTimeLeft(prev => Math.max(0, prev - 1));
+                    }
                 }
                 return running;
             });
@@ -395,8 +460,25 @@ const GhostModeView = () => {
     const getColor = () => {
         if (mode === 'SHORT_BREAK') return '#34d399'; // Emerald
         if (mode === 'LONG_BREAK') return '#818cf8'; // Indigo
-        if (isUrgent) return '#ef4444'; // Red for Urgent
-        return '#f472b6'; // Pink/Magenta for Pomo
+        
+        // Smooth transition: Blue -> Orange -> Red
+        const ratio = initialTime > 0 ? Math.max(0, Math.min(1, timeLeft / initialTime)) : 0;
+        
+        let r, g, b;
+        if (ratio > 0.5) {
+            // 0.5 -> 1.0 (Orange -> Blue)
+            const t = (ratio - 0.5) * 2;
+            r = Math.round(249 + (59 - 249) * t);
+            g = Math.round(115 + (130 - 115) * t);
+            b = Math.round(22 + (246 - 22) * t);
+        } else {
+            // 0.0 -> 0.5 (Red -> Orange)
+            const t = ratio * 2;
+            r = Math.round(239 + (249 - 239) * t);
+            g = Math.round(68 + (115 - 68) * t);
+            b = Math.round(68 + (22 - 68) * t);
+        }
+        return `rgb(${r}, ${g}, ${b})`;
     };
     
     return (
@@ -406,6 +488,12 @@ const GhostModeView = () => {
             onMouseLeave={() => setIsHovered(false)}
             style={{ WebkitAppRegion: 'drag' } as any}
         >
+            {/* Gem Display */}
+            <div className="absolute top-6 right-6 z-40 flex items-center gap-1.5 opacity-60 hover:opacity-100 transition-opacity pointer-events-none">
+                <span className="text-lg filter drop-shadow-md">💎</span>
+                <span className="text-sm font-bold font-mono text-white drop-shadow-md">{gems.toLocaleString()}</span>
+            </div>
+
             {/* 1. Pulsing Background Aura */}
             <div className={`absolute inset-0 bg-black/80 backdrop-blur-xl rounded-full border border-white/10 transition-all duration-500 ${isHovered ? 'scale-105 border-white/30' : 'scale-100'} ${isRunning ? (isUrgent ? 'animate-pulse' : 'animate-pulse-slow') : ''}`}></div>
             
@@ -423,7 +511,7 @@ const GhostModeView = () => {
 
             {/* 3. Time Display */}
             <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-20 pointer-events-none">
-                <span className={`text-3xl font-bold font-[ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace] tracking-tighter drop-shadow-lg transition-colors ${isUrgent ? 'text-red-400' : 'text-white'}`} style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
+                <span className={`text-3xl font-bold font-['Orbitron',_sans-serif] tracking-tighter drop-shadow-lg transition-colors ${isUrgent ? 'text-red-400' : 'text-white'}`} style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
                     {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
                 </span>
             </div>
@@ -448,6 +536,42 @@ const GhostModeView = () => {
                 </button>
             </div>
         </div>
+    );
+};
+
+const AnimatedMiniCapture = () => {
+    const [isVisible, setIsVisible] = useState(true);
+
+    useEffect(() => {
+        const handleFocus = () => setIsVisible(true);
+        window.addEventListener('focus', handleFocus);
+        
+        const cleanup = window.electronAPI?.onTrayAction?.((action: any) => {
+            if (action.type === 'CLOSE_MINI_CAPTURE') {
+                setIsVisible(false);
+            }
+        });
+
+        return () => {
+            window.removeEventListener('focus', handleFocus);
+            if (cleanup) cleanup();
+        };
+    }, []);
+
+    return (
+        <AnimatePresence onExitComplete={() => (window.electronAPI as any)?.closeMiniCapture?.()}>
+            {isVisible && (
+                <motion.div
+                    key="mini-capture"
+                    initial={{ y: -400, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: -400, opacity: 0 }}
+                    transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                >
+                    <MiniCaptureWindow />
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 };
 
@@ -520,7 +644,32 @@ function FocusFlowContent() {
   // Toast State
   const [toast, setToast] = useState<{title: string, subtitle?: string, icon: string} | null>(null);
   const prevBadgeCount = useRef<number>(-1);
+  const [transactionToast, setTransactionToast] = useState<Transaction | null>(null);
+  const txToastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+      const handleTransaction = (e: CustomEvent<Transaction>) => {
+          setTransactionToast(e.detail);
+          if (txToastTimeoutRef.current) clearTimeout(txToastTimeoutRef.current);
+          txToastTimeoutRef.current = setTimeout(() => setTransactionToast(null), 4000);
+      };
+
+      window.addEventListener('focusflow-transaction-added' as any, handleTransaction as any);
+      return () => {
+          window.removeEventListener('focusflow-transaction-added' as any, handleTransaction as any);
+          if (txToastTimeoutRef.current) clearTimeout(txToastTimeoutRef.current);
+      };
+  }, []);
+
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const { currentGems, addBonus } = useEconomy();
+
+  const addTransactionLocal = (transaction: Transaction) => {
+      const transactions = JSON.parse(localStorage.getItem('focusflow_transactions') || '[]');
+      transactions.unshift(transaction);
+      localStorage.setItem('focusflow_transactions', JSON.stringify(transactions));
+      window.dispatchEvent(new Event('focusflow-gem-update'));
+  };
 
   // --- Daily Login Bonus ---
   useEffect(() => {
@@ -552,18 +701,9 @@ function FocusFlowContent() {
                   icon = '🎁';
               }
               
-              // Update Bonus Gems (Direct localStorage manipulation to sync with GamificationPanel)
-              const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
-              localStorage.setItem('focusflow_bonus_gems', (currentBonus + bonusAmount).toString());
-              
-              // Add Transaction
-              addTransaction({
-                  id: `daily-bonus-${Date.now()}`,
-                  date: new Date().toISOString(),
-                  type: 'EARN',
-                  amount: bonusAmount,
-                  description: title
-              });
+              // Add Transaction via Local Helper
+              addBonus(bonusAmount, title);
+              window.dispatchEvent(new Event('focusflow-gem-update'));
 
               localStorage.setItem('focusflow_last_login_date', today);
               
@@ -578,6 +718,19 @@ function FocusFlowContent() {
       const timer = setTimeout(checkDailyBonus, 1500);
       return () => clearTimeout(timer);
   }, [addTransaction, isViewEnabled]);
+
+  // --- Toast Event Listener ---
+  useEffect(() => {
+      const handleCustomToast = (e: CustomEvent<{title: string, subtitle?: string, icon: string}>) => {
+          setToast(e.detail);
+          const savedVol = localStorage.getItem('focusflow_timer_volume');
+          const vol = savedVol ? parseFloat(savedVol) : 0.5;
+          playWin(vol);
+          setTimeout(() => setToast(null), 5000);
+      };
+      window.addEventListener('focusflow-show-toast' as any, handleCustomToast as any);
+      return () => window.removeEventListener('focusflow-show-toast' as any, handleCustomToast as any);
+  }, []);
 
   // --- Auto-Update Listeners ---
   useEffect(() => {
@@ -601,7 +754,7 @@ function FocusFlowContent() {
   // --- Tray/Quick Timer Action Listener ---
   useEffect(() => {
       if (window.electronAPI?.onTrayAction) {
-          const cleanup = window.electronAPI.onTrayAction((action: any) => {
+          const cleanup = (window.electronAPI as any).onTrayAction((action: any) => {
               if (action.type === 'START_FOCUS' && action.duration) {
                   setPendingQuickTimer({ duration: action.duration, timestamp: Date.now() });
                   setCurrentView(ViewMode.TIMER);
@@ -714,6 +867,19 @@ function FocusFlowContent() {
       }
   };
 
+  const handleRepairStreak = (dateStr: string) => {
+      if (!freezeDates.includes(dateStr)) {
+          const newFreezeDates = [...freezeDates, dateStr];
+          setFreezeDates(newFreezeDates);
+          localStorage.setItem('focusflow_freeze_dates', JSON.stringify(newFreezeDates));
+          setToast({ title: 'Streak Repaired!', subtitle: `Restored ${dateStr}`, icon: '🩹' });
+          
+          const savedVol = localStorage.getItem('focusflow_timer_volume');
+          const vol = savedVol ? parseFloat(savedVol) : 0.5;
+          playWin(vol);
+      }
+  };
+
   const handleDayClick = useCallback((date: string) => {
     setSelectedDate(date);
     // Logic to scroll or switch view is handled by effects or user action, 
@@ -753,42 +919,8 @@ function FocusFlowContent() {
   const projectLogs = useMemo(() => logs.filter(l => l.projectId === currentProjectId), [logs, currentProjectId]);
   const activeLog = useMemo(() => projectLogs.find(l => l.date === selectedDate), [projectLogs, selectedDate]);
 
-  // Helper for Streak Calculation
-  const calculateStreaks = (targetLogs: StudyLog[], freezes: string[]) => {
-      const activeLogDates = targetLogs.filter(l => l.hours > 0).map(l => l.date);
-      const combinedDates = Array.from(new Set<string>([...activeLogDates, ...freezes])).sort();
-      
-      if (combinedDates.length === 0) return { current: 0, longest: 0 };
-      
-      const timestamps = combinedDates.map((d: string) => {
-          const [y, m, day] = d.split('-').map(Number);
-          return Date.UTC(y, m - 1, day);
-      });
-
-      let longest = 1;
-      let currentRun = 1;
-      for (let i = 1; i < timestamps.length; i++) {
-          const diffDays = (timestamps[i] - timestamps[i-1]) / (1000 * 60 * 60 * 24);
-          if (Math.round(diffDays) === 1) currentRun++;
-          else currentRun = 1;
-          if (currentRun > longest) longest = currentRun;
-      }
-      
-      const now = new Date();
-      const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-      const yesterday = today - 86400000;
-      const lastLogDate = timestamps[timestamps.length - 1];
-      
-      let current = 0;
-      if (lastLogDate === today || lastLogDate === yesterday) {
-          current = 1;
-          for (let i = timestamps.length - 2; i >= 0; i--) {
-              const diffDays = (timestamps[i+1] - timestamps[i]) / (1000 * 60 * 60 * 24);
-              if (Math.round(diffDays) === 1) current++;
-              else break;
-          }
-      }
-      return { current, longest };
+  const getActiveDates = (targetLogs: StudyLog[], freezes: string[]) => {
+      return [...targetLogs.filter(l => l.hours > 0).map(l => l.date), ...freezes];
   };
 
   // Unified History Item Type
@@ -859,30 +991,8 @@ function FocusFlowContent() {
 
   // Global Stats (For Gamification)
   const globalTotalHours = useMemo(() => logs.reduce((acc, curr) => acc + curr.hours, 0), [logs]);
-  const globalStreaks = useMemo(() => calculateStreaks(logs, freezeDates), [logs, freezeDates]);
+  const globalStreaks = useMemo(() => calculateStreaks(getActiveDates(logs, freezeDates)), [logs, freezeDates]);
   
-  const [currentGems, setCurrentGems] = useState(0);
-
-  useEffect(() => {
-      const calculateGems = () => {
-          const spent = parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0;
-          const bonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
-          
-          const achievements = getUnlockedAchievements(logs, globalTotalHours, globalStreaks.current);
-          const achievementGems = achievements.filter(a => a.isUnlocked).reduce((acc, curr) => acc + getAchievementReward(curr).gems, 0);
-          
-          const quests = getDailyQuests(logs);
-          const questGems = quests.filter(q => q.current >= q.target).reduce((acc, curr) => acc + curr.reward, 0);
-          
-          const earningRate = 10;
-          const rawBalance = Math.floor(globalTotalHours * earningRate) + achievementGems + questGems + bonus - spent;
-          setCurrentGems(Math.max(0, rawBalance));
-      };
-      
-      calculateGems();
-      window.addEventListener('focusflow-gem-update', calculateGems);
-      return () => window.removeEventListener('focusflow-gem-update', calculateGems);
-  }, [logs, globalTotalHours, globalStreaks]);
 
   // Project Stats (For Dashboard/Sidebar)
   const currentDailyHours = useMemo(() => {
@@ -913,7 +1023,7 @@ function FocusFlowContent() {
       return projectLogs.filter(l => parseDate(l.date) >= startOfYear).reduce((acc, curr) => acc + curr.hours, 0);
   }, [projectLogs]);
 
-  const projectStreaks = useMemo(() => calculateStreaks(projectLogs, freezeDates), [projectLogs, freezeDates]);
+  const projectStreaks = useMemo(() => calculateStreaks(getActiveDates(projectLogs, freezeDates)), [projectLogs, freezeDates]);
 
   const latestBadge = useMemo<Achievement | null>(() => {
       const all = getUnlockedAchievements(logs, globalTotalHours, globalStreaks.current);
@@ -985,6 +1095,16 @@ function FocusFlowContent() {
                   const newFreezeDates = [...freezeDates, yesterdayStr];
                   localStorage.setItem('focusflow_freeze_dates', JSON.stringify(newFreezeDates));
                   setFreezeDates(newFreezeDates);
+
+                  // Log Streak Save Event
+                  addTransaction({
+                      id: `freeze-${Date.now()}`,
+                      date: new Date().toISOString(),
+                      type: 'SPEND',
+                      amount: 0,
+                      description: 'Streak Saved (Freeze Used)'
+                  });
+                  setToast({ title: 'Streak Saved!', icon: '🧊', subtitle: 'Freeze Used' });
               }
           }
       };
@@ -1060,17 +1180,24 @@ function FocusFlowContent() {
 
   const contentBgClass = appTheme === 'cyberpunk' 
     ? 'bg-[#050505] text-[#00f0ff] font-mono' 
-    : 'bg-white dark:bg-gray-900';
+    : 'bg-white dark:bg-[#09090b]';
 
   return (
     <div className={isElectron ? "w-screen h-screen overflow-hidden" : "min-h-screen flex items-center justify-center p-4 sm:p-8 transition-colors duration-500"}>
       {toast && <Toast title={toast.title} subtitle={toast.subtitle} icon={toast.icon} onClose={() => setToast(null)} isCyberpunk={appTheme === 'cyberpunk'} />}
+      {transactionToast && (
+          <TransactionToast 
+              transaction={transactionToast} 
+              onClose={() => setTransactionToast(null)} 
+              isCyberpunk={appTheme === 'cyberpunk'} 
+          />
+      )}
       <MacWindow 
         isDarkMode={isDarkMode} 
         onToggleTheme={toggleTheme} 
         appTheme={appTheme}
         isFullScreen={isFullScreen}
-        icon={<img src="/icon.png" className="w-4 h-4 object-contain" alt="App Icon" />}
+        icon={<img src="icon.png" className="w-4 h-4 object-contain" alt="App Icon" />}
       >
         <Sidebar 
             currentView={currentView} 
@@ -1091,7 +1218,6 @@ function FocusFlowContent() {
             appTheme={appTheme}
             latestBadge={latestBadge}
             logs={projectLogs} // Pass project logs to sidebar for project-specific quests
-            currentGems={currentGems}
         />
         {/* Quick Capture and Mini Overlay Windows */}
         {pendingQuickTimer && (
@@ -1110,8 +1236,7 @@ function FocusFlowContent() {
                   menuBarConfig={menuBarConfig}
                   externalStart={pendingQuickTimer}
                   onConsumeExternalStart={handleConsumeQuickTimer}
-                  currentGems={currentGems}
-                  addTransaction={addTransaction}
+                  currentStreak={globalStreaks.current}
               />
               </Suspense>
             </div>
@@ -1119,7 +1244,7 @@ function FocusFlowContent() {
 
           <Suspense fallback={<PanelLoader />}>
             {currentView === ViewMode.DASHBOARD && (
-              <div className="flex-1 flex flex-col min-h-0 overflow-y-auto bg-gray-50/50 dark:bg-black/20">
+              <div className="flex-1 flex flex-col min-h-0 overflow-y-auto bg-gray-50/50 dark:bg-[#09090b]">
               <div className="p-8 pb-0">
                 <DashboardHeader 
                     activeProjectName={activeProjectName} 
@@ -1128,7 +1253,7 @@ function FocusFlowContent() {
                     streaks={projectStreaks} 
                 />
 
-                <div ref={formRef} className="w-full bg-white dark:bg-[#1c1c1e] rounded-2xl p-6 border border-gray-200 dark:border-gray-700/50 shadow-lg mb-4 relative overflow-hidden group transition-colors">
+                <div ref={formRef} className="w-full bg-white dark:bg-[#121214] rounded-2xl p-6 border border-gray-200 dark:border-white/5 shadow-lg mb-4 relative overflow-hidden group transition-colors">
                     <form onSubmit={handleSaveLog} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                         <div className="md:col-span-2 space-y-1.5">
                             <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-500 uppercase tracking-widest pl-1">Date</label>
@@ -1136,7 +1261,7 @@ function FocusFlowContent() {
                                 type="date" 
                                 value={selectedDate} 
                                 onChange={handleDateChange} 
-                                className="w-full h-11 px-3 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm text-gray-900 dark:text-gray-200 transition-all [color-scheme:light] dark:[color-scheme:dark]" 
+                                className="w-full h-11 px-3 bg-gray-50 dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm text-gray-900 dark:text-gray-200 transition-all [color-scheme:light] dark:[color-scheme:dark]" 
                             />
                         </div>
                         <div className="md:col-span-2 space-y-1.5">
@@ -1149,7 +1274,7 @@ function FocusFlowContent() {
                                 value={hoursInput} 
                                 onChange={(e) => setHoursInput(e.target.value)} 
                                 placeholder="0.0" 
-                                className="w-full h-11 px-3 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm text-gray-900 dark:text-gray-200 transition-all placeholder-gray-400 dark:placeholder-gray-600 font-mono" 
+                                className="w-full h-11 px-3 bg-gray-50 dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm text-gray-900 dark:text-gray-200 transition-all placeholder-gray-400 dark:placeholder-gray-600 font-mono" 
                             />
                         </div>
                         <div className="md:col-span-6 space-y-1.5">
@@ -1159,7 +1284,7 @@ function FocusFlowContent() {
                                 value={notesInput} 
                                 onChange={(e) => setNotesInput(e.target.value)} 
                                 placeholder="What did you work on?" 
-                                className="w-full h-11 px-3 bg-gray-50 dark:bg-[#2c2c2e] border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm text-gray-900 dark:text-gray-200 transition-all placeholder-gray-400 dark:placeholder-gray-600" 
+                                className="w-full h-11 px-3 bg-gray-50 dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm text-gray-900 dark:text-gray-200 transition-all placeholder-gray-400 dark:placeholder-gray-600" 
                             />
                         </div>
                         <div className="md:col-span-2 flex gap-2 h-11">
@@ -1190,21 +1315,21 @@ function FocusFlowContent() {
                     <div className="flex flex-col lg:flex-row justify-between items-center mb-4 gap-4">
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white">Log History</h3>
                         <div className="flex gap-2">
-                             <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-lg">
-                                <button onClick={() => setHistoryScope('project')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyScope === 'project' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Project</button>
-                                <button onClick={() => setHistoryScope('global')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyScope === 'global' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Global</button>
+                             <div className="flex bg-gray-200 dark:bg-[#1c1c1e] p-1 rounded-lg">
+                                <button onClick={() => setHistoryScope('project')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyScope === 'project' ? 'bg-white dark:bg-[#2c2c2e] shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Project</button>
+                                <button onClick={() => setHistoryScope('global')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyScope === 'global' ? 'bg-white dark:bg-[#2c2c2e] shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Global</button>
                              </div>
-                             <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-lg">
-                                <button onClick={() => setHistoryTypeFilter('all')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'all' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>All</button>
-                                <button onClick={() => setHistoryTypeFilter('study')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'study' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Study</button>
+                             <div className="flex bg-gray-200 dark:bg-[#1c1c1e] p-1 rounded-lg">
+                                <button onClick={() => setHistoryTypeFilter('all')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'all' ? 'bg-white dark:bg-[#2c2c2e] shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>All</button>
+                                <button onClick={() => setHistoryTypeFilter('study')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'study' ? 'bg-white dark:bg-[#2c2c2e] shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Study</button>
                                 {historyScope === 'global' && (
-                                    <button onClick={() => setHistoryTypeFilter('economy')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'economy' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Economy</button>
+                                    <button onClick={() => setHistoryTypeFilter('economy')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${historyTypeFilter === 'economy' ? 'bg-white dark:bg-[#2c2c2e] shadow text-blue-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>Economy</button>
                                 )}
                              </div>
                              <select 
                                 value={historyFilter} 
                                 onChange={(e) => setHistoryFilter(e.target.value as any)}
-                                className="bg-gray-200 dark:bg-gray-800 border-none text-xs font-bold rounded-lg px-3 py-1 text-gray-700 dark:text-gray-300 focus:ring-0 outline-none"
+                                className="bg-gray-200 dark:bg-[#1c1c1e] border-none text-xs font-bold rounded-lg px-3 py-1 text-gray-700 dark:text-gray-300 focus:ring-0 outline-none"
                              >
                                  <option value="7days">7 Days</option>
                                  <option value="30days">30 Days</option>
@@ -1285,12 +1410,13 @@ function FocusFlowContent() {
               <GamificationPanel 
                   activeProject={activeProject || null}
                   userState={{
-                      globalBalance: currentGems,
                       totalFocusTime: globalTotalHours
                   }}
                   isCyberpunk={appTheme === 'cyberpunk'}
                   projects={projects}
                   onSelectProject={setCurrentProjectId}
+                  freezeDates={freezeDates}
+                  onRepairStreak={handleRepairStreak}
               />
             )}
 
@@ -1353,6 +1479,8 @@ export default function App() {
     const [currentHash, setCurrentHash] = useState(window.location.hash);
 
     useEffect(() => {
+        validateEconomy();
+
         const handleHashChange = () => setCurrentHash(window.location.hash);
         window.addEventListener('hashchange', handleHashChange);
         return () => window.removeEventListener('hashchange', handleHashChange);
@@ -1366,7 +1494,7 @@ export default function App() {
     if (currentHash === '#minicapture') {
         return (
             <AppProvider>
-                <MiniCaptureWindow />
+                <AnimatedMiniCapture />
             </AppProvider>
         );
     }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CountdownItem, CountdownType, CountdownGroup, Project } from '../types';
+import { CountdownItem, CountdownType, CountdownGroup, Project, GoogleEvent } from '../types';
 import * as storage from '../services/storageService';
 import { useCountdowns, useProjects } from '../AppContext';
 import { useTheme } from '../AppContext';
@@ -228,22 +228,30 @@ export const CountdownPanel: React.FC = () => {
             
             const data = await res.json();
             let count = 0;
+            let skipped = 0;
             if (data.items) {
-                for (const evt of data.items) {
+                for (const evt of (data.items as GoogleEvent[])) {
                     if (evt.start?.date) {
-                        const item = {
-                            id: Date.now().toString() + Math.random().toString().slice(2,6),
-                            title: evt.summary,
-                            date: evt.start.date,
-                            type: 'countdown', // Default
-                            color: 'blue',
-                            groupId: 'general'
-                        };
-                        count++;
-                        await saveCountdown(item as any);
+                        // Check for duplicates
+                        const exists = countdowns.some(c => c.title === evt.summary && c.date === evt.start.date);
+                        
+                        if (!exists) {
+                            const item = {
+                                id: Date.now().toString() + Math.random().toString().slice(2,6),
+                                title: evt.summary,
+                                date: evt.start.date,
+                                type: 'countdown', // Default
+                                color: 'blue',
+                                groupId: 'general'
+                            };
+                            count++;
+                            await saveCountdown(item as any);
+                        } else {
+                            skipped++;
+                        }
                     }
                 }
-                alert(`Imported ${count} events.`);
+                alert(`Sync Complete: Imported ${count} new events. Skipped ${skipped} duplicates.`);
             }
         } catch (e) {
             console.error(e);
@@ -355,7 +363,7 @@ export const CountdownPanel: React.FC = () => {
     });
 
     return (
-        <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50/50 dark:bg-gray-900 transition-colors duration-300 relative">
+        <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 relative ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50 dark:bg-[#09090b] text-gray-900 dark:text-white'}`}>
             <div className="p-8 h-full overflow-y-auto custom-scrollbar">
                 <div className="max-w-6xl mx-auto space-y-6">
                     
@@ -381,6 +389,18 @@ export const CountdownPanel: React.FC = () => {
 
                             {/* Actions Buttons (Resized & Consistent) */}
                             <div className="flex items-center gap-3 z-20">
+                                {/* Google Sync Button */}
+                                {googleClientId && (
+                                    <button 
+                                        onClick={triggerGoogleSync}
+                                        disabled={isSyncingGoogle}
+                                        className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm h-9 ${isCyberpunk ? 'bg-[#4285F4]/10 text-[#4285F4] border border-[#4285F4]/30 hover:bg-[#4285F4]/20' : 'bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-100 dark:hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20'}`}
+                                    >
+                                        {isSyncingGoogle ? <div className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full"></div> : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>}
+                                        Sync Now
+                                    </button>
+                                )}
+
                                 {/* Import Button */}
                                 <div className="relative" ref={importMenuRef}>
                                     <button 
@@ -396,7 +416,7 @@ export const CountdownPanel: React.FC = () => {
                                                 From CSV File
                                             </button>
                                             <button onClick={triggerGoogleSync} className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors flex items-center justify-between">
-                                                <span>From Google Calendar</span>
+                                                <span>Sync Google Calendar</span>
                                                 {isSyncingGoogle && <div className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full ml-2"></div>}
                                             </button>
                                         </div>

@@ -1,16 +1,25 @@
 import React, { useMemo, useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import { StudyLog, Transaction, ShopItem, Project } from '../types';
-import { getUnlockedAchievements, RANKS, getDailyQuests, getAchievementReward, PROJECT_TROPHIES } from '../services/gamificationService';
+import { StudyLog, Transaction, ShopItem, Project, SessionRecord } from '../types';
+import { getUnlockedAchievements, getAchievementReward } from '../features/gamification/services/achievementService';
+import { RANKS } from '../features/gamification/data/achievements';
+import { getDailyQuests } from '../features/gamification/services/questService';
+import { PROJECT_TROPHIES } from '../features/gamification/services/projectAchievementsService';
 import * as storage from '../services/storageService';
 import { playSpinTick, playWin, playTone } from '../services/audioService';
 import { useTheme, useLogs, useProjects } from '../AppContext';
+import { useEconomy } from '../features/gamification/hooks/useEconomy';
+import { GemCounter } from './GemCounter';
+import { getLevelFromXP, XP_PER_HOUR, getNextLevelProgress } from '../features/gamification/services/levelingService';
+import { checkSpecialBadges } from '../features/gamification/services/badgeRules';
 
 interface GamificationPanelProps {
   activeProject: Project | null;
-  userState: { globalBalance: number; totalFocusTime: number };
+  userState: { totalFocusTime: number };
   isCyberpunk: boolean;
   projects: Project[];
   onSelectProject: (id: string) => void;
+  freezeDates: string[];
+  onRepairStreak: (date: string) => void;
 }
 
 interface Particle {
@@ -54,6 +63,7 @@ const STATIC_SHOP_ITEMS: ShopItem[] = [
     { id: 'repair_combo', name: 'Repair Combo', icon: '🔧', cost: 60, desc: 'Repair a streak gap. (6h Work)', type: 'consumable', category: 'Micro' },
     { id: 'screen_free', name: 'Screen-Free Evening', icon: '🌙', cost: 60, desc: '6 hours of work buys a night off.', type: 'consumable', category: 'Micro' },
     { id: 'freeze', name: 'Streak Freeze', icon: '🛡️', cost: 100, desc: 'Protect momentum.', type: 'consumable', category: 'Minor' },
+    { id: 'streak_repair', name: 'Streak Repair', icon: '🩹', cost: 300, desc: 'Retroactively freeze a missed day.', type: 'consumable', category: 'Moderate' },
     { id: 'temu', name: 'Temu Order', icon: '📦', cost: 100, desc: 'Gadgets. Requires 10 hours work.', type: 'consumable', category: 'Minor' },
     { id: 'chiro', name: 'Chiropractor', icon: '🦴', cost: 150, desc: 'Back health. 15 hours work.', type: 'consumable', category: 'Minor' },
     { id: 'dessert', name: 'Cheat Dessert', icon: '🍰', cost: 150, desc: 'Guilt-free reward. (15h Work)', type: 'consumable', category: 'Minor' },
@@ -296,7 +306,8 @@ const ShopGrid: React.FC<{
     isCyberpunk: boolean;
     onAddCustom?: () => void;
     onReorder: (ids: string[]) => void;
-}> = ({ inventory, items, currentGems, handleBuy, handleDeleteCustom, isCyberpunk, onAddCustom, onReorder }) => {
+    shakeItemId?: string | null;
+}> = ({ inventory, items, currentGems, handleBuy, handleDeleteCustom, isCyberpunk, onAddCustom, onReorder, shakeItemId }) => {
     const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
 
     const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -369,7 +380,7 @@ const ShopGrid: React.FC<{
                         </div>
                         <p className={`text-xs leading-relaxed ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-slate-400'}`}>{item.desc}</p>
                     </div>
-                    <button onClick={(e) => handleBuy(item, e)} disabled={isExpired || currentGems < item.cost || (item.type === 'unlock' && inventory[item.id])} className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${item.type === 'unlock' && inventory[item.id] ? (isCyberpunk ? 'bg-[#00ff00]/20 text-[#00ff00] cursor-default' : 'bg-green-100 dark:bg-green-600/20 text-green-600 dark:text-green-500 cursor-default') : (isExpired ? (isCyberpunk ? 'bg-[#0a0a0a] text-red-500/50 border border-red-900/30 cursor-not-allowed' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed') : (currentGems >= item.cost ? (isCyberpunk ? 'bg-[#00f0ff] text-black hover:bg-[#00f0ff]/80 shadow-[0_0_10px_rgba(0,240,255,0.4)]' : 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/20') : (isCyberpunk ? 'bg-[#0a0a0a] text-[#00f0ff]/30 cursor-not-allowed border border-[#00f0ff]/10' : 'bg-gray-200 dark:bg-slate-800 text-gray-400 dark:text-slate-600 cursor-not-allowed')))}`}>
+                    <button onClick={(e) => handleBuy(item, e)} disabled={isExpired || (item.type === 'unlock' && inventory[item.id])} className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${shakeItemId === item.id ? 'animate-shake bg-red-500 !text-white !border-red-600' : ''} ${item.type === 'unlock' && inventory[item.id] ? (isCyberpunk ? 'bg-[#00ff00]/20 text-[#00ff00] cursor-default' : 'bg-green-100 dark:bg-green-600/20 text-green-600 dark:text-green-500 cursor-default') : (isExpired ? (isCyberpunk ? 'bg-[#0a0a0a] text-red-500/50 border border-red-900/30 cursor-not-allowed' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed') : (currentGems >= item.cost ? (isCyberpunk ? 'bg-[#00f0ff] text-black hover:bg-[#00f0ff]/80 shadow-[0_0_10px_rgba(0,240,255,0.4)]' : 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/20') : (isCyberpunk ? 'bg-[#0a0a0a] text-[#00f0ff]/30 border border-[#00f0ff]/10 hover:bg-[#00f0ff]/5' : 'bg-gray-200 dark:bg-slate-800 text-gray-400 dark:text-slate-600 hover:bg-gray-300 dark:hover:bg-slate-700')))}`}>
                         {item.type === 'unlock' && inventory[item.id] ? 'Purchased' : isExpired ? 'Expired' : currentGems >= item.cost ? 'Purchase' : `Need ${item.cost - currentGems} 💎`}
                     </button>
                 </div>
@@ -609,21 +620,28 @@ const TrophyRoom: React.FC<{
     </div>
 );
 
-const WeeklyPunchCard: React.FC<{ logs: StudyLog[], isCyberpunk: boolean }> = ({ logs, isCyberpunk }) => {
+const WeeklyPunchCard: React.FC<{ logs: StudyLog[], freezeDates: string[], isCyberpunk: boolean }> = ({ logs, freezeDates, isCyberpunk }) => {
     const days = Array.from({ length: 7 }, (_, i) => {
         const d = new Date();
         d.setDate(d.getDate() - (6 - i));
-        const dateStr = d.toISOString().split('T')[0];
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
         const hasLog = logs.some(l => l.date === dateStr && l.hours > 0);
-        return { date: d, hasLog, dayName: d.toLocaleDateString('en-US', { weekday: 'narrow' }) };
+        const isFrozen = freezeDates.includes(dateStr);
+        return { date: d, hasLog, isFrozen, dayName: d.toLocaleDateString('en-US', { weekday: 'narrow' }) };
     });
 
     return (
         <div className={`flex justify-between items-center p-4 rounded-2xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'}`}>
             {days.map((day, i) => (
                 <div key={i} className="flex flex-col items-center gap-2">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${day.hasLog ? (isCyberpunk ? 'bg-[#00f0ff] text-black shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'bg-green-500 text-white') : (isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff]/30' : 'bg-gray-100 dark:bg-slate-700 text-gray-400')}`}>
-                        {day.hasLog ? '✓' : day.dayName}
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                        day.hasLog 
+                            ? (isCyberpunk ? 'bg-[#00f0ff] text-black shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'bg-green-500 text-white') 
+                            : day.isFrozen
+                                ? (isCyberpunk ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50' : 'bg-cyan-100 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400')
+                                : (isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff]/30' : 'bg-gray-100 dark:bg-slate-700 text-gray-400')
+                    }`}>
+                        {day.hasLog ? '✓' : day.isFrozen ? '🧊' : day.dayName}
                     </div>
                 </div>
             ))}
@@ -631,10 +649,31 @@ const WeeklyPunchCard: React.FC<{ logs: StudyLog[], isCyberpunk: boolean }> = ({
     );
 };
 
-export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProject, userState, isCyberpunk, projects, onSelectProject }) => {
+const LevelUpModal: React.FC<{ isOpen: boolean; onClose: () => void; level: number; isCyberpunk: boolean }> = ({ isOpen, onClose, level, isCyberpunk }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+            <div className={`w-full max-w-sm rounded-3xl border shadow-2xl p-8 relative overflow-hidden flex flex-col items-center text-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/50 shadow-[0_0_50px_rgba(0,240,255,0.3)]' : 'bg-[#1c1c1e] border-yellow-500 shadow-[0_0_50px_rgba(234,179,8,0.3)]'}`}>
+                <div className={`absolute top-0 left-0 w-full h-32 bg-gradient-to-b to-transparent pointer-events-none ${isCyberpunk ? 'from-[#00f0ff]/20' : 'from-yellow-500/20'}`}></div>
+                <div className="text-6xl mb-4 animate-bounce">🆙</div>
+                <h3 className={`text-4xl font-black mb-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-yellow-400'}`}>LEVEL UP!</h3>
+                <p className={`text-xl font-bold mb-6 ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-white'}`}>You reached Level {level}</p>
+                <button onClick={onClose} className={`px-8 py-3 font-bold rounded-xl shadow-lg transition-transform hover:scale-105 ${isCyberpunk ? 'bg-[#00f0ff] text-black' : 'bg-yellow-500 text-black'}`}>
+                    AWESOME!
+                </button>
+            </div>
+        </div>
+    );
+};
+
+export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProject, userState, isCyberpunk, projects, onSelectProject, freezeDates, onRepairStreak }) => {
   const { appTheme } = useTheme();
   const { logs: allLogs, transactions, addTransaction } = useLogs();
   const { updateProjects } = useProjects();
+  const { currentGems, spendGems, addBonus } = useEconomy();
+  const [shakeItemId, setShakeItemId] = useState<string | null>(null);
+  
+  const levelProgress = useMemo(() => getNextLevelProgress(userState.totalFocusTime * XP_PER_HOUR), [userState.totalFocusTime]);
   
   const totalHours = userState.totalFocusTime;
   if (activeProject && !activeProject.streak) {
@@ -643,7 +682,13 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
   const streak = activeProject?.streak ? activeProject.streak.current : 0;
 
   const achievements = useMemo(() => getUnlockedAchievements(allLogs, totalHours, streak), [allLogs, totalHours, streak]);
-  const unlockedCount = achievements.filter(a => a.isUnlocked).length;
+  
+  const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  useEffect(() => {
+      storage.getSessions().then(setSessions);
+  }, []);
+  const specialBadges = useMemo(() => checkSpecialBadges(sessions, streak), [sessions, streak]);
+  const unlockedCount = achievements.filter(a => a.isUnlocked).length + specialBadges.filter(a => a.isUnlocked).length;
 
   const [isEconomyInfoOpen, setIsEconomyInfoOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -651,6 +696,31 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
   const [isCreateItemModalOpen, setIsCreateItemModalOpen] = useState(false);
   const [customShopItems, setCustomShopItems] = useState<ShopItem[]>([]);
   const [shopFilter, setShopFilter] = useState<'all' | 'custom'>('all');
+  const [isLevelUpModalOpen, setIsLevelUpModalOpen] = useState(false);
+
+  // Level Up Check
+  useEffect(() => {
+      const currentLevel = levelProgress.currentLevel;
+      const storedLevelStr = localStorage.getItem('focusflow_last_known_level');
+      
+      if (storedLevelStr) {
+          const storedLevel = parseInt(storedLevelStr);
+          if (currentLevel > storedLevel) {
+              setIsLevelUpModalOpen(true);
+              const savedVol = localStorage.getItem('focusflow_timer_volume');
+              const vol = savedVol ? parseFloat(savedVol) : 0.5;
+              playWin(vol);
+              setTimeout(() => spawnParticles(window.innerWidth / 2, window.innerHeight / 2, isCyberpunk ? '#00f0ff' : '#fbbf24', 50, 'LEVEL UP!'), 100);
+          }
+      }
+      localStorage.setItem('focusflow_last_known_level', currentLevel.toString());
+  }, [levelProgress.currentLevel]);
+
+  useEffect(() => {
+      storage.getCustomShopItems().then(items => {
+          if (isMounted.current) setCustomShopItems(items || []);
+      });
+  }, []);
 
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [newChallengeTitle, setNewChallengeTitle] = useState('');
@@ -750,18 +820,8 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
       if (!challenge) return;
       
       if (confirm(`Did you complete "${challenge.title}"?`)) {
-          const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
-          const newBonus = currentBonus + challenge.reward;
-          setBonusGems(newBonus);
-          localStorage.setItem('focusflow_bonus_gems', newBonus.toString());
-          
-          addTransaction({
-              id: `challenge-${id}-${Date.now()}`,
-              date: new Date().toISOString(),
-              type: 'EARN',
-              amount: challenge.reward,
-              description: `Challenge: ${challenge.title}`
-          });
+          addBonus(challenge.reward, `Challenge: ${challenge.title}`);
+          window.dispatchEvent(new Event('focusflow-gem-update'));
           
           const savedVol = localStorage.getItem('focusflow_timer_volume');
           const vol = savedVol ? parseFloat(savedVol) : 0.5;
@@ -825,18 +885,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
           localStorage.setItem('focusflow_challenges', JSON.stringify(updatedChallenges));
 
           if (penaltyTotal > 0) {
-              const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
-              const newBonus = currentBonus - penaltyTotal;
-              setBonusGems(newBonus);
-              localStorage.setItem('focusflow_bonus_gems', newBonus.toString());
-
-              addTransaction({
-                  id: `penalty-${Date.now()}`,
-                  date: new Date().toISOString(),
-                  type: 'SPEND',
-                  amount: -penaltyTotal,
-                  description: 'Challenge Expired Penalty'
-              });
+              spendGems(penaltyTotal, 'Challenge Expired Penalty');
               
               const savedVol = localStorage.getItem('focusflow_timer_volume');
               const vol = savedVol ? parseFloat(savedVol) : 0.5;
@@ -943,17 +992,9 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
   }, []);
 
   // --- Inventory & Economy State ---
-  const [spentGems, setSpentGems] = useState(0);
-  const [bonusGems, setBonusGems] = useState(0);
   const [inventory, setInventory] = useState<Record<string, any>>({});
 
   useEffect(() => {
-      const s = parseInt(localStorage.getItem('focusflow_spent_gems') || '0');
-      setSpentGems(isNaN(s) ? 0 : s);
-      
-      const b = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0');
-      setBonusGems(isNaN(b) ? 0 : b);
-      
       try {
           setInventory(JSON.parse(localStorage.getItem('focusflow_inventory') || '{}'));
       } catch { setInventory({}); }
@@ -987,12 +1028,14 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
           return 0;
       };
 
-      return achievements.map(a => ({
+      const standard = achievements.map(a => ({
           ...a,
           rewardConfig: getAchievementReward(a),
           progress: getProgress(a) || 0
       }));
-  }, [achievements, totalHours, streak, allLogs]);
+
+      return [...standard, ...specialBadges];
+  }, [achievements, totalHours, streak, allLogs, specialBadges]);
 
   // 3. Now the useEffect can safely use achievementsWithRewards
   useEffect(() => {
@@ -1017,7 +1060,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
       if (newTx.length > 0) {
           newTx.forEach(t => addTransaction(t));
       }
-  }, [achievementsWithRewards, (transactions || []).length]); // FIX: Dependency updated
+  }, [achievementsWithRewards, transactions]);
 
   const filteredAchievements = useMemo(() => {
       return achievementsWithRewards.filter(badge => {
@@ -1027,23 +1070,13 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
       });
   }, [achievementsWithRewards, badgeFilter]);
 
-  const achievementGems = useMemo(() => 
-      achievementsWithRewards.filter(a => a.isUnlocked).reduce((acc, curr) => acc + curr.rewardConfig.gems, 0)
-  , [achievementsWithRewards]);
-
-  const today = new Date().toISOString().split('T')[0];
-  const todaysLogs = useMemo(() => allLogs.filter(l => l.date === today), [allLogs, today]);
-  const todayHours = useMemo(() => todaysLogs.reduce((acc, curr) => acc + curr.hours, 0), [todaysLogs]);
-  const quests = useMemo(() => getDailyQuests(allLogs), [allLogs]);
-  const questGems = useMemo(() => 
-      quests.filter(q => q.current >= q.target).reduce((acc, curr) => acc + curr.reward, 0)
-  , [quests]);
+  const today = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`;
 
   const streakCalendar = useMemo(() => {
       return Array.from({length: 7}, (_, i) => {
           const d = new Date();
           d.setDate(d.getDate() - (6 - i));
-          const dateStr = d.toISOString().split('T')[0];
+          const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
           const hasLog = allLogs.some(l => l.date === dateStr && l.hours > 0);
           const isToday = dateStr === today;
           return {
@@ -1055,80 +1088,57 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
       });
   }, [allLogs, today]);
 
-  const earningRate = 10;
-  const rawBalance = Math.floor(totalHours * earningRate) + achievementGems + questGems + bonusGems - spentGems;
-  const currentGems = Math.max(0, rawBalance);
-
-  // Debt Forgiveness Effect (Handles rate change 20->10 or log deletion)
-  useEffect(() => {
-      if (isDataLoaded && rawBalance < 0) {
-          const deficit = Math.abs(rawBalance);
-          const newBonus = bonusGems + deficit;
-          setBonusGems(newBonus);
-          localStorage.setItem('focusflow_bonus_gems', newBonus.toString());
-          
-          addTransaction({ 
-              id: `adjustment-${Date.now()}`, 
-              date: new Date().toISOString(), 
-              type: 'WIN', 
-              amount: deficit, 
-              description: `Deficit Forgiveness` 
-          });
-      }
-  }, [isDataLoaded, rawBalance, bonusGems]);
-
   const handleBuy = (item: ShopItem, e?: React.MouseEvent) => {
-      if (currentGems >= item.cost && (!item.expiryDate || new Date(item.expiryDate) >= new Date())) {
+      if (item.expiryDate && new Date(item.expiryDate) < new Date()) return;
+
+      // Attempt to spend gems first (Fail-safe check)
+      const success = spendGems(item.cost, item.id === 'mech_double' ? 'Double or Nothing Bet' : `Purchased ${item.name}`);
+
+      if (!success) {
+          setShakeItemId(item.id);
+          setTimeout(() => setShakeItemId(null), 500);
           const savedVol = localStorage.getItem('focusflow_timer_volume');
           const vol = savedVol ? parseFloat(savedVol) : 0.5;
-
-          if (item.id === 'mech_double') {
-              const win = Math.random() > 0.5;
-              if (win) {
-                  const isCrit = Math.random() > 0.9; // 10% chance for critical win
-                  const winAmount = isCrit ? 250 : 100; // 5x payout on crit, 2x normal
-                  playWin(vol);
-                  setBonusGems(prev => {
-                      const newVal = prev + winAmount;
-                      localStorage.setItem('focusflow_bonus_gems', newVal.toString());
-                      return newVal;
-                  });
-                  alert(isCrit ? `JACKPOT! Double or Nothing CRITICAL WIN! (+${winAmount} Gems)` : "WON Double or Nothing! (+100 Gems)");
-                  addTransaction({ id: `gamble-win-${Date.now()}`, date: new Date().toISOString(), type: 'WIN', amount: winAmount, description: isCrit ? `Won Double or Nothing (CRIT)` : `Won Double or Nothing` });
-              } else {
-                  playTone(200, 0.3, vol, 'sawtooth');
-                  const newSpent = spentGems + item.cost;
-                  setSpentGems(newSpent);
-                  localStorage.setItem('focusflow_spent_gems', newSpent.toString());
-                  alert("Lost 50 Gems...");
-                  addTransaction({ id: `gamble-loss-${Date.now()}`, date: new Date().toISOString(), type: 'SPEND', amount: -item.cost, description: `Lost Double or Nothing` });
-              }
-              return;
-          }
-
-          playTone(600, 0.1, vol, 'sine');
-          setTimeout(() => playTone(400, 0.1, vol, 'sine'), 100);
-
-          if (e) spawnParticles(e.clientX, e.clientY, isCyberpunk ? '#00f0ff' : '#ef4444');
-
-          // Read from storage to ensure we have the latest value before adding
-          const currentSpent = parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0;
-          const newSpent = currentSpent + item.cost;
-          setSpentGems(newSpent);
-          localStorage.setItem('focusflow_spent_gems', newSpent.toString());
-
-          const newInventory = { ...inventory };
-          if (item.id === 'freeze') newInventory.streakFreeze = (newInventory.streakFreeze || 0) + 1;
-          else if (item.id === 'vacation') newInventory.streakFreeze = (newInventory.streakFreeze || 0) + 7;
-          else if (item.id === 'dessert') newInventory.cheatDessert = (newInventory.cheatDessert || 0) + 1;
-          else if (item.type === 'unlock') newInventory[item.id] = true;
-          else newInventory[item.id] = (newInventory[item.id] || 0) + 1;
-          
-          setInventory(newInventory);
-          localStorage.setItem('focusflow_inventory', JSON.stringify(newInventory));
-
-          addTransaction({ id: `buy-${item.id}-${Date.now()}`, date: new Date().toISOString(), type: 'SPEND', amount: -item.cost, description: `Purchased ${item.name}` });
+          playTone(150, 0.1, vol, 'sawtooth');
+          return;
       }
+
+      const savedVol = localStorage.getItem('focusflow_timer_volume');
+      const vol = savedVol ? parseFloat(savedVol) : 0.5;
+
+      if (item.id === 'mech_double') {
+          const win = Math.random() > 0.5;
+          if (win) {
+              const isCrit = Math.random() > 0.9; // 10% chance for critical win
+              const winAmount = isCrit ? 250 : 100; // 5x payout on crit, 2x normal
+              playWin(vol);
+              addBonus(winAmount, isCrit ? `Won Double or Nothing (CRIT)` : `Won Double or Nothing`);
+              alert(isCrit ? `JACKPOT! Double or Nothing CRITICAL WIN! (+${winAmount} Gems)` : "WON Double or Nothing! (+100 Gems)");
+          } else {
+              playTone(200, 0.3, vol, 'sawtooth');
+              // Gems already spent via spendGems check above
+              alert("Lost 50 Gems...");
+          }
+          return;
+      }
+
+      playTone(600, 0.1, vol, 'sine');
+      setTimeout(() => playTone(400, 0.1, vol, 'sine'), 100);
+
+      if (e) spawnParticles(e.clientX, e.clientY, isCyberpunk ? '#00f0ff' : '#ef4444');
+
+      // Note: spendGems already called above
+      // window.dispatchEvent(new Event('focusflow-gem-update')); // Handled by useEconomy
+
+      const newInventory = { ...inventory };
+      if (item.id === 'freeze') newInventory.streakFreeze = (newInventory.streakFreeze || 0) + 1;
+      else if (item.id === 'vacation') newInventory.streakFreeze = (newInventory.streakFreeze || 0) + 7;
+      else if (item.id === 'dessert') newInventory.cheatDessert = (newInventory.cheatDessert || 0) + 1;
+      else if (item.type === 'unlock') newInventory[item.id] = true;
+      else newInventory[item.id] = (newInventory[item.id] || 0) + 1;
+      
+      setInventory(newInventory);
+      localStorage.setItem('focusflow_inventory', JSON.stringify(newInventory));
   };
 
   const handleConsume = (itemId: string, e?: React.MouseEvent) => {
@@ -1143,6 +1153,32 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
       if (newInventory[key] > 0) {
           newInventory[key] = newInventory[key] - 1;
 
+          // Streak Repair Logic
+          if (itemId === 'streak_repair') {
+              const today = new Date();
+              let repairedDate = null;
+              // Check last 30 days for a gap
+              for (let i = 1; i <= 30; i++) {
+                  const d = new Date(today);
+                  d.setDate(d.getDate() - i);
+                  const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                  const hasLog = allLogs.some(l => l.date === dateStr && l.hours > 0);
+                  const isFrozen = freezeDates.includes(dateStr);
+                  if (!hasLog && !isFrozen) {
+                      repairedDate = dateStr;
+                      break;
+                  }
+              }
+
+              if (repairedDate) {
+                  onRepairStreak(repairedDate);
+                  alert(`Repaired streak for ${repairedDate}!`);
+              } else {
+                  alert("No missed days found in the last 30 days to repair.");
+                  return; // Abort consumption
+              }
+          }
+
           // Vault Logic
           if (itemId === 'vault_mystery' || itemId === 'vault_mega') {
               const isMega = itemId === 'vault_mega';
@@ -1154,13 +1190,8 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
                   const base = isMega ? 300 : 80;
                   const amount = Math.floor(base * (0.5 + Math.random() * 2.0)); // Increased variance (0.5x to 2.5x)
                   
-                  setBonusGems(prev => {
-                      const newVal = prev + amount;
-                      localStorage.setItem('focusflow_bonus_gems', newVal.toString());
-                      return newVal;
-                  });
-                  
-                  addTransaction({ id: `vault-${Date.now()}`, date: new Date().toISOString(), type: 'WIN', amount: amount, description: `Loot: ${item?.name}` });
+                  addBonus(amount, `Loot: ${item?.name}`);
+                  window.dispatchEvent(new Event('focusflow-gem-update'));
                   rewardMsg = `You found ${amount} Gems!`;
                   
                   if (e) spawnParticles(e.clientX, e.clientY, '#fbbf24', 20, `+${amount}`);
@@ -1215,24 +1246,19 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
           setInventory(newInventory);
           localStorage.setItem('focusflow_inventory', JSON.stringify(newInventory));
           
-          // Read from storage to ensure we have the latest value before adding
-          const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
-          const newBonus = currentBonus + sellPrice;
-          setBonusGems(newBonus);
-          localStorage.setItem('focusflow_bonus_gems', newBonus.toString());
-
-          addTransaction({ id: `sell-${item.id}-${Date.now()}`, date: new Date().toISOString(), type: 'EARN', amount: sellPrice, description: `Sold ${item.name}` });
+          addBonus(sellPrice, `Sold ${item.name}`);
+          window.dispatchEvent(new Event('focusflow-gem-update'));
       }
   };
 
   const handleCreateItem = async (item: ShopItem) => {
       const updated = await storage.saveCustomShopItem(item);
-      if (isMounted.current) setCustomShopItems(updated);
+      if (isMounted.current) setCustomShopItems(updated || []);
   };
 
   const handleDeleteCustomItem = async (id: string) => {
       const updated = await storage.deleteCustomShopItem(id);
-      if (isMounted.current) setCustomShopItems(updated);
+      if (isMounted.current) setCustomShopItems(updated || []);
   };
 
   const canSpin = streak > 0 && streak % 7 === 0 && lastSpinStreak < streak;
@@ -1287,11 +1313,9 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
           if (current >= amount) {
               current = amount;
               if (winIntervalRef.current) clearInterval(winIntervalRef.current);
-              const currentBonus = parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0;
-              const newBonus = currentBonus + amount;
-              setBonusGems(newBonus);
-              localStorage.setItem('focusflow_bonus_gems', newBonus.toString());
+              addBonus(amount, 'Weekly Jackpot Win');
               
+              window.dispatchEvent(new Event('focusflow-gem-update'));
               setSlotMessage(`You won:  Gems!`);
               setSlotRolling(false);
           } else {
@@ -1306,7 +1330,6 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
           updateProjects(newProjects);
       }
 
-      addTransaction({ id: `spin-${Date.now()}`, date: new Date().toISOString(), type: 'WIN', amount: amount, description: 'Weekly Jackpot Win' });
       setLastSpinStreak(streak);
       localStorage.setItem('focusflow_last_spin_streak', streak.toString());
   };
@@ -1346,9 +1369,20 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
   }, [activeProject]);
 
   return (
-    <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 relative ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-[#0f172a] text-white'}`}>
+    <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 relative ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50 dark:bg-[#09090b] text-gray-900 dark:text-white'}`}>
+      <style>{`
+          @keyframes shake {
+              0%, 100% { transform: translateX(0); }
+              20% { transform: translateX(-4px); }
+              40% { transform: translateX(4px); }
+              60% { transform: translateX(-4px); }
+              80% { transform: translateX(4px); }
+          }
+          .animate-shake {
+              animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+          }
+      `}</style>
       <ParticleSystem ref={particleSystemRef} />
-      <div className={`absolute inset-0 pointer-events-none ${isCyberpunk ? 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#00f0ff]/10 via-[#050505] to-[#050505]' : 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-[#0f172a] to-[#0f172a]'}`}></div>
       
       <div className="p-6 h-full overflow-y-auto custom-scrollbar relative z-10">
         <div className="max-w-7xl mx-auto space-y-8 animate-fade-in-up">
@@ -1379,7 +1413,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
                     <div className={`flex flex-col items-center p-3 rounded-2xl border min-w-[120px] ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-black/40 border-yellow-500/30'}`}>
                         <span className={`text-[10px] font-bold uppercase tracking-widest ${isCyberpunk ? 'text-[#00f0ff]' : 'text-yellow-400'}`}>Bankroll</span>
                         <div className={`text-2xl font-black drop-shadow-[0_0_8px_rgba(250,204,21,0.5)] ${isCyberpunk ? 'text-[#00f0ff] drop-shadow-[0_0_8px_rgba(0,240,255,0.5)]' : 'text-yellow-400'}`}>
-                            {currentGems} <span className="text-sm">💎</span>
+                            <GemCounter value={currentGems} /> <span className="text-sm">💎</span>
                         </div>
                     </div>
                 </div>
@@ -1433,7 +1467,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
                                 </div>
                                 <div className="w-full border-t border-white/10 pt-4">
                                     <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-slate-500'}`}>Weekly Punch Card</p>
-                                    <WeeklyPunchCard logs={projectLogs} isCyberpunk={isCyberpunk} />
+                                    <WeeklyPunchCard logs={projectLogs} freezeDates={freezeDates} isCyberpunk={isCyberpunk} />
                                 </div>
                             </div>
                         </div>
@@ -1451,7 +1485,20 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
                             <div className={`rounded-3xl p-12 text-center border mb-8 ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'}`}>
                                 <div className="text-6xl mb-4">🏦</div>
                                 <h3 className={`text-2xl font-bold mb-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Global Vault</h3>
-                                <p className={`text-lg font-mono mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-yellow-500'}`}>{currentGems} Gems Available</p>
+                                <p className={`text-lg font-mono mb-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-yellow-500'}`}><GemCounter value={currentGems} /> Gems Available</p>
+                                <p className={`text-sm font-bold mb-2 ${isCyberpunk ? 'text-[#00f0ff]/80' : 'text-gray-500'}`}>Level {levelProgress.currentLevel}</p>
+                                <div className="w-full max-w-xs mx-auto mb-6">
+                                    <div className={`h-2 w-full rounded-full overflow-hidden ${isCyberpunk ? 'bg-[#00f0ff]/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                                        <div 
+                                            className={`h-full rounded-full transition-all duration-500 ${isCyberpunk ? 'bg-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'bg-blue-500'}`} 
+                                            style={{ width: `${levelProgress.progress}%` }}
+                                        ></div>
+                                    </div>
+                                    <div className={`flex justify-between text-[10px] mt-1 font-mono ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-400'}`}>
+                                        <span>{Math.floor(levelProgress.progress)}%</span>
+                                        <span>{Math.floor(levelProgress.xpRemaining)} XP to Lvl {levelProgress.nextLevel}</span>
+                                    </div>
+                                </div>
                                 <p className={`max-w-md mx-auto ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-slate-400'}`}>
                                     This vault contains your overall rank and global achievements. Select a project to see project-specific stats.
                                 </p>
@@ -1485,6 +1532,7 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
                     isCyberpunk={isCyberpunk}
                     onAddCustom={() => setIsCreateItemModalOpen(true)}
                     onReorder={handleShopReorder}
+                    shakeItemId={shakeItemId}
                 />
                 </>
                 )}
@@ -1632,6 +1680,13 @@ export const GamificationPanel: React.FC<GamificationPanelProps> = ({ activeProj
           onClose={() => setIsChallengeHistoryOpen(false)} 
           isCyberpunk={isCyberpunk} 
           challenges={challenges} 
+      />
+
+      <LevelUpModal 
+          isOpen={isLevelUpModalOpen} 
+          onClose={() => setIsLevelUpModalOpen(false)} 
+          level={levelProgress.currentLevel} 
+          isCyberpunk={isCyberpunk} 
       />
     </div>
   );

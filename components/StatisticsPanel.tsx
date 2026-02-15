@@ -3,7 +3,8 @@ import { StudyLog, UserGoals, Project, SessionRecord } from '../types';
 import { 
     BarChart, Bar, LineChart, Line, AreaChart, Area, 
     XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis, ComposedChart
+    PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis, ComposedChart,
+    Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis
 } from 'recharts';
 import { getSessions } from '../services/storageService';
 import { useTheme } from '../AppContext';
@@ -197,6 +198,33 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
       }
       return data;
   }, [sessions, scope, projectId, filterRange]);
+
+  // RPG Stats Data (Radar Chart)
+  const rpgStats = useMemo(() => {
+      const stats = {
+          Intelligence: 0, // Blue
+          Willpower: 0,    // Purple
+          Endurance: 0,    // Green
+          Creativity: 0    // Orange
+      };
+
+      targetLogs.forEach(log => {
+          const project = projects.find(p => p.id === log.projectId);
+          if (project) {
+              if (project.theme === 'blue') stats.Intelligence += log.hours;
+              else if (project.theme === 'purple') stats.Willpower += log.hours;
+              else if (project.theme === 'green') stats.Endurance += log.hours;
+              else if (project.theme === 'orange') stats.Creativity += log.hours;
+          }
+      });
+
+      return [
+          { subject: 'Intelligence', value: Math.round(stats.Intelligence), fullMark: 100 },
+          { subject: 'Willpower', value: Math.round(stats.Willpower), fullMark: 100 },
+          { subject: 'Endurance', value: Math.round(stats.Endurance), fullMark: 100 },
+          { subject: 'Creativity', value: Math.round(stats.Creativity), fullMark: 100 }
+      ];
+  }, [targetLogs, projects]);
 
   // Statistics Calculation
   const stats = useMemo(() => {
@@ -441,7 +469,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
   }, [sessions, scope, projectId, filterRange]);
 
   return (
-    <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50/50 dark:bg-gray-900'}`}>
+    <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50 dark:bg-[#09090b] text-gray-900 dark:text-white'}`}>
       <div className="p-8 h-full overflow-y-auto custom-scrollbar">
         <div className="max-w-6xl mx-auto space-y-8 animate-fade-in-up">
             
@@ -732,6 +760,51 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ logs, allLogs,
                         <p className={`text-sm ${isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500'}`}>Project Split is available in Global View</p>
                     </div>
                 )}
+
+                {/* RPG Stats (Radar) */}
+                <div className={`${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'} p-6 rounded-2xl border shadow-sm flex flex-col`}>
+                    <h3 className={`font-bold text-lg mb-6 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Focus Attributes</h3>
+                    <div className="h-64 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <RadarChart cx="50%" cy="50%" outerRadius="70%" data={rpgStats}>
+                                <PolarGrid stroke={isCyberpunk ? "#00f0ff" : "#e5e7eb"} strokeOpacity={0.2} />
+                                <PolarAngleAxis dataKey="subject" tick={{ fill: isCyberpunk ? '#00f0ff' : '#9CA3AF', fontSize: 10, fontWeight: 'bold' }} />
+                                <PolarRadiusAxis angle={30} domain={[0, 'auto']} tick={false} axisLine={false} />
+                                <Radar
+                                    name="Hours"
+                                    dataKey="value"
+                                    stroke={isCyberpunk ? "#00f0ff" : "#8b5cf6"}
+                                    strokeWidth={2}
+                                    fill={isCyberpunk ? "#00f0ff" : "#8b5cf6"}
+                                    fillOpacity={0.4}
+                                />
+                                <Tooltip 
+                                    contentStyle={{borderRadius: '12px', border: isCyberpunk ? '1px solid rgba(0, 240, 255, 0.3)' : 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', backgroundColor: isCyberpunk ? '#000' : '#ffffff', color: isCyberpunk ? '#00f0ff' : '#1f2937'}}
+                                    itemStyle={{ color: isCyberpunk ? '#00f0ff' : '#1f2937' }}
+                                    formatter={(value: number) => [`${value} hrs`, 'Time']}
+                                />
+                            </RadarChart>
+                        </ResponsiveContainer>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2 text-[10px]">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                            <span className={isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}>Intelligence (Blue)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                            <span className={isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}>Willpower (Purple)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className={isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}>Endurance (Green)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                            <span className={isCyberpunk ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}>Creativity (Orange)</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Heatmap Comparison */}

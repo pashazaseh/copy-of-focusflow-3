@@ -40,6 +40,7 @@ declare global {
       onFileChange: (callback: (data: { eventType: string; filename: string; path: string }) => void) => () => void;
       updateGlobalShortcut: (shortcut: string) => Promise<boolean>;
       openQuickCapture: () => void;
+      closeMiniCapture: () => void;
       onTimerUpdate: (callback: (event: any, ...args: any[]) => void) => () => void;
       onTrayAction: (callback: (action: { type: string; duration?: number }) => void) => () => void;
       onSyncTimerState: (callback: (state: any) => void) => () => void;

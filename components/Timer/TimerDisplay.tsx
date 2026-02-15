@@ -180,7 +180,7 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
             </g>
         </svg>
         <div className="z-10 flex flex-col items-center justify-center text-center">
-            <div className={`font-['Gelato_Script',_cursive] font-bold tracking-widest tabular-nums transition-colors ${isGhost ? 'text-5xl' : fontSize} ${
+            <div className={`font-['Orbitron',_sans-serif] font-bold tracking-widest tabular-nums transition-colors ${isGhost ? 'text-5xl' : fontSize} ${
                 isCyberpunk
                     ? 'text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.4)]'
                     : ''
@@ -189,7 +189,7 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
             >
                 {timeString}
             </div>
-            <div className={`font-space-mono text-center text-[10px] sm:text-xs font-bold uppercase tracking-[0.3em] mt-2 transition-colors ${
+            <div className={`font-['Orbitron',_sans-serif] text-center text-[10px] sm:text-xs font-bold uppercase tracking-[0.3em] mt-2 transition-colors ${
                 isActive ? (isCyberpunk ? phaseColorClass() : '') : 'text-gray-400 dark:text-gray-600'
             }`} style={{ color: isActive && !isCyberpunk ? currentColor : undefined }}>
                 {getPhaseLabel()}

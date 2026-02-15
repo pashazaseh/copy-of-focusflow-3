@@ -9,7 +9,7 @@ import { parseNaturalLanguage } from './nlService';
 export const MiniCaptureWindow: React.FC = () => {
     const { appTheme } = useTheme();
     const isCyberpunk = appTheme === 'cyberpunk';
-    const [text, setText] = useState('');
+    const [text, setText] = useState(() => localStorage.getItem('focusflow_scratchpad') || '');
     const { projects } = useProjects();
     const [status, setStatus] = useState('');
     const [isEnhancing, setIsEnhancing] = useState(false);
@@ -56,6 +56,12 @@ export const MiniCaptureWindow: React.FC = () => {
         selectedIndex: number;
         cursorIndex: number;
     }>({ isOpen: false, type: null, query: '', selectedIndex: 0, cursorIndex: -1 });
+
+    const isMounted = useRef(true);
+    useEffect(() => {
+        isMounted.current = true;
+        return () => { isMounted.current = false; };
+    }, []);
 
     useEffect(() => {
         const parseInput = (inputText: string) => {
@@ -105,6 +111,22 @@ export const MiniCaptureWindow: React.FC = () => {
         parseInput(text);
     }, [text, projects]);
 
+    // Save draft to scratchpad
+    useEffect(() => {
+        localStorage.setItem('focusflow_scratchpad', text);
+    }, [text]);
+
+    // Auto-close on blur if not pinned
+    useEffect(() => {
+        const handleBlur = () => {
+            if (!isPinned) {
+                window.electronAPI?.close?.();
+            }
+        };
+        window.addEventListener('blur', handleBlur);
+        return () => window.removeEventListener('blur', handleBlur);
+    }, [isPinned]);
+
     // Sync autocomplete state to ref for global event handler
     useEffect(() => { isAutocompleteOpenRef.current = autocomplete.isOpen; }, [autocomplete.isOpen]);
 
@@ -116,7 +138,7 @@ export const MiniCaptureWindow: React.FC = () => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 if (isAutocompleteOpenRef.current) return; // Let component handle it
-                window.electronAPI?.close();
+                window.electronAPI?.close?.();
             }
         };
         window.addEventListener('keydown', handleKeyDown);
@@ -166,15 +188,20 @@ export const MiniCaptureWindow: React.FC = () => {
     const handleSmartEnhance = async (type: string = 'enhance') => {
         if (!text.trim()) return;
         setShowPrompts(false);
+
+        if (!navigator.onLine) {
+            if (isMounted.current) setStatus('Error: Offline');
+            return;
+        }
         
         let apiKey = localStorage.getItem('gemini_api_key');
         if (!apiKey) {
-            setStatus('Error: Set API Key in Settings');
+            if (isMounted.current) setStatus('Error: Set API Key in Settings');
             return;
         }
 
-        setIsEnhancing(true);
-        setStatus('✨ Enhancing...');
+        if (isMounted.current) setIsEnhancing(true);
+        if (isMounted.current) setStatus('✨ Enhancing...');
 
         let prompt = "";
         switch (type) {
@@ -200,24 +227,28 @@ export const MiniCaptureWindow: React.FC = () => {
             
             const data = await response.json();
 
-            if (!response.ok) {
-                console.error("Gemini API Error:", data);
-                setStatus(`Error: ${data.error?.message || response.statusText}`);
-                return;
-            }
+            if (isMounted.current) {
+                if (!response.ok) {
+                    console.error("Gemini API Error:", data);
+                    setStatus(`Error: ${data.error?.message || response.statusText}`);
+                    return;
+                }
 
-            if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                setText(data.candidates[0].content.parts[0].text.trim());
-                setStatus('✨ Enhanced!');
-            } else {
-                setStatus('Error: No response');
+                if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    setText(data.candidates[0].content.parts[0].text.trim());
+                    setStatus('✨ Enhanced!');
+                } else {
+                    setStatus('Error: No response');
+                }
             }
         } catch (e) {
             console.error(e);
-            setStatus('Error: Network');
+            if (isMounted.current) setStatus('Error: Network');
         } finally {
-            setIsEnhancing(false);
-            setTimeout(() => setStatus(''), 2000);
+            if (isMounted.current) {
+                setIsEnhancing(false);
+                setTimeout(() => { if (isMounted.current) setStatus(''); }, 2000);
+            }
         }
     };
 
@@ -389,7 +420,7 @@ export const MiniCaptureWindow: React.FC = () => {
                 }
 
                 if (!backupPath) {
-                    setStatus('Error: No Sync Folder.');
+                    if (isMounted.current) setStatus('Error: No Sync Folder.');
                     return;
                 }
 
@@ -406,32 +437,36 @@ export const MiniCaptureWindow: React.FC = () => {
                 }
                 const filename = `Voice Note ${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
                 const savePath = subfolder ? `${subfolder}/${filename}` : filename;
-                const result = await window.electronAPI?.saveBinaryFile(backupPath, savePath, uint8Array);
+                const result = await window.electronAPI?.saveBinaryFile?.(backupPath, savePath, uint8Array);
                 
-                if (result?.success) {
-                    insertText(`\n![[${filename}]]`);
-                    setStatus('Audio saved!');
-                } else {
-                    setStatus('Error saving audio.');
+                if (isMounted.current) {
+                    if (result?.success) {
+                        insertText(`\n![[${filename}]]`);
+                        setStatus('Audio saved!');
+                    } else {
+                        setStatus('Error saving audio.');
+                    }
                 }
                 
                 stream.getTracks().forEach(track => track.stop());
             };
 
             mediaRecorder.start();
-            setIsRecording(true);
-            setStatus('Recording...');
+            if (isMounted.current) {
+                setIsRecording(true);
+                setStatus('Recording...');
+            }
         } catch (err) {
             console.error('Error accessing microphone:', err);
-            setStatus('Error: Mic access denied.');
-            setIsRecording(false);
+            if (isMounted.current) setStatus('Error: Mic access denied.');
+            if (isMounted.current) setIsRecording(false);
         }
     };
 
     const handleCapture = async () => {
         if (!text.trim()) return;
         
-        setStatus('Saving...');
+        if (isMounted.current) setStatus('Saving...');
         let backupPath = localStorage.getItem('focusflow_backup_path');
         
         if (!backupPath) {
@@ -441,11 +476,11 @@ export const MiniCaptureWindow: React.FC = () => {
                     localStorage.setItem('focusflow_backup_path', path);
                     backupPath = path;
                 } else {
-                    setStatus('Error: No Sync Folder.');
+                    if (isMounted.current) setStatus('Error: No Sync Folder.');
                     return;
                 }
             } else {
-                setStatus('Error: No Sync Folder.');
+                if (isMounted.current) setStatus('Error: No Sync Folder.');
                 return;
             }
         }
@@ -471,24 +506,34 @@ export const MiniCaptureWindow: React.FC = () => {
                  const dateStr = dateFormat.replace('YYYY', year).replace('MM', month).replace('DD', day);
                  const filename = (dailyFolder ? `${dailyFolder}/${dateStr}` : dateStr) + '.md';
                  const header = dest.header || localStorage.getItem('focusflow_obsidian_header') || '';
-                 result = await window.electronAPI?.updateDailyNote(backupPath, filename, line, header, position);
+                 if (window.electronAPI?.updateDailyNote) {
+                     result = await window.electronAPI.updateDailyNote(backupPath, filename, line, header, position);
+                 } else {
+                     result = { success: false, error: 'Desktop API missing' };
+                 }
             } else if (dest) {
-                 result = await window.electronAPI?.updateDailyNote(backupPath, dest.path, line, dest.header || '', position);
+                 if (window.electronAPI?.updateDailyNote) {
+                     result = await window.electronAPI.updateDailyNote(backupPath, dest.path, line, dest.header || '', position);
+                 } else {
+                     result = { success: false, error: 'Desktop API missing' };
+                 }
             }
 
-            if (result?.success) {
-                setStatus('Saved!');
-                setText('');
-                if (autoClose) {
-                    setTimeout(() => {
-                        window.electronAPI?.close();
-                    }, 500);
+            if (isMounted.current) {
+                if (result?.success) {
+                    setStatus('Saved!');
+                    setText('');
+                    if (autoClose) {
+                        setTimeout(() => {
+                            window.electronAPI?.close?.();
+                        }, 500);
+                    }
+                } else {
+                    setStatus(`Error: ${result?.error || 'Unknown'}`);
                 }
-            } else {
-                setStatus(`Error: ${result?.error}`);
             }
         } catch (err) {
-            setStatus('Failed.');
+            if (isMounted.current) setStatus('Failed.');
         }
     };
 
@@ -526,7 +571,7 @@ export const MiniCaptureWindow: React.FC = () => {
     const togglePin = () => {
         const newState = !isPinned;
         setIsPinned(newState);
-        (window.electronAPI as any)?.setAlwaysOnTop(newState);
+        (window.electronAPI as any)?.setAlwaysOnTop?.(newState);
     };
 
     const handleResizeStart = (e: React.MouseEvent) => {
@@ -541,7 +586,7 @@ export const MiniCaptureWindow: React.FC = () => {
         const handleMouseMove = (e: MouseEvent) => {
             const newWidth = Math.max(300, startWidth + (e.screenX - startX));
             const newHeight = Math.max(200, startHeight + (e.screenY - startY));
-            (window.electronAPI as any)?.resizeWindow(Math.round(newWidth), Math.round(newHeight));
+            (window.electronAPI as any)?.resizeWindow?.(Math.round(newWidth), Math.round(newHeight));
         };
 
         const handleMouseUp = () => {
@@ -556,8 +601,11 @@ export const MiniCaptureWindow: React.FC = () => {
     return (
         <div className={`h-screen w-screen flex flex-col overflow-hidden transition-all duration-300 ${isCyberpunk ? 'bg-black/40 text-[#00f0ff] font-mono border border-[#00f0ff]/30' : 'bg-white/60 dark:bg-[#121212]/60 text-gray-900 dark:text-white border border-gray-200/20 dark:border-white/10'} backdrop-blur-2xl rounded-2xl`}>
             {/* Drag Handle & Header */}
-            <div className="h-12 w-full flex items-center justify-between px-5 bg-transparent shrink-0" style={{ WebkitAppRegion: 'drag' } as any}>
-                <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as any}>
+            <div className="h-12 w-full flex items-center justify-between px-5 bg-transparent shrink-0 relative z-50">
+                {/* Drag Layer */}
+                <div className="absolute inset-0 w-full h-full" style={{ WebkitAppRegion: 'drag' } as any} />
+
+                <div className="flex items-center gap-3 relative z-10" style={{ WebkitAppRegion: 'no-drag' } as any}>
                     <div className={`flex items-center gap-2 px-2 py-1 rounded-lg ${isCyberpunk ? 'bg-[#00f0ff]/10' : 'bg-gray-100/50 dark:bg-white/5'}`}>
                         <div className={`w-1.5 h-1.5 rounded-full ${isCyberpunk ? 'bg-[#00f0ff] shadow-[0_0_10px_#00f0ff]' : 'bg-blue-500'}`}></div>
                         <span className={`text-[10px] font-bold uppercase tracking-widest ${isCyberpunk ? 'text-[#00f0ff]/70' : 'text-gray-500 dark:text-gray-400'}`}>Quick Capture</span>
@@ -579,17 +627,17 @@ export const MiniCaptureWindow: React.FC = () => {
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                <div className="flex items-center gap-2 relative z-10" style={{ WebkitAppRegion: 'no-drag' } as any}>
                     <button 
                         onClick={togglePin} 
-                        className={`w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200/50 dark:hover:bg-white/10 transition-colors ${isPinned ? (isCyberpunk ? 'text-[#00f0ff]' : 'text-blue-500') : (isCyberpunk ? 'text-[#00f0ff]/40' : 'text-gray-400 dark:text-gray-500')}`}
+                        className={`w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200/50 dark:hover:bg-white/10 transition-colors cursor-pointer ${isPinned ? (isCyberpunk ? 'text-[#00f0ff]' : 'text-blue-500') : (isCyberpunk ? 'text-[#00f0ff]/40' : 'text-gray-400 dark:text-gray-500')}`}
                         title={isPinned ? "Unpin" : "Pin on Top"}
                     >
                         <svg className="w-3.5 h-3.5" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
                     </button>
                     <button 
-                        onClick={() => window.electronAPI?.close()} 
-                        className={`w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200/50 dark:hover:bg-white/10 transition-colors ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'text-gray-400 dark:text-gray-500'}`}
+                        onClick={() => window.electronAPI?.close?.()} 
+                        className={`w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200/50 dark:hover:bg-white/10 transition-colors cursor-pointer ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'text-gray-400 dark:text-gray-500'}`}
                     >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
@@ -672,6 +720,14 @@ export const MiniCaptureWindow: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
+                        <button 
+                            onClick={() => setText('')}
+                            disabled={!text}
+                            className={`p-2 rounded-xl transition-all duration-200 ${isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-30'}`}
+                            title="Clear Scratchpad"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
                         <button 
                             onClick={() => {
                                 const newVal = !autoClose;

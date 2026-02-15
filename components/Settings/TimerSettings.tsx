@@ -47,10 +47,20 @@ export const TimerSettingsPanel: React.FC<TimerSettingsProps> = ({ appTheme }) =
         return false;
     });
 
+    const [ghostSnapCorner, setGhostSnapCorner] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('focusflow_ghost_snap_corner') || 'top-right';
+        return 'top-right';
+    });
+
     useEffect(() => {
         localStorage.setItem('focusflow_always_on_top_active', String(alwaysOnTopActive));
         window.dispatchEvent(new Event('focusflow-aot-setting-update'));
     }, [alwaysOnTopActive]);
+
+    useEffect(() => {
+        localStorage.setItem('focusflow_ghost_snap_corner', ghostSnapCorner);
+        (window.electronAPI as any)?.send?.('set-ghost-snap-corner', ghostSnapCorner);
+    }, [ghostSnapCorner]);
 
     useEffect(() => {
         localStorage.setItem('focusflow_minimize_to_tray', String(minimizeToTray));
@@ -241,6 +251,18 @@ export const TimerSettingsPanel: React.FC<TimerSettingsProps> = ({ appTheme }) =
                         <button onClick={() => setAlwaysOnTopActive(!alwaysOnTopActive)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${isCyberpunk ? 'focus:ring-offset-black focus:ring-[#00f0ff]' : 'focus:ring-blue-500'} ${alwaysOnTopActive ? (isCyberpunk ? 'bg-[#00f0ff]' : 'bg-blue-600') : 'bg-gray-200 dark:bg-gray-600'}`}>
                             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${alwaysOnTopActive ? 'translate-x-6' : 'translate-x-1'}`} />
                         </button>
+                    </SettingRow>
+                    <SettingRow label="Ghost Window Corner">
+                        <select 
+                            value={ghostSnapCorner} 
+                            onChange={(e) => setGhostSnapCorner(e.target.value)}
+                            className={`bg-transparent border rounded px-2 py-1 text-xs focus:outline-none ${isCyberpunk ? 'border-[#00f0ff]/50 text-white' : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'}`}
+                        >
+                            <option value="top-right">Top Right</option>
+                            <option value="bottom-right">Bottom Right</option>
+                            <option value="top-left">Top Left</option>
+                            <option value="bottom-left">Bottom Left</option>
+                        </select>
                     </SettingRow>
                 </div>
             </div>

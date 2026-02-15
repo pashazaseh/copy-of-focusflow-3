@@ -85,7 +85,11 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
     const [weekStartDay, setWeekStartDay] = useState<0 | 1>(0); // 0 = Sunday, 1 = Monday
     // Google Integration State
     const [isConnected, setIsConnected] = useState(false);
-    const [googleEvents, setGoogleEvents] = useState<GoogleEvent[]>([]);
+    const [googleEvents, setGoogleEvents] = useState<GoogleEvent[]>(() => {
+        try {
+            return JSON.parse(localStorage.getItem('focusflow_google_events_cache') || '[]');
+        } catch { return []; }
+    });
     const [googleClientId, setGoogleClientId] = useState(() => {
         if (typeof window !== 'undefined') {
             return localStorage.getItem('google_client_id') || '';
@@ -173,8 +177,10 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
             const data = await exchangeGoogleCode(googleClientId, googleClientSecret, code, GOOGLE_REDIRECT_URI);
             if (data.access_token) {
                 localStorage.setItem('google_access_token', data.access_token);
-                setIsConnected(true);
-                setIsConfigOpen(false);
+                if (isMounted.current) {
+                    setIsConnected(true);
+                    setIsConfigOpen(false);
+                }
                 await fetchGoogleEvents(data.access_token, currentDate);
                 alert("Google Calendar Connected!");
             }
@@ -195,6 +201,11 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
     };
 
     const fetchGoogleEvents = useCallback(async (accessToken: string, date: Date) => {
+        if (!navigator.onLine) {
+            console.log("Offline: Using cached Google Events");
+            return;
+        }
+
         try {
             const startOfMonth = new Date(date.getFullYear(), date.getMonth() - 1, 1).toISOString();
             const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 2, 0).toISOString();
@@ -250,6 +261,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
 
             if (isMounted.current) {
                 setGoogleEvents(allEvents);
+                localStorage.setItem('focusflow_google_events_cache', JSON.stringify(allEvents));
             }
         } catch (error: any) {
             console.error("Error fetching Google Calendar events:", error);
@@ -271,7 +283,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
         if (token) {
             setIsRefreshing(true);
             await fetchGoogleEvents(token, currentDate);
-            setTimeout(() => setIsRefreshing(false), 800);
+            setTimeout(() => { if (isMounted.current) setIsRefreshing(false); }, 800);
         }
     };
 
@@ -787,7 +799,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ logs, projects }) 
     };
 
     return (
-        <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50/50 dark:bg-gray-900'}`}>
+        <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50 dark:bg-[#09090b] text-gray-900 dark:text-white'}`}>
              
              {/* Header Redesign */}
              <div className={`flex flex-col md:flex-row justify-between items-center p-6 border-b shadow-sm shrink-0 z-10 relative ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>

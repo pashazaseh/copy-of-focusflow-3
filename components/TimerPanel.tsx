@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as storage from '../services/storageService';
-import { TimerSettings, SessionRecord, Project, MenuBarConfig, Transaction, Task } from '../types';
+import { TimerSettings, SessionRecord, Project, MenuBarConfig, Task } from '../types';
 import { playAlarm, playTone } from '../services/audioService';
 import { useTheme, useProjects } from '../AppContext';
-import { handleSessionComplete } from '../services/gamificationService';
+import { handleSessionComplete } from '../features/gamification/services/projectAchievementsService';
 import { ControlDock } from './Timer/ControlDock';
 import { TimerActionButtons } from './Timer/TimerControls';
 import { TimerDisplay } from './Timer/TimerDisplay';
-import { TimeWheel } from './TimeWheel';
+import { calculateStreaks } from '../services/streakService';
+import { useEconomy } from '../features/gamification/hooks/useEconomy'; // Now using the updated hook
 
 interface TimerPanelProps {
     onSaveSession: (hours: number, note?: string, projectId?: string) => void;
@@ -16,9 +17,8 @@ interface TimerPanelProps {
     menuBarConfig: MenuBarConfig;
     externalStart?: { duration: number; timestamp: number } | null;
     onConsumeExternalStart?: () => void;
-    currentGems: number;
-    addTransaction: (t: Transaction) => void;
     isGhostMode?: boolean;
+    currentStreak: number;
 }
 
 type TimerMode = 'POMO' | 'STOPWATCH';
@@ -37,7 +37,7 @@ const TimerModeTabs: React.FC<TimerModeTabsProps> = ({ mode, onModeSwitch, isCyb
                 <button
                     key={m}
                     onClick={() => onModeSwitch(m)}
-                    className={`flex-1 py-2 px-6 rounded-xl text-xs font-bold transition-all duration-300 ${
+                    className={`flex-1 py-2 px-6 rounded-xl text-xs font-bold font-['Orbitron',_sans-serif] tracking-wider transition-all duration-300 ${
                         mode === m
                             ? (isCyberpunk 
                                 ? 'bg-[#00f0ff]/20 text-[#00f0ff] shadow-[0_0_15px_rgba(0,240,255,0.4)] border border-[#00f0ff]/50 animate-pulse' 
@@ -55,10 +55,11 @@ const TimerModeTabs: React.FC<TimerModeTabsProps> = ({ mode, onModeSwitch, isCyb
 };
 
 export const TimerPanel: React.FC<TimerPanelProps> = ({ 
-    onSaveSession, projectId, projects, menuBarConfig, externalStart, onConsumeExternalStart, currentGems: propGems, addTransaction 
+    onSaveSession, projectId, projects, menuBarConfig, externalStart, onConsumeExternalStart, currentStreak 
 }) => {
   const { appTheme } = useTheme();
   const { updateProjects } = useProjects();
+  const { currentGems, spendGems, addBonus, canAfford } = useEconomy(); // Uses centralized service logic
   
   const [mode, setMode] = useState<TimerMode>('POMO');
   const [phase, setPhase] = useState<TimerPhase>('FOCUS');
@@ -130,7 +131,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
   useEffect(() => {
       if (alwaysOnTopActive) {
           setIsPinned(isActive);
-          (window.electronAPI as any)?.setAlwaysOnTop(isActive);
+          (window.electronAPI as any)?.setAlwaysOnTop?.(isActive);
       }
   }, [isActive, alwaysOnTopActive]);
 
@@ -146,8 +147,6 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
         sessionLabel, selectedProjectId, selectedTaskId, settings, pomosCompleted, wager, isWagerActive, initialTime, phase, mode, tasks
   });
     stateRef.current = { sessionLabel, selectedProjectId, selectedTaskId, settings, pomosCompleted, wager, isWagerActive, initialTime, phase, mode, tasks };
-
-  const currentGems = propGems;
 
   const currentProjectName = selectedProjectId === 'all' ? 'All Projects' : projects.find(p => p.id === selectedProjectId)?.name;
   const currentTaskTitle = tasks.find(t => t.id === selectedTaskId)?.title;
@@ -203,11 +202,21 @@ useEffect(() => {
                         setInitialTime(parseInt(savedInitial, 10));
                       }
 
+                      // Restore Wager
+                      const savedWager = localStorage.getItem('focusflow_timer_wager');
+                      if (savedWager) {
+                          const w = parseInt(savedWager, 10);
+                          if (!isNaN(w) && w > 0) {
+                              setWager(w);
+                              setIsWagerActive(true);
+                          }
+                      }
+
                       setIsActive(true);
                       setTimeLeft(Math.ceil((end - Date.now()) / 1000));
                       
                       // Broadcast restored state to main process for Ghost Mode
-                      window.electronAPI?.broadcastTimerAction('START_TIMER', {
+                      window.electronAPI?.broadcastTimerAction?.('START_TIMER', {
                           mode: 'POMO',
                           phase: localStorage.getItem('focusflow_timer_phase') || 'FOCUS',
                           timeLeft: Math.ceil((end - Date.now()) / 1000),
@@ -219,6 +228,7 @@ useEffect(() => {
                   } else {
                       localStorage.removeItem('focusflow_timer_end_time');
                       localStorage.removeItem('focusflow_timer_initial_time');
+                      localStorage.removeItem('focusflow_timer_wager');
                   }
               } else if (savedStartTime && !Number.isNaN(Number(savedStartTime)) && savedMode === 'STOPWATCH') {
                   const start = parseInt(savedStartTime, 10);
@@ -362,7 +372,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (isActive) {
-      window.electronAPI?.broadcastTimerAction('UPDATE_LABEL', { sessionLabel });
+      window.electronAPI?.broadcastTimerAction?.('UPDATE_LABEL', { sessionLabel });
     }
   }, [sessionLabel, isActive]);
 
@@ -397,7 +407,7 @@ useEffect(() => {
               localStorage.setItem('focusflow_timer_end_time', newEndTime.toString());
               localStorage.setItem('focusflow_timer_initial_time', newInitialTime.toString());
 
-              window.electronAPI?.broadcastTimerAction('START_TIMER', {
+              window.electronAPI?.broadcastTimerAction?.('START_TIMER', {
                   mode,
                   phase,
                   timeLeft: newTimeLeft,
@@ -405,7 +415,8 @@ useEffect(() => {
                   sessionLabel,
                   selectedProjectId,
                   endTime: newEndTime,
-                  startTime: null
+                  startTime: null,
+                  currentGems
               });
           } else {
               const newTimeLeft = seconds;
@@ -422,7 +433,7 @@ useEffect(() => {
               endTimeRef.current = newEndTime;
               startTimeRef.current = null;
 
-              window.electronAPI?.broadcastTimerAction('START_TIMER', {
+              window.electronAPI?.broadcastTimerAction?.('START_TIMER', {
                   mode: 'POMO',
                   phase: 'FOCUS',
                   timeLeft: newTimeLeft,
@@ -430,25 +441,13 @@ useEffect(() => {
                   sessionLabel: 'Quick Focus Session',
                   selectedProjectId: selectedProjectId || projectId,
                   endTime: newEndTime,
-                  startTime: null
+                  startTime: null,
+                  currentGems
               });
           }
           if (onConsumeExternalStart) onConsumeExternalStart();
       }
-  }, [externalStart, onConsumeExternalStart, isActive, mode, phase, timeLeft, initialTime, sessionLabel, selectedProjectId, projectId]);
-
-  const handleTrayAction = useCallback((action: { type: string; duration?: number }) => {
-      if (action.type === 'TOGGLE_TIMER') {
-          toggleTimer();
-      } else if (action.type === 'SKIP_PHASE') {
-          skipPhase();
-      }
-      // START_FOCUS is handled by App.tsx setting externalStart via pendingQuickTimer
-  }, [isActive, mode, phase, timeLeft, initialTime, sessionLabel, selectedProjectId]);
-
-  useEffect(() => {
-      trayActionHandlerRef.current = handleTrayAction;
-  }, [handleTrayAction]);
+  }, [externalStart, onConsumeExternalStart, isActive, mode, phase, timeLeft, initialTime, sessionLabel, selectedProjectId, projectId, currentGems]);
 
   useEffect(() => {
     // This effect sets up the listener once
@@ -492,6 +491,11 @@ useEffect(() => {
               localStorage.setItem('focusflow_timer_task', selectedTaskId);
               localStorage.setItem('focusflow_timer_label', sessionLabel);
               localStorage.setItem('focusflow_timer_initial_time', initialTime.toString());
+              if (isWagerActive && wager > 0) {
+                  localStorage.setItem('focusflow_timer_wager', wager.toString());
+              } else {
+                  localStorage.removeItem('focusflow_timer_wager');
+              }
           }
       } else {
           if (!startTimeRef.current) {
@@ -536,10 +540,11 @@ useEffect(() => {
             localStorage.removeItem('focusflow_timer_end_time');
             localStorage.removeItem('focusflow_timer_start_time');
             localStorage.removeItem('focusflow_timer_initial_time');
+            localStorage.removeItem('focusflow_timer_wager');
         }
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isActive, mode, phase, selectedProjectId, selectedTaskId, sessionLabel, initialTime, isGhostMode]);
+  }, [isActive, mode, phase, selectedProjectId, selectedTaskId, sessionLabel, initialTime, isGhostMode, wager, isWagerActive]);
 
 const handleTimerComplete = async () => {
       const currentData = stateRef.current;
@@ -555,6 +560,7 @@ const handleTimerComplete = async () => {
 
       localStorage.removeItem('focusflow_timer_end_time');
       localStorage.removeItem('focusflow_timer_initial_time');
+      localStorage.removeItem('focusflow_timer_wager');
       triggerAlarm();
 
       if (Notification.permission === "granted") {
@@ -566,21 +572,29 @@ const handleTimerComplete = async () => {
 
       if (currentData.isWagerActive && currentData.wager > 0) {
           const durationInMinutes = currentData.initialTime / 60;
-          const multiplier = 1 + (durationInMinutes / 120);
+          let multiplier = 1 + (durationInMinutes / 120);
+
+          // Streak Multiplier Logic
+          const logs = await storage.getLogs();
+          const freezeDates = JSON.parse(localStorage.getItem('focusflow_freeze_dates') || '[]');
+          
+          const getLocalDateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          const todayStr = getLocalDateStr(new Date());
+          
+          const activeDates = [...logs.filter(l => l.hours > 0).map(l => l.date), ...freezeDates, todayStr];
+          const { current: streak } = calculateStreaks(activeDates);
+
+          let streakBonusMsg = "";
+          if (streak > 5) {
+              multiplier *= 1.5;
+              streakBonusMsg = " (Streak > 5 Bonus!)";
+          }
+
           const reward = Math.floor(currentData.wager * multiplier);
 
-          const newBonus = (parseInt(localStorage.getItem('focusflow_bonus_gems') || '0') || 0) + reward;
-          localStorage.setItem('focusflow_bonus_gems', newBonus.toString());
-          
+          addBonus(reward, `Focus Wager Won${streakBonusMsg} (${multiplier.toFixed(2)}x)`);
           window.dispatchEvent(new Event('focusflow-gem-update'));
-          
-          addTransaction({
-              id: `wager-win-${Date.now()}`,
-              date: new Date().toISOString(),
-              type: 'WIN',
-              amount: reward,
-              description: `Focus Wager Won (${multiplier.toFixed(2)}x)`
-          });
+
           setIsWagerActive(false);
           setWager(0);
           if (isMounted.current) setWagerWinAmount(reward);
@@ -618,7 +632,7 @@ const handleTimerComplete = async () => {
               if (project) {
                   const durationMinutes = Math.floor(durationSecs / 60);
                   // Calculate new stats
-                  const { updatedProject } = handleSessionComplete(project, currentGems, durationMinutes);
+                  const { updatedProject } = handleSessionComplete(project, durationMinutes);
                   // Save to storage and update global context
                   const updatedList = await storage.saveProject(updatedProject);
                   updateProjects(updatedList);
@@ -671,8 +685,9 @@ const handleTimerComplete = async () => {
         mode: newMode,
         phase: 'FOCUS',
         initialTime: duration,
+        currentGems
       };
-      window.electronAPI?.broadcastTimerAction('RESET_TIMER', payload);
+      window.electronAPI?.broadcastTimerAction?.('RESET_TIMER', payload);
 
       setIsActive(false);
       setMode(newMode);
@@ -742,8 +757,9 @@ const handleTimerComplete = async () => {
         mode,
         phase,
         initialTime: duration,
+        currentGems
       };
-      window.electronAPI?.broadcastTimerAction('RESET_TIMER', payload);
+      window.electronAPI?.broadcastTimerAction?.('RESET_TIMER', payload);
 
       setIsActive(false);
       setTimeLeft(duration);
@@ -754,20 +770,16 @@ const handleTimerComplete = async () => {
 
   const toggleTimer = () => {
     const newIsActive = !isActive;
-    
+
     if (newIsActive) {
       if (wager > 0 && !isWagerActive) {
-          const newSpent = (parseInt(localStorage.getItem('focusflow_spent_gems') || '0') || 0) + wager;
-          localStorage.setItem('focusflow_spent_gems', newSpent.toString());
-          window.dispatchEvent(new Event('focusflow-gem-update'));
-          addTransaction({
-              id: `wager-start-${Date.now()}`,
-              date: new Date().toISOString(),
-              type: 'SPEND',
-              amount: -wager,
-              description: `Focus Wager Placed`
-          });
+        if (spendGems(wager, 'Focus Wager Placed')) {
           setIsWagerActive(true);
+        } else {
+          alert("Not enough gems to place this wager!");
+          setWager(0);
+          return;
+        }
       }
 
       if ((settings as any).autoMinimize) {
@@ -783,26 +795,43 @@ const handleTimerComplete = async () => {
         selectedProjectId,
         endTime: mode === 'POMO' ? Date.now() + timeLeft * 1000 : null,
         startTime: mode === 'STOPWATCH' ? Date.now() - timeLeft * 1000 : null,
+        currentGems
       };
-      window.electronAPI?.broadcastTimerAction('START_TIMER', payload);
+      window.electronAPI?.broadcastTimerAction?.('START_TIMER', payload);
 
     } else {
       const payload = { timeLeft, sessionLabel };
-      window.electronAPI?.broadcastTimerAction('PAUSE_TIMER', payload);
+      window.electronAPI?.broadcastTimerAction?.('PAUSE_TIMER', payload);
     }
-    
+
     setIsActive(newIsActive);
   };
 
   const skipPhase = () => {
     if (mode === 'POMO') {
       setTimeLeft(0);
-      window.electronAPI?.broadcastTimerAction('SKIP_PHASE', {
+      window.electronAPI?.broadcastTimerAction?.('SKIP_PHASE', {
         ...stateRef.current,
         timeLeft: 0,
+        currentGems
       });
     }
   };
+
+  const handleTrayAction = useCallback((action: { type: string; duration?: number }) => {
+      if (action.type === 'TOGGLE_TIMER') {
+          toggleTimer();
+      } else if (action.type === 'SKIP_PHASE') {
+          skipPhase();
+      } else if (action.type === 'RESET_TIMER') {
+          resetTimer();
+      }
+      // START_FOCUS is handled by App.tsx setting externalStart via pendingQuickTimer
+  }, [toggleTimer, skipPhase, resetTimer]);
+
+  useEffect(() => {
+      trayActionHandlerRef.current = handleTrayAction;
+  }, [handleTrayAction]);
 
   const handleToggleGhostMode = () => {
       const state = {
@@ -814,15 +843,21 @@ const handleTimerComplete = async () => {
           sessionLabel,
           selectedProjectId,
           endTime: endTimeRef.current,
-          startTime: startTimeRef.current
+          startTime: startTimeRef.current,
+          currentGems,
+          isRunning: isActive
       };
       (window.electronAPI as any)?.send('ghost-mode-enable', state);
   };
 
+  useEffect(() => {
+      window.electronAPI?.broadcastTimerAction?.('UPDATE_GEMS', { currentGems });
+  }, [currentGems]);
+
   const togglePin = () => {
       const newState = !isPinned;
       setIsPinned(newState);
-      (window.electronAPI as any)?.setAlwaysOnTop(newState);
+      (window.electronAPI as any)?.setAlwaysOnTop?.(newState);
   };
 
   const handleWorkDurationChange = (val: number) => {
@@ -1129,12 +1164,27 @@ const handleTimerComplete = async () => {
   else if (phase === 'SHORT_BREAK' || phase === 'LONG_BREAK') phaseColor = isCyberpunk ? "#10B981" : "#10B981";
 
   const getGhostColor = (current: number, total: number) => {
-      const progress = total > 0 ? Math.max(0, Math.min(1, current / total)) : 0;
-      const hue = Math.floor(progress * 220); // 220 (Blue) -> 0 (Red)
+      const ratio = total > 0 ? Math.max(0, Math.min(1, current / total)) : 0;
+      
+      // Smooth transition: Blue -> Orange -> Red
+      let r, g, b;
+      if (ratio > 0.5) {
+          const t = (ratio - 0.5) * 2;
+          r = Math.round(249 + (59 - 249) * t);
+          g = Math.round(115 + (130 - 115) * t);
+          b = Math.round(22 + (246 - 22) * t);
+      } else {
+          const t = ratio * 2;
+          r = Math.round(239 + (249 - 239) * t);
+          g = Math.round(68 + (115 - 68) * t);
+          b = Math.round(68 + (22 - 68) * t);
+      }
+      
+      const color = `rgb(${r}, ${g}, ${b})`;
       return {
-          hue,
-          primary: `hsl(${hue}, 100%, 60%)`,
-          glow: `hsla(${hue}, 100%, 60%, 0.3)`
+          hue: 0,
+          primary: color,
+          glow: `rgba(${r}, ${g}, ${b}, 0.3)`
       };
   };
 
@@ -1247,7 +1297,7 @@ const handleTimerComplete = async () => {
                 <div className="z-10 text-center relative" style={{ WebkitAppRegion: 'no-drag' } as any}>
                    {/* Time Display */}
                    <div 
-                     className="text-4xl font-mono font-bold tracking-wider drop-shadow-md select-none"
+                     className="text-5xl font-['Orbitron',_sans-serif] font-bold tracking-tighter drop-shadow-md select-none"
                      style={{ color: primary, textShadow: '0 2px 4px rgba(0,0,0,0.9)' }}
                    >
                      {formatTime(timeLeft)}
@@ -1380,7 +1430,16 @@ return (
                             <div className="px-3 py-2 text-sm opacity-50">No active tasks found.</div>
                         ) : (
                             activeTasks.map(t => (
-                                <button key={t.id} onClick={() => { setSelectedTaskId(t.id); setSessionLabel(t.title); setIsTaskSelectorOpen(false); }} className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${selectedTaskId === t.id ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-blue-600') : (isCyberpunk ? 'hover:bg-[#00f0ff]/10' : 'hover:bg-white/5')}`}>
+                                <button key={t.id} onClick={() => {
+                                    setSelectedTaskId(t.id);
+                                    setSessionLabel(t.title);
+                                    if (t.projectId && t.projectId !== selectedProjectId) {
+                                        setSelectedProjectId(t.projectId);
+                                    } else if (!t.projectId && selectedProjectId !== '' && selectedProjectId !== 'all') {
+                                        setSelectedProjectId('');
+                                    }
+                                    setIsTaskSelectorOpen(false);
+                                }} className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${selectedTaskId === t.id ? (isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff]' : 'bg-blue-600') : (isCyberpunk ? 'hover:bg-[#00f0ff]/10' : 'hover:bg-white/5')}`}>
                                     {t.title}
                                 </button>
                             ))
@@ -1476,6 +1535,16 @@ return (
                     isCyberpunk={isCyberpunk}
                 />
              </div>
+
+            {isWagerActive && currentStreak >= 5 && (
+                <div className="absolute bottom-28 md:bottom-32 z-40 flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg animate-fade-in-up pointer-events-none">
+                    <span className="text-lg animate-pulse">🔥</span>
+                    <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider opacity-90 leading-none">Streak Bonus</p>
+                        <p className="text-sm font-black leading-none">1.5x Multiplier Active</p>
+                    </div>
+                </div>
+            )}
 
             <ControlDock 
                 isActive={isActive}

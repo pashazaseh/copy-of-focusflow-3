@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     minimizeWindow: () => ipcRenderer.send('minimize-window'),
     closeWindow: () => ipcRenderer.send('close-window'),
     
+    // Quick Timer
+    startQuickTimer: (minutes) => ipcRenderer.send('quick-timer-set', minutes),
+    cancelQuickTimer: () => ipcRenderer.send('quick-timer-cancel'),
+    
     // 3. Ghost Mode Specifics
     send: (channel, data) => {
         // Allowlist channels for security

@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, powerSaveBlocker, dialog, globalShortcut, shell, TouchBar } = require('electron');
 const { TouchBarLabel, TouchBarButton, TouchBarSpacer } = TouchBar;
+const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -25,9 +26,90 @@ let tbLabel = null;
 let tbPlayPauseButton = null;
 let tbSkipButton = null;
 
+let trackingInterval = null;
+let ghostSnapCorner = 'top-right';
+
+function startActiveWindowTracking() {
+  if (trackingInterval) clearInterval(trackingInterval);
+  
+  trackingInterval = setInterval(() => {
+    if (!ghostWin || ghostWin.isDestroyed()) {
+      stopActiveWindowTracking();
+      return;
+    }
+
+    if (process.platform === 'darwin') {
+      const script = `
+        tell application "System Events"
+            set frontApp to first application process whose frontmost is true
+            set frontAppName to name of frontApp
+            if frontAppName is "FocusFlow" or frontAppName is "Electron" then return "self"
+            tell process frontAppName
+                try
+                    set {x, y} to position of window 1
+                    set {w, h} to size of window 1
+                    return x & "," & y & "," & w & "," & h
+                on error
+                    return "error"
+                end try
+            end tell
+        end tell
+      `;
+      
+      exec(`osascript -e '${script}'`, (error, stdout) => {
+        if (error || !stdout) return;
+        const result = stdout.trim();
+        if (result === 'self' || result === 'error') return;
+        
+        const parts = result.split(',').map(Number);
+        if (parts.length === 4 && !parts.some(isNaN)) {
+            const [ax, ay, aw, ah] = parts;
+            const ghostBounds = ghostWin.getBounds();
+            const padding = 20;
+            
+            let targetX, targetY;
+
+            switch (ghostSnapCorner) {
+                case 'top-left':
+                    targetX = ax + padding;
+                    targetY = ay + padding;
+                    break;
+                case 'bottom-left':
+                    targetX = ax + padding;
+                    targetY = ay + ah - ghostBounds.height - padding;
+                    break;
+                case 'bottom-right':
+                    targetX = ax + aw - ghostBounds.width - padding;
+                    targetY = ay + ah - ghostBounds.height - padding;
+                    break;
+                case 'top-right':
+                default:
+                    targetX = ax + aw - ghostBounds.width - padding;
+                    targetY = ay + padding;
+                    break;
+            }
+            
+            const [cx, cy] = ghostWin.getPosition();
+            if (Math.abs(cx - targetX) > 10 || Math.abs(cy - targetY) > 10) {
+                ghostWin.setPosition(targetX, targetY, true);
+            }
+        }
+      });
+    }
+  }, 1500);
+}
+
+function stopActiveWindowTracking() {
+  if (trackingInterval) {
+    clearInterval(trackingInterval);
+    trackingInterval = null;
+  }
+}
+
 const configFile = 'settings.json';
 
 function getConfigFile() {
+  console.log('User data path:', app.getPath('userData'));
   return path.join(app.getPath('userData'), configFile);
 }
 
@@ -283,9 +365,16 @@ function createMiniCaptureWindow() {
     return;
   }
 
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width } = primaryDisplay.workAreaSize;
+  const x = Math.round((width - 600) / 2);
+  const y = 100;
+
   miniCaptureWin = new BrowserWindow({
     width: 600,
     height: 400,
+    x,
+    y,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -321,8 +410,7 @@ function createMiniCaptureWindow() {
 
 function triggerQuickCapture() {
   if (miniCaptureWin && !miniCaptureWin.isDestroyed() && miniCaptureWin.isVisible()) {
-    miniCaptureWin.hide();
-    if (process.platform === 'darwin') app.hide(); // Hide dock icon on Mac
+    miniCaptureWin.webContents.send('tray-action', { type: 'CLOSE_MINI_CAPTURE' });
   } else {
     createMiniCaptureWindow();
     miniCaptureWin.show();
@@ -370,7 +458,12 @@ function createGhostWindow() {
 
   ghostWin.loadURL(startUrl);
 
-  ghostWin.on('closed', () => (ghostWin = null));
+  ghostWin.on('closed', () => {
+    ghostWin = null;
+    stopActiveWindowTracking();
+  });
+
+  startActiveWindowTracking();
 }
 
 function setupIpcHandlers() {
@@ -536,6 +629,11 @@ function setupIpcHandlers() {
     minimizeToTray = minimize;
   });
 
+  ipcMain.on('set-ghost-snap-corner', (event, corner) => {
+    ghostSnapCorner = corner;
+    saveSetting('ghostSnapCorner', corner);
+  });
+
   ipcMain.on('set-open-at-login', (event, openAtLogin) => {
     app.setLoginItemSettings({ openAtLogin });
   });
@@ -586,7 +684,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.on('open-quick-capture', triggerQuickCapture);
+  ipcMain.handle('open-quick-capture', () => triggerQuickCapture());
 
   ipcMain.handle('select-backup-folder', async () => {
     const targetWindow = BrowserWindow.getFocusedWindow() || win;
@@ -834,12 +932,14 @@ ipcMain.on('ghost-mode-disable', () => {
 
 // Handle Timer Actions from Ghost Mode
 ipcMain.on('timer-action', (event, { action }) => {
-    // Forward this action to your internal timer logic
-    // Assuming you have a 'timerService' or similar logic handling the main window
-    win.webContents.send('timer-action-forward', action);
+    // Map ghost actions to tray actions for unified handling in TimerPanel
+    let type = '';
+    if (action === 'start' || action === 'pause') type = 'TOGGLE_TIMER';
+    else if (action === 'stop') type = 'RESET_TIMER';
     
-    // If you have shared state management in main.js, update it here
-    console.log(`Timer action received: ${action}`);
+    if (type && win && !win.isDestroyed()) {
+        win.webContents.send('tray-action', { type });
+    }
 });
 
   ipcMain.on('broadcast-timer-action', (event, { action, payload }) => {
@@ -1156,14 +1256,14 @@ function showQuickTimer() {
   const localX = Math.round(startX - display.bounds.x);
   const localY = Math.round(startY - display.bounds.y);
     
+  quickWin.show();
+  quickWin.focus();
+
   quickWin.webContents.executeJavaScript(`
     window.dispatchEvent(new CustomEvent('tray-position', { 
         detail: { x: ${localX}, y: ${localY} } 
     }));
   `).catch(() => {});
-
-  quickWin.show();
-  quickWin.focus();
 }
 
 // Local Auth Server for OAuth Callbacks (TickTick, etc.)
@@ -1228,6 +1328,7 @@ app.whenReady().then(() => {
     // Defer non-critical background windows and tray to prioritize main window render
     setTimeout(() => {
         const settings = loadSettings();
+        if (settings.ghostSnapCorner) ghostSnapCorner = settings.ghostSnapCorner;
         const shortcut = settings.globalShortcut || 'CommandOrControl+Shift+C';
 
         try {

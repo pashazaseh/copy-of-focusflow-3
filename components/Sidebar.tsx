@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ViewMode, Project, HeatmapTheme, SidebarConfig, AppTheme, Achievement, StudyLog, UserGoals } from '../types';
-import { getDailyQuests, RANKS } from '../services/gamificationService';
+import { generateDailyQuests, calculateQuestProgress, Quest } from '../features/gamification/services/questService';
 import { useTimerContext, useCountdowns } from '../AppContext';
+import { playWin } from '../services/audioService';
+import { useEconomy } from '../features/gamification/hooks/useEconomy';
+import { useGamificationData } from '../features/gamification/hooks/useGamificationData';
 
 interface SidebarProps {
   currentView: ViewMode;
@@ -23,7 +26,6 @@ interface SidebarProps {
   logs?: StudyLog[];
   goals: UserGoals;
   onSync?: () => void;
-  currentGems: number;
 }
 
 // Configuration structure for navigation items
@@ -163,7 +165,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     currentDailyHours,
     currentMonthlyHours,
     onSync,
-    currentGems
 }) => {
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -183,6 +184,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const { setPendingQuickTimer } = useTimerContext();
   const { countdowns } = useCountdowns();
+  const { currentGems, addBonus } = useEconomy();
+  const { profile } = useGamificationData();
   
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -240,18 +243,123 @@ export const Sidebar: React.FC<SidebarProps> = ({
     goalHistory: []
   };
 
-  const totalHours = useMemo(() => logs.reduce((sum, log) => sum + log.hours, 0), [logs]);
-  const currentRank = useMemo(() => {
-      if (!RANKS) return { title: 'Loading', minHours: 0, color: 'text-gray-500' };
-      return [...RANKS].reverse().find(r => totalHours >= r.minHours) || RANKS[0];
-  }, [totalHours]);
-
   const weeklyProgress = Math.min(100, (currentWeeklyHours / weeklyGoal) * 100);
   const dailyProgress = Math.min(100, (currentDailyHours / (goals?.daily || 4)) * 100);
   const monthlyProgress = Math.min(100, (currentMonthlyHours / (goals?.monthly || 160)) * 100);
 
-  // --- Daily Quests Logic (Mirrored from GamificationPanel) ---
-  const quests = useMemo(() => getDailyQuests(logs), [logs]);
+  // --- Daily Quests Logic ---
+  const [quests, setQuests] = useState<Quest[]>([]);
+  const [questStreak, setQuestStreak] = useState(0);
+  const prevQuestsRef = useRef<Quest[]>([]);
+  const isFirstRun = useRef(true);
+  
+  const getLocalDateStr = () => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  };
+
+  useEffect(() => {
+      const today = getLocalDateStr();
+      const stored = localStorage.getItem('focusflow_daily_quests');
+      let currentQuests: Quest[] = [];
+
+      if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.date === today) {
+              currentQuests = parsed.quests;
+          }
+      }
+
+      if (currentQuests.length === 0) {
+          currentQuests = generateDailyQuests();
+          localStorage.setItem('focusflow_daily_quests', JSON.stringify({ date: today, quests: currentQuests }));
+      }
+
+      // Update progress based on logs
+      const updatedQuests = calculateQuestProgress(currentQuests, logs || []);
+      setQuests(updatedQuests);
+
+      // Check for newly completed quests
+      if (!isFirstRun.current) {
+          updatedQuests.forEach(q => {
+              const prevQ = prevQuestsRef.current.find(pq => pq.id === q.id);
+              if (prevQ) {
+                  const wasCompleted = prevQ.current >= prevQ.target;
+                  const isCompleted = q.current >= q.target;
+                  if (isCompleted && !wasCompleted && !q.isClaimed) {
+                      window.dispatchEvent(new CustomEvent('focusflow-show-toast', {
+                          detail: {
+                              title: 'Quest Completed!',
+                              subtitle: q.title,
+                              icon: '🎯'
+                          }
+                      }));
+                  }
+              }
+          });
+      }
+      prevQuestsRef.current = updatedQuests;
+      isFirstRun.current = false;
+
+      // Initialize Streak State
+      const storedStreak = parseInt(localStorage.getItem('focusflow_quest_streak') || '0');
+      const lastDate = localStorage.getItem('focusflow_last_quest_completion_date');
+      
+      if (lastDate) {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = yesterday.toISOString().split('T')[0];
+          
+          // Streak is valid if completed today or yesterday
+          if (lastDate === today || lastDate === yesterdayStr) {
+              setQuestStreak(storedStreak);
+          } else {
+              setQuestStreak(0);
+          }
+      } else {
+          setQuestStreak(0);
+      }
+  }, [logs]);
+
+  const handleClaimQuest = (questId: string, reward: number, e: React.MouseEvent) => {
+      e.stopPropagation();
+      addBonus(reward, 'Daily Quest Reward');
+      playWin(0.5);
+      const updated = quests.map(q => q.id === questId ? { ...q, isClaimed: true } : q);
+      setQuests(updated);
+      const today = getLocalDateStr();
+      localStorage.setItem('focusflow_daily_quests', JSON.stringify({ date: today, quests: updated }));
+
+      // Quest Streak Logic
+      if (updated.every(q => q.isClaimed)) {
+          const lastDate = localStorage.getItem('focusflow_last_quest_completion_date');
+          
+          // Only process if not already processed for today
+          if (lastDate !== today) {
+              const yesterday = new Date();
+              yesterday.setDate(yesterday.getDate() - 1);
+              const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
+              
+              let newStreak = 1;
+              const currentStored = parseInt(localStorage.getItem('focusflow_quest_streak') || '0');
+              
+              if (lastDate === yesterdayStr) {
+                  newStreak = currentStored + 1;
+              }
+              
+              localStorage.setItem('focusflow_quest_streak', newStreak.toString());
+              localStorage.setItem('focusflow_last_quest_completion_date', today);
+              setQuestStreak(newStreak);
+
+              // 7-Day Streak Reward
+              if (newStreak > 0 && newStreak % 7 === 0) {
+                  addBonus(500, `${newStreak} Day Quest Streak!`);
+                  playWin(0.8);
+                  // Dispatch event to show toast if needed, or rely on addBonus transaction toast
+              }
+          }
+      }
+  };
 
   // Filter projects for dropdown
   const activeProjects = (projects || []).filter(p => !p.isArchived);
@@ -317,7 +425,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const renderGoalWidget = (period: string, current: number, target: number, key: string) => {
       const progress = Math.min(100, (current / target) * 100);
       return (
-          <div key={key} className={`w-full mb-4 rounded-xl p-4 border shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-blue-50 dark:bg-gray-800 border-blue-100 dark:border-gray-700'}`}>
+          <div key={key} className={`w-full mb-4 rounded-xl p-4 border shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-blue-50 dark:bg-[#1c1c1e] border-blue-100 dark:border-white/10'}`}>
               <div className="flex justify-between items-end mb-2">
                   <p className={`text-xs font-semibold ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-blue-600 dark:text-blue-400'}`}>{period} Goal</p>
                   <p className={`text-xs text-right ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/80' : 'text-blue-500 dark:text-blue-400'}`}>{current.toFixed(1)} / {target} hrs</p>
@@ -336,10 +444,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       switch (key) {
           case 'showQuestsWidget':
               const size = safeConfig.questsWidgetSize || 'standard';
-              const completedCount = quests.filter(q => q.current >= q.target).length;
+              const completedCount = quests.filter(q => q.current >= q.target || q.isClaimed).length;
               const totalCount = quests.length;
               const overallProgress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-              const containerClass = `w-full mb-4 rounded-2xl border shadow-sm text-left transition-all group ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff] hover:shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'}`;
+              const containerClass = `w-full mb-4 rounded-2xl border shadow-sm text-left transition-all group ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff] hover:shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'}`;
 
               if (size === 'compact') {
                   return (
@@ -377,9 +485,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 <span className="text-lg">🎯</span>
                                 <p className={`text-xs font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-gray-200'}`}>Daily Quests</p>
                             </div>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'}`}>
-                                {completedCount}/{totalCount}
-                            </span>
+                            <div className="flex items-center gap-2">
+                                {questStreak > 0 && (
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${appTheme === 'cyberpunk' ? 'bg-[#ff00ff]/10 text-[#ff00ff]' : 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400'}`} title="Quest Streak">
+                                        <span>🔥</span> {questStreak}
+                                    </span>
+                                )}
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'}`}>
+                                    {completedCount}/{totalCount}
+                                </span>
+                            </div>
                         </div>
                         <div className="space-y-2">
                             {quests.map(quest => {
@@ -389,8 +504,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         <span className={`text-[10px] font-medium truncate max-w-[140px] ${isCompleted ? (appTheme === 'cyberpunk' ? 'text-[#00f0ff] line-through opacity-70' : 'text-gray-400 line-through') : (appTheme === 'cyberpunk' ? 'text-[#00f0ff]/80' : 'text-gray-600 dark:text-gray-300')}`}>
                                             {quest.title}
                                         </span>
-                                        {isCompleted ? (
+                                        {quest.isClaimed ? (
                                             <span className={appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-green-500'}>✓</span>
+                                        ) : isCompleted ? (
+                                            <button 
+                                                onClick={(e) => handleClaimQuest(quest.id, quest.reward, e)}
+                                                className={`text-[9px] font-bold px-2 py-0.5 rounded animate-pulse ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff] text-black' : 'bg-green-500 text-white'}`}
+                                            >
+                                                Claim
+                                            </button>
                                         ) : (
                                             <span className={`text-[9px] font-mono ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-400'}`}>{quest.current}/{quest.target}</span>
                                         )}
@@ -413,15 +535,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <span className="text-lg">🎯</span>
                             <p className={`text-xs font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-700 dark:text-gray-200'}`}>Daily Quests</p>
                         </div>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'}`}>
-                            {completedCount}/{totalCount}
-                        </span>
+                        <div className="flex items-center gap-2">
+                            {questStreak > 0 && (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${appTheme === 'cyberpunk' ? 'bg-[#ff00ff]/10 text-[#ff00ff]' : 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400'}`} title="Quest Streak">
+                                    <span>🔥</span> {questStreak}
+                                </span>
+                            )}
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'}`}>
+                                {completedCount}/{totalCount}
+                            </span>
+                        </div>
                     </div>
                     
                     <div className="space-y-3">
                         {quests.map(quest => {
-                            const progress = Math.min(100, (quest.current / quest.target) * 100);
-                            const isCompleted = progress >= 100;
+                            const progress = quest.isClaimed ? 100 : Math.min(100, (quest.current / quest.target) * 100);
+                            const isCompleted = quest.current >= quest.target;
                             
                             return (
                                 <div key={quest.id} className="relative" title={`Reward: ${quest.reward} Gems`}>
@@ -429,9 +558,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         <span className={`text-[10px] font-medium truncate max-w-[120px] ${isCompleted ? (appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-green-600 dark:text-green-400') : (appTheme === 'cyberpunk' ? 'text-[#00f0ff]/80' : 'text-gray-600 dark:text-gray-400')}`}>
                                             {quest.title}
                                         </span>
-                                        <span className={`text-[9px] font-mono ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-400'}`}>
-                                            {quest.current}/{quest.target}
-                                        </span>
+                                        {isCompleted && !quest.isClaimed ? (
+                                            <button 
+                                                onClick={(e) => handleClaimQuest(quest.id, quest.reward, e)}
+                                                className={`text-[9px] font-bold px-2 py-0.5 rounded animate-pulse ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff] text-black' : 'bg-green-500 text-white'}`}
+                                            >
+                                                Claim {quest.reward}
+                                            </button>
+                                        ) : (
+                                            <span className={`text-[9px] font-mono ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-400'}`}>{quest.isClaimed ? 'Claimed' : `${quest.current}/${quest.target}`}</span>
+                                        )}
                                     </div>
                                     <div className={`h-1.5 w-full rounded-full overflow-hidden ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10' : 'bg-gray-100 dark:bg-gray-700'}`}>
                                         <div 
@@ -457,7 +593,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               if (!closest) return null;
               const days = Math.ceil(closest.diff / (1000 * 60 * 60 * 24));
               return (
-                  <button key="countdown" onClick={(e) => { e.stopPropagation(); onChangeView(ViewMode.COUNTDOWN); }} className={`w-full mb-4 p-4 rounded-xl border shadow-sm text-left transition-all group ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'}`}>
+                  <button key="countdown" onClick={(e) => { e.stopPropagation(); onChangeView(ViewMode.COUNTDOWN); }} className={`w-full mb-4 p-4 rounded-xl border shadow-sm text-left transition-all group ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10 hover:border-blue-300 dark:hover:border-blue-700'}`}>
                       <div className="flex justify-between items-center mb-1">
                           <span className={`text-xs font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Upcoming</span>
                           <span className={`text-xs font-bold ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-blue-600 dark:text-blue-400'}`}>{days} Days</span>
@@ -467,14 +603,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               );
           case 'showTimerWidget':
               return (
-                  <div key="timer" className={`w-full mb-4 p-4 rounded-xl border shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                  <div key="timer" className={`w-full mb-4 p-4 rounded-xl border shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10'}`}>
                       <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Quick Focus</p>
                       <div className="flex gap-2">{[25, 45, 60].map(min => (<button key={min} onClick={(e) => { e.stopPropagation(); setPendingQuickTimer({ duration: min, timestamp: Date.now() }); onChangeView(ViewMode.TIMER); }} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${appTheme === 'cyberpunk' ? 'bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20 border border-[#00f0ff]/30' : 'bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40'}`}>{min}m</button>))}</div>
                   </div>
               );
           case 'showGemWidget':
               return (
-                  <button key="gems" onClick={() => onChangeView(ViewMode.GAMIFICATION)} className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm text-left transition-all hover:shadow-md ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'}`}>
+                  <button key="gems" onClick={() => onChangeView(ViewMode.GAMIFICATION)} className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm text-left transition-all hover:shadow-md ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30 hover:border-[#00f0ff]' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10 hover:border-blue-300 dark:hover:border-blue-700'}`}>
                       <div className="text-2xl">💎</div>
                       <div className="overflow-hidden">
                           <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Bank</p>
@@ -485,7 +621,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           case 'showLatestBadgeWidget':
               if (!latestBadge) return null;
               return (
-                  <div key="latestBadge" className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                  <div key="latestBadge" className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10'}`}>
                       <div className="text-2xl">{latestBadge.icon}</div>
                       <div className="overflow-hidden">
                           <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Latest Badge</p>
@@ -496,7 +632,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           case 'showStreakWidget':
               if (!activeProject || activeProject.id === 'loading' || !activeProject.streak) return null;
               return (
-                  <div key="streak" className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                  <div key="streak" className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10'}`}>
                       <div className="text-2xl">🔥</div>
                       <div className="overflow-hidden">
                           <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Project Streak</p>
@@ -505,13 +641,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
               );
           case 'showRankWidget':
-              if (!currentRank) return null;
+              if (!profile) return null;
               return (
-                  <div key="rank" className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                  <div key="rank" className={`w-full mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${appTheme === 'cyberpunk' ? 'bg-[#0a0a0a] border-[#00f0ff]/30' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10'}`}>
                       <div className="text-2xl">🏆</div>
                       <div className="overflow-hidden">
                           <p className={`text-[10px] font-bold uppercase tracking-wider ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]/60' : 'text-gray-500 dark:text-gray-400'}`}>Global Rank</p>
-                          <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : currentRank.color || 'text-gray-900 dark:text-white'}`}>{currentRank.title}</p>
+                          <p className={`text-xs font-bold truncate ${appTheme === 'cyberpunk' ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{`Level ${profile.level}`}</p>
                       </div>
                   </div>
               );
@@ -521,7 +657,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const sidebarClass = appTheme === 'cyberpunk'
     ? 'bg-[#020202] border-r border-[#00f0ff]/20 text-[#00f0ff] font-mono'
-    : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700';
+    : 'bg-gray-50 dark:bg-[#09090b] border-gray-200 dark:border-white/5';
 
   return (
     <div className={`${isCollapsed ? 'w-20' : 'w-64'} shrink-0 border-r flex flex-col p-4 transition-all duration-300 relative ${sidebarClass}`}>
@@ -529,7 +665,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Toggle Button */}
       <button 
         onClick={toggleSidebar}
-        className={`absolute -right-3 top-9 w-6 h-6 rounded-full border shadow-sm flex items-center justify-center z-50 transition-colors cursor-pointer ${appTheme === 'cyberpunk' ? 'bg-black border-[#00f0ff] text-[#00f0ff]' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+        className={`absolute -right-3 top-9 w-6 h-6 rounded-full border shadow-sm flex items-center justify-center z-50 transition-colors cursor-pointer ${appTheme === 'cyberpunk' ? 'bg-black border-[#00f0ff] text-[#00f0ff]' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
       >
         <svg className={`w-3 h-3 transition-transform duration-300 ${isCollapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
       </button>
@@ -538,7 +674,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="mb-6 mt-2 relative" ref={menuRef}>
         <button 
             onClick={() => !isCollapsed && setIsProjectMenuOpen(!isProjectMenuOpen)}
-            className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} p-2 rounded-xl hover:bg-gray-200/50 dark:hover:bg-gray-800 transition-colors group`}
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} p-2 rounded-xl hover:bg-gray-200/50 dark:hover:bg-white/5 transition-colors group`}
             title={isCollapsed ? activeProject.name : undefined}
         >
             <div className={`flex items-center ${isCollapsed ? '' : 'space-x-3'} overflow-hidden`}>
@@ -561,7 +697,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Dropdown Menu */}
         {isProjectMenuOpen && !isCollapsed && (
-            <div className="absolute top-full left-0 w-full mt-2 bg-white dark:bg-[#2c2c2e] rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 animate-fade-in-up">
+            <div className="absolute top-full left-0 w-full mt-2 bg-white dark:bg-[#1c1c1e] rounded-xl shadow-xl border border-gray-200 dark:border-white/10 overflow-hidden z-50 animate-fade-in-up">
                 {!isCreating ? (
                     <>
                         <div className="max-h-48 overflow-y-auto custom-scrollbar p-1">
@@ -581,7 +717,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 </button>
                             ))}
                         </div>
-                        <div className="p-1 border-t border-gray-100 dark:border-gray-700 space-y-1">
+                        <div className="p-1 border-t border-gray-100 dark:border-white/5 space-y-1">
                             <button 
                                 onClick={() => setIsCreating(true)}
                                 className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors font-medium"
@@ -608,7 +744,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 placeholder="Project Name"
                                 value={newProjectName}
                                 onChange={(e) => setNewProjectName(e.target.value)}
-                                className="w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                                className="w-full px-3 py-1.5 bg-gray-100 dark:bg-[#2c2c2e] border border-gray-200 dark:border-white/10 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
                             />
                             <div className="flex justify-between items-center">
                                 <span className="text-xs text-gray-500">Theme</span>
@@ -618,7 +754,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             key={t}
                                             type="button"
                                             onClick={() => setNewProjectTheme(t)}
-                                            className={`w-4 h-4 rounded-full border border-gray-200 dark:border-gray-600 ${t === 'green' ? 'bg-green-500' : t === 'blue' ? 'bg-blue-500' : t === 'orange' ? 'bg-orange-500' : 'bg-purple-500'} ${newProjectTheme === t ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`}
+                                            className={`w-4 h-4 rounded-full border border-gray-200 dark:border-white/10 ${t === 'green' ? 'bg-green-500' : t === 'blue' ? 'bg-blue-500' : t === 'orange' ? 'bg-orange-500' : 'bg-purple-500'} ${newProjectTheme === t ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`}
                                         />
                                     ))}
                                 </div>
@@ -627,7 +763,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 <button 
                                     type="button" 
                                     onClick={() => setIsCreating(false)}
-                                    className="flex-1 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                                    className="flex-1 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 rounded-lg"
                                 >
                                     Cancel
                                 </button>
@@ -672,7 +808,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className={`${isCollapsed ? 'justify-center' : 'flex-1 space-x-3'} flex items-center px-3 py-2 rounded-lg transition-all duration-200 group ${
                     appTheme === 'cyberpunk'
                     ? (currentView === ViewMode.SETTINGS ? 'bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30' : 'text-[#00f0ff]/60 hover:bg-[#00f0ff]/5')
-                    : (currentView === ViewMode.SETTINGS ? 'bg-blue-500 text-white shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800')
+                    : (currentView === ViewMode.SETTINGS ? 'bg-blue-600 text-white shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5')
                 }`}
                 title={isCollapsed ? "Settings" : undefined}
             >
@@ -691,7 +827,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     className={`p-2 rounded-lg transition-all duration-200 group ${isCollapsed ? 'w-full flex justify-center' : ''} ${
                         appTheme === 'cyberpunk'
                         ? 'text-[#00f0ff]/60 hover:bg-[#00f0ff]/5 hover:text-[#00f0ff]'
-                        : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-blue-500'
+                        : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-blue-500'
                     }`}
                     title="Sync Now"
                 >
@@ -703,7 +839,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Widget Area */}
       {!isCollapsed && (
-      <div className={`mt-4 px-1 pt-4 border-t ${appTheme === 'cyberpunk' ? 'border-[#00f0ff]/20' : 'border-gray-200 dark:border-gray-700'}`}>
+      <div className={`mt-4 px-1 pt-4 border-t ${appTheme === 'cyberpunk' ? 'border-[#00f0ff]/20' : 'border-gray-200 dark:border-white/5'}`}>
           {safeConfig.widgetOrder.map(key => {
               if (!safeConfig[key as keyof SidebarConfig]) return null;
               return renderWidget(key);

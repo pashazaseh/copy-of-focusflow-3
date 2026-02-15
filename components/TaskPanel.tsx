@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as storage from '../services/storageService';
 import { Task, Project, Subtask } from '../types';
 import { useTheme, useProjects } from '../AppContext';
-import { getTickTickAuthUrl, exchangeCodeForToken, fetchTickTickTasks } from '../services/tickTickService';
-import { calculateDailyTickTickProgress } from '../services/gamificationService';
+import { getTickTickAuthUrl, exchangeCodeForToken, fetchTickTickTasks, syncTickTickTasks, completeTickTickTask, createTickTickTask, calculateDailyTickTickProgress } from '../services/tickTickService';
 import { DailyProgressBar } from './DailyProgressBar';
+import { addToQueue, processQueue } from '../services/syncQueueService';
 
 interface TaskPanelProps {
     projects: Project[];
@@ -42,6 +42,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
     const [draggingSubtask, setDraggingSubtask] = useState<{ taskId: string, index: number } | null>(null);
 
     // Move filtering logic up so it can be used by handlers
+    const [isOnline, setIsOnline] = useState(() => navigator.onLine);
     const filteredTasks = tasks.filter(t => {
         if (filterPriority === 'all') return true;
         return t.priority === filterPriority;
@@ -74,7 +75,20 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
         const loadTasks = () => storage.getTasks().then(setTasks);
         loadTasks();
         window.addEventListener('focusflow-task-update', loadTasks);
-        return () => window.removeEventListener('focusflow-task-update', loadTasks);
+
+        const handleOnline = () => {
+            setIsOnline(true);
+            processQueue();
+        };
+        const handleOffline = () => setIsOnline(false);
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        return () => {
+            window.removeEventListener('focusflow-task-update', loadTasks);
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
     }, []);
 
     useEffect(() => {
@@ -97,6 +111,24 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
             const updated = await storage.saveTask(newTask);
             setTasks(updated);
             setNewTaskTitle('');
+            
+            // Handle TickTick Creation
+            const ttToken = localStorage.getItem('ticktick_access_token');
+            if (ttToken) {
+                if (navigator.onLine) {
+                    createTickTickTask(newTask, ttToken).then(async (ttTask) => {
+                        const current = await storage.getTasks();
+                        const t = current.find(x => x.id === newTask.id);
+                        if (t) {
+                            await storage.saveTask({ ...t, tickTickId: ttTask.id, tickTickProjectId: ttTask.projectId });
+                            window.dispatchEvent(new Event('focusflow-task-update'));
+                        }
+                    }).catch(() => addToQueue('TICKTICK_CREATE', { localTaskId: newTask.id, task: newTask }));
+                } else {
+                    addToQueue('TICKTICK_CREATE', { localTaskId: newTask.id, task: newTask });
+                }
+            }
+            
             window.dispatchEvent(new Event('focusflow-task-update'));
         } catch (error) {
             console.error("Failed to add task:", error);
@@ -107,6 +139,17 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
     const toggleCompletion = async (task: Task) => {
         const updated = await storage.saveTask({ ...task, isCompleted: !task.isCompleted });
         setTasks(updated);
+        
+        // Handle TickTick Sync
+        if (!task.isCompleted && task.tickTickId && task.tickTickProjectId) {
+            if (navigator.onLine) {
+                const token = localStorage.getItem('ticktick_access_token');
+                if (token) completeTickTickTask(task.tickTickId, task.tickTickProjectId, token).catch(console.error);
+            } else {
+                addToQueue('TICKTICK_COMPLETE', { taskId: task.tickTickId, projectId: task.tickTickProjectId });
+            }
+        }
+        
         window.dispatchEvent(new Event('focusflow-task-update'));
     };
 
@@ -129,6 +172,9 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
             const tokenData = await exchangeCodeForToken(ttClientId, ttClientSecret, code, redirectUri);
             if (tokenData.access_token) {
                 localStorage.setItem('ticktick_access_token', tokenData.access_token);
+                if (tokenData.refresh_token) {
+                    localStorage.setItem('ticktick_refresh_token', tokenData.refresh_token);
+                }
                 const importedTasks = await fetchTickTickTasks(tokenData.access_token);
                 
                 // Use efficient batch merge
@@ -173,9 +219,39 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
     }, []);
 
     const handleTickTickSync = async () => {
+        if (!navigator.onLine) {
+            addToQueue('TICKTICK_SYNC');
+            alert("You are offline. Sync queued for when you reconnect.");
+            return;
+        }
+
         if (!ttClientId || !ttClientSecret) {
             setIsTickTickModalOpen(true);
             return;
+        }
+
+        const accessToken = localStorage.getItem('ticktick_access_token');
+        const refreshToken = localStorage.getItem('ticktick_refresh_token');
+
+        if (accessToken) {
+            try {
+                const { tasks: importedTasks, newAccessToken } = await syncTickTickTasks(ttClientId, ttClientSecret, accessToken, refreshToken || '');
+                
+                if (newAccessToken) {
+                    localStorage.setItem('ticktick_access_token', newAccessToken);
+                }
+
+                const { count } = await storage.mergeTasks(importedTasks.map(t => ({
+                    ...t,
+                    projectId: projects[0]?.id || undefined
+                })));
+                
+                setTasks(await storage.getTasks());
+                alert(`Synced ${count} tasks from TickTick Today list.`);
+                return;
+            } catch (e) {
+                console.error("Sync failed, falling back to auth", e);
+            }
         }
 
         // 1. Start OAuth Flow
@@ -194,6 +270,41 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
             setIsTickTickModalOpen(true);
         }
     };
+
+    const silentTickTickSync = useCallback(async () => {
+        if (!navigator.onLine) return;
+        const accessToken = localStorage.getItem('ticktick_access_token');
+        const refreshToken = localStorage.getItem('ticktick_refresh_token');
+        
+        if (!accessToken || !ttClientId || !ttClientSecret) return;
+
+        try {
+            const { tasks: importedTasks, newAccessToken } = await syncTickTickTasks(ttClientId, ttClientSecret, accessToken, refreshToken || '');
+            
+            if (newAccessToken) {
+                localStorage.setItem('ticktick_access_token', newAccessToken);
+            }
+
+            const { count } = await storage.mergeTasks(importedTasks.map(t => ({
+                ...t,
+                projectId: projects[0]?.id || undefined
+            })));
+            
+            if (count > 0) {
+                setTasks(await storage.getTasks());
+            }
+        } catch (e) {
+            console.error("Auto-sync failed", e);
+        }
+    }, [ttClientId, ttClientSecret, projects]);
+
+    useEffect(() => {
+        const autoSyncEnabled = localStorage.getItem('focusflow_ticktick_auto_sync') === 'true';
+        if (autoSyncEnabled) {
+            const interval = setInterval(silentTickTickSync, 15 * 60 * 1000);
+            return () => clearInterval(interval);
+        }
+    }, [silentTickTickSync]);
 
     const saveTickTickConfig = () => {
         localStorage.setItem('ticktick_client_id', ttClientId);
@@ -395,7 +506,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
     const hasTickTickTasks = tasks.some(t => !!t.tickTickId);
 
     return (
-        <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50/50 dark:bg-gray-900'}`}>
+        <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50 dark:bg-[#09090b] text-gray-900 dark:text-white'}`}>
             <div className="p-6 md:p-8 h-full overflow-y-auto custom-scrollbar">
                 <div className="max-w-5xl mx-auto space-y-6 animate-fade-in-up">
                     
@@ -417,7 +528,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                     </button>
                                     {isCustomizationMenuOpen && (
-                                        <div className={`absolute right-0 mt-2 w-56 rounded-xl shadow-lg py-2 z-20 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'}`}>
+                                        <div className={`absolute right-0 mt-2 w-56 rounded-xl shadow-lg py-2 z-20 ${isCyberpunk ? 'bg-black border border-[#00f0ff]/30' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'}`} onClick={(e) => e.stopPropagation()}>
                                             
                                             {/* Sort Options */}
                                             <div className="px-4 py-1 text-[10px] font-bold uppercase tracking-wider opacity-50">Sort By</div>
@@ -486,7 +597,12 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
                                         </div>
                                     )}
                                 </div>
-                                <button onClick={handleTickTickSync} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20'}`}>
+                                <button 
+                                    onClick={handleTickTickSync} 
+                                    disabled={!isOnline}
+                                    title={!isOnline ? "Sync requires an internet connection" : "Sync with TickTick"}
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isCyberpunk ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 hover:bg-[#00f0ff]/30 disabled:opacity-50 disabled:cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed'}`}
+                                >
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                                     Sync TickTick
                                 </button>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, lazy } from 'react';
+import React, { useState, useEffect, useMemo, lazy, useRef } from 'react';
 import { StoredNavConfig } from './Sidebar';
 import { MenuBarConfig, Project, HeatmapTheme, SidebarConfig, SettingsTab, AppTheme, Transaction } from '../types';
 import { useCountdowns } from '../AppContext';
@@ -53,6 +53,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const { countdowns } = useCountdowns();
     const isCyberpunk = appTheme === 'cyberpunk';
 
+    const isMounted = useRef(true);
+    useEffect(() => {
+        isMounted.current = true;
+        return () => { isMounted.current = false; };
+    }, []);
+
     const [lastBackup, setLastBackup] = useState<string | null>(() => {
         if (typeof window !== 'undefined') {
             const ts = localStorage.getItem('focusflow_last_backup');
@@ -77,24 +83,29 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const [isRecording, setIsRecording] = useState(false);
 
     useEffect(() => {
-        (window as any).electronAPI?.invoke?.('get-global-shortcut').then((s: string) => setShortcut(s));
+        (window as any).electronAPI?.invoke?.('get-global-shortcut').then((s: string) => {
+            if (isMounted.current) setShortcut(s);
+        });
     }, []);
 
     const handleSaveShortcut = async (value?: string) => {
         const s = value !== undefined ? value : shortcut;
-        setShortcutStatus('saving');
+        if (isMounted.current) setShortcutStatus('saving');
         try {
             const success = await (window as any).electronAPI?.invoke?.('update-global-shortcut', s);
+            if (!isMounted.current) return;
             if (success) {
                 setShortcutStatus('success');
-                setTimeout(() => setShortcutStatus('idle'), 2000);
+                setTimeout(() => { if (isMounted.current) setShortcutStatus('idle'); }, 2000);
             } else {
                 setShortcutStatus('error');
                 // Revert to fetched if failed
-                (window as any).electronAPI?.invoke?.('get-global-shortcut').then((s: string) => setShortcut(s));
+                (window as any).electronAPI?.invoke?.('get-global-shortcut').then((s: string) => {
+                    if (isMounted.current) setShortcut(s);
+                });
             }
         } catch (e) {
-            setShortcutStatus('error');
+            if (isMounted.current) setShortcutStatus('error');
         }
     };
 
@@ -186,52 +197,69 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const testRepoConnection = async (repoOverride?: string) => {
         const repo = typeof repoOverride === 'string' ? repoOverride : repoName;
         if (!repo) return;
-        setTestStatus('testing');
+        if (!navigator.onLine) {
+            if (isMounted.current) setTestStatus('error');
+            return;
+        }
+        if (isMounted.current) setTestStatus('testing');
         try {
             const res = await fetch(`https://api.github.com/repos/${repo}`);
+            if (!isMounted.current) return;
             if (res.ok) {
                 const data = await res.json();
-                setTestStatus('success');
-                if (data.default_branch) {
-                    setUpdateBranch(data.default_branch);
-                    localStorage.setItem('focusflow_update_branch', data.default_branch);
+                if (isMounted.current) {
+                    setTestStatus('success');
+                    if (data.default_branch) {
+                        setUpdateBranch(data.default_branch);
+                        localStorage.setItem('focusflow_update_branch', data.default_branch);
+                    }
+                    setTimeout(() => { if (isMounted.current) setTestStatus('idle'); }, 2000);
                 }
-                setTimeout(() => setTestStatus('idle'), 2000);
             } else {
                 setTestStatus('error');
-                setTimeout(() => setTestStatus('idle'), 2000);
+                setTimeout(() => { if (isMounted.current) setTestStatus('idle'); }, 2000);
             }
         } catch (e) {
-            setTestStatus('error');
-            setTimeout(() => setTestStatus('idle'), 2000);
+            if (isMounted.current) {
+                setTestStatus('error');
+                setTimeout(() => { if (isMounted.current) setTestStatus('idle'); }, 2000);
+            }
         }
     };
 
     const checkForUpdates = async () => {
-        setUpdateStatus('checking');
+        if (!navigator.onLine) {
+            if (isMounted.current) setUpdateStatus('error');
+            return;
+        }
+        if (isMounted.current) setUpdateStatus('checking');
         try {
             // Try fetching from branch first
             const branchRes = await fetch(`https://raw.githubusercontent.com/${repoName}/${updateBranch}/package.json`);
             if (branchRes.ok) {
                 const data = await branchRes.json();
-                setLatestVersion(data.version);
-                if (data.version !== '1.0.0') setUpdateStatus('available');
-                else setUpdateStatus('latest');
+                if (isMounted.current) {
+                    setLatestVersion(data.version);
+                    if (data.version !== '1.0.0') setUpdateStatus('available');
+                    else setUpdateStatus('latest');
+                }
                 return;
             }
 
             const res = await fetch(`https://api.github.com/repos/${repoName}/releases/latest`);
             if (!res.ok) throw new Error('Failed to check');
             const data = await res.json();
-            setLatestVersion(data.tag_name);
-            
-            if (data.tag_name.replace('v', '') !== '1.0.0') {
-                setUpdateStatus('available');
-            } else {
-                setUpdateStatus('latest');
+            if (isMounted.current) {
+                setLatestVersion(data.tag_name);
+                
+                if (data.tag_name.replace('v', '') !== '1.0.0') {
+                    setUpdateStatus('available');
+                } else {
+                    setUpdateStatus('latest');
+                }
             }
         } catch (e) {
-            setUpdateStatus('error');
+            if (isMounted.current) setUpdateStatus('error');
         }
     };
 
@@ -264,7 +292,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const itemClass = `p-4 rounded-xl border flex justify-between items-center ${isCyberpunk ? 'bg-black border-[#00f0ff]/20' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`;
 
     return (
-        <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50/50 dark:bg-gray-900 transition-colors duration-300">
+        <div className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 ${isCyberpunk ? 'bg-[#050505] text-[#00f0ff] font-mono' : 'bg-gray-50 dark:bg-[#09090b] text-gray-900 dark:text-white'}`}>
             <div className="p-8 h-full overflow-y-auto custom-scrollbar">
                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in-up">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -351,7 +379,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                                     Reset Default
                                                 </button>
                                                 <button
-                                                    onClick={() => (window as any).electronAPI?.send('open-quick-capture')}
+                                                    onClick={() => {
+                                                        const api = (window as any).electronAPI;
+                                                        if (api?.invoke) {
+                                                            api.invoke('open-quick-capture');
+                                                        } else {
+                                                            alert("Quick Capture is only available in the desktop app.");
+                                                        }
+                                                    }}
                                                     className={`text-[10px] px-2 py-1 rounded border transition-colors ${isCyberpunk ? 'border-[#00f0ff]/30 text-[#00f0ff] hover:bg-[#00f0ff]/10' : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
                                                 >
                                                     Test Capture

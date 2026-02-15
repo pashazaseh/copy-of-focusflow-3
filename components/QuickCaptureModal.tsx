@@ -17,16 +17,27 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
     const [customPrompts, setCustomPrompts] = useState<CustomPrompt[]>([]);
     const [isManagingPrompts, setIsManagingPrompts] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
+    const [isPinned, setIsPinned] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const dragStart = useRef({ x: 0, y: 0 });
+
+    const isMounted = useRef(true);
+    useEffect(() => {
+        isMounted.current = true;
+        return () => { isMounted.current = false; };
+    }, []);
 
     useEffect(() => {
         if (isOpen) {
             setTimeout(() => inputRef.current?.focus(), 50);
             setText('');
             setStatus('');
+            setPosition({ x: 0, y: 0 });
         }
     }, [isOpen]);
 
@@ -57,6 +68,27 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
         };
     }, []);
 
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (isDragging) {
+                setPosition({
+                    x: e.clientX - dragStart.current.x,
+                    y: e.clientY - dragStart.current.y
+                });
+            }
+        };
+        const handleMouseUp = () => setIsDragging(false);
+
+        if (isDragging) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDragging]);
+
     const handleCapture = async (e?: React.FormEvent) => {
         e?.preventDefault();
         if (!text.trim()) return;
@@ -69,11 +101,11 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
                     localStorage.setItem('focusflow_backup_path', path);
                     backupPath = path;
                 } else {
-                    setStatus('Error: No Sync Folder configured.');
+                    if (isMounted.current) setStatus('Error: No Sync Folder configured.');
                     return;
                 }
             } else {
-                setStatus('Error: No Sync Folder configured in Settings.');
+                if (isMounted.current) setStatus('Error: No Sync Folder configured in Settings.');
                 return;
             }
         }
@@ -83,30 +115,43 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
         const line = `\n- [ ] ${text.trim()} #quick-capture 📅 ${now.toLocaleString()}`;
 
         try {
-            const result = await window.electronAPI?.appendFileToFolder(backupPath, inboxFile, line);
-            if (result?.success) {
-                setStatus('Saved to Inbox!');
-                setTimeout(onClose, 800);
+            let result;
+            if (window.electronAPI?.appendFileToFolder) {
+                result = await window.electronAPI.appendFileToFolder(backupPath, inboxFile, line);
             } else {
-                setStatus(`Error: ${result?.error}`);
+                result = { success: false, error: 'Desktop API missing' };
+            }
+
+            if (isMounted.current) {
+                if (result?.success) {
+                    setStatus('Saved to Inbox!');
+                    setTimeout(onClose, 800);
+                } else {
+                    setStatus(`Error: ${result?.error || 'Unknown'}`);
+                }
             }
         } catch (err) {
-            setStatus('Failed to save.');
+            if (isMounted.current) setStatus('Failed to save.');
         }
     };
 
     const handleSmartEnhance = async (type: string = 'enhance') => {
         if (!text.trim()) return;
-        setShowPrompts(false);
+        if (isMounted.current) setShowPrompts(false);
+
+        if (!navigator.onLine) {
+            if (isMounted.current) setStatus('Error: Offline');
+            return;
+        }
         
         let apiKey = localStorage.getItem('gemini_api_key');
         if (!apiKey) {
-            setStatus('Error: Set API Key in Settings');
+            if (isMounted.current) setStatus('Error: Set API Key in Settings');
             return;
         }
 
-        setIsEnhancing(true);
-        setStatus('✨ Enhancing...');
+        if (isMounted.current) setIsEnhancing(true);
+        if (isMounted.current) setStatus('✨ Enhancing...');
 
         let prompt = "";
         switch (type) {
@@ -131,17 +176,21 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
             });
             
             const data = await response.json();
-            if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                setText(data.candidates[0].content.parts[0].text.trim());
-                setStatus('✨ Enhanced!');
-            } else {
-                setStatus('Error: AI Failed');
+            if (isMounted.current) {
+                if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    setText(data.candidates[0].content.parts[0].text.trim());
+                    setStatus('✨ Enhanced!');
+                } else {
+                    setStatus('Error: AI Failed');
+                }
             }
         } catch (e) {
-            setStatus('Error: Network');
+            if (isMounted.current) setStatus('Error: Network');
         } finally {
-            setIsEnhancing(false);
-            setTimeout(() => setStatus(''), 2000);
+            if (isMounted.current) {
+                setIsEnhancing(false);
+                setTimeout(() => { if (isMounted.current) setStatus(''); }, 2000);
+            }
         }
     };
 
@@ -203,7 +252,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
                 }
 
                 if (!backupPath) {
-                    setStatus('Error: No Sync Folder.');
+                    if (isMounted.current) setStatus('Error: No Sync Folder.');
                     return;
                 }
 
@@ -218,45 +267,93 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ isOpen, on
                 const savePath = subfolder ? `${subfolder}/${filename}` : filename;
                 const result = await window.electronAPI?.saveBinaryFile(backupPath, savePath, uint8Array);
                 
-                if (result?.success) {
-                    const link = ` ![[${filename}]]`;
-                    if (inputRef.current) {
-                        const start = inputRef.current.selectionStart || 0;
-                        const end = inputRef.current.selectionEnd || 0;
-                        const newText = text.substring(0, start) + link + text.substring(end);
-                        setText(newText);
+                if (isMounted.current) {
+                    if (result?.success) {
+                        const link = ` ![[${filename}]]`;
+                        if (inputRef.current) {
+                            const start = inputRef.current.selectionStart || 0;
+                            const end = inputRef.current.selectionEnd || 0;
+                            const newText = text.substring(0, start) + link + text.substring(end);
+                            setText(newText);
+                        } else {
+                            setText(prev => prev + link);
+                        }
+                        setStatus('Audio saved!');
                     } else {
-                        setText(prev => prev + link);
+                        setStatus('Error saving audio.');
                     }
-                    setStatus('Audio saved!');
-                } else {
-                    setStatus('Error saving audio.');
                 }
                 
                 stream.getTracks().forEach(track => track.stop());
             };
 
             mediaRecorder.start();
-            setIsRecording(true);
-            setStatus('Recording...');
+            if (isMounted.current) {
+                setIsRecording(true);
+                setStatus('Recording...');
+            }
         } catch (err) {
             console.error('Error accessing microphone:', err);
-            setStatus('Error: Mic access denied.');
-            setIsRecording(false);
+            if (isMounted.current) setStatus('Error: Mic access denied.');
+            if (isMounted.current) setIsRecording(false);
         }
+    };
+
+    const handleDragStart = (e: React.MouseEvent) => {
+        if ((e.target as HTMLElement).closest('button, input, textarea')) return;
+        setIsDragging(true);
+        dragStart.current = {
+            x: e.clientX - position.x,
+            y: e.clientY - position.y
+        };
     };
 
     if (!isOpen) return null;
 
+    const isMiniCapture = typeof window !== 'undefined' && window.location.hash === '#minicapture';
+
     return (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-32 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-32 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => {
+            if (!isPinned) {
+                if (isMiniCapture) window.electronAPI?.closeMiniCapture?.();
+                onClose();
+            }
+        }}>
             <div 
-                className={`w-full max-w-xl p-4 rounded-2xl shadow-2xl border transform transition-all scale-100 ${isCyberpunk ? 'bg-black border-[#00f0ff] shadow-[0_0_30px_rgba(0,240,255,0.3)]' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-gray-700'}`}
+                className={`w-full max-w-xl p-4 rounded-2xl shadow-2xl border transform scale-100 ${isDragging ? '' : 'transition-all'} ${isCyberpunk ? 'bg-black border-[#00f0ff] shadow-[0_0_30px_rgba(0,240,255,0.3)]' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-gray-700'}`}
                 onClick={e => e.stopPropagation()}
+                style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
             >
-                <div className="flex items-center gap-3 mb-3">
-                    <span className="text-2xl">⚡</span>
-                    <h3 className={`font-bold text-lg ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Quick Capture</h3>
+                <div 
+                    className={`flex items-center justify-between mb-3 ${isMiniCapture ? '' : 'cursor-move'}`} 
+                    onMouseDown={isMiniCapture ? undefined : handleDragStart}
+                    style={isMiniCapture ? { WebkitAppRegion: 'drag' } as any : {}}
+                >
+                    <div className="flex items-center gap-3">
+                        <span className="text-2xl">⚡</span>
+                        <h3 className={`font-bold text-lg ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>Quick Capture</h3>
+                    </div>
+                    <div 
+                        className="flex items-center gap-2 relative z-50"
+                        style={isMiniCapture ? { WebkitAppRegion: 'no-drag' } as any : {}}
+                    >
+                        <button 
+                            onClick={() => setIsPinned(!isPinned)} 
+                            className={`p-1.5 rounded-full transition-colors ${isPinned ? (isCyberpunk ? 'text-[#00f0ff] bg-[#00f0ff]/10' : 'text-blue-500 bg-blue-50 dark:bg-blue-900/20') : (isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300')}`}
+                            title={isPinned ? "Unpin (Close on click outside)" : "Pin (Stay open)"}
+                            style={isMiniCapture ? { WebkitAppRegion: 'no-drag' } as any : {}}
+                        >
+                            <svg className="w-4 h-4" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                        </button>
+                        <button onClick={() => {
+                            if (isMiniCapture) window.electronAPI?.closeMiniCapture?.();
+                            onClose();
+                        }} className={`p-1.5 rounded-full transition-colors ${isCyberpunk ? 'text-[#00f0ff]/40 hover:text-[#00f0ff]' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                        style={isMiniCapture ? { WebkitAppRegion: 'no-drag' } as any : {}}
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
                 </div>
                 <form onSubmit={handleCapture}>
                     <input

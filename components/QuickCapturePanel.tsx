@@ -118,6 +118,12 @@ export const QuickCapturePanel: React.FC = () => {
         cursorIndex: number;
     }>({ isOpen: false, type: null, query: '', selectedIndex: 0, cursorIndex: -1 });
 
+    const isMounted = useRef(true);
+    useEffect(() => {
+        isMounted.current = true;
+        return () => { isMounted.current = false; };
+    }, []);
+
     useEffect(() => {
         const savedHistory = localStorage.getItem('focusflow_capture_history');
         if (savedHistory) {
@@ -194,10 +200,9 @@ export const QuickCapturePanel: React.FC = () => {
             }
 
             // Date
-            const dateRegex = /\b(today|tomorrow|next week|mon|tue|wed|thu|fri|sat|sun)\b/gi;
-            const dMatch = inputText.match(dateRegex);
-            if (dMatch) {
-                newDate = dMatch[0];
+            const { date, dateLabel } = parseNaturalLanguage(inputText);
+            if (date) {
+                newDate = dateLabel || date.toLocaleDateString();
             }
 
             if (newProjectId && newProjectId !== selectedProjectId) setSelectedProjectId(newProjectId);
@@ -295,7 +300,7 @@ export const QuickCapturePanel: React.FC = () => {
 
         if (!targetFile) return;
 
-        const result = await window.electronAPI?.getFileHeaders(backupPath || '', targetFile);
+        const result = await window.electronAPI?.getFileHeaders?.(backupPath || '', targetFile);
         let headers: string[] = [];
         if (result?.success && result.headers) {
             headers = result.headers;
@@ -308,11 +313,12 @@ export const QuickCapturePanel: React.FC = () => {
     };
 
     const handleSelectDestFile = async () => {
-        if (!window.electronAPI) {
+        const api = (window as any).electronAPI;
+        if (!api?.selectFile) {
             alert("File selection is only available in the desktop app.");
             return;
         }
-        const path = await window.electronAPI.selectFile();
+        const path = await api.selectFile();
         if (path) {
             let relativePath = path;
             // Try to make path relative if inside backup folder
@@ -328,10 +334,11 @@ export const QuickCapturePanel: React.FC = () => {
     };
 
     const handleCreateDestFile = async () => {
-        if (!window.electronAPI) return;
+        const api = (window as any).electronAPI;
+        if (!api?.createNewFile) return;
 
         // Use native save dialog to choose folder and filename
-        const filePath = await window.electronAPI.createNewFile();
+        const filePath = await api.createNewFile();
         
         if (filePath) {
             let finalPath = filePath;
@@ -426,7 +433,7 @@ export const QuickCapturePanel: React.FC = () => {
     const handleCapture = async () => {
         if (!text.trim()) return;
         
-        setStatus('Sending...');
+        if (isMounted.current) setStatus('Sending...');
         let currentBackupPath = backupPath;
         if (!currentBackupPath) {
             if (window.electronAPI?.selectBackupFolder) {
@@ -436,11 +443,11 @@ export const QuickCapturePanel: React.FC = () => {
                     setBackupPath(path);
                     currentBackupPath = path;
                 } else {
-                    setStatus('Error: No Sync Folder configured.');
+                    if (isMounted.current) setStatus('Error: No Sync Folder configured.');
                     return;
                 }
             } else {
-                setStatus('Error: No Sync Folder configured.');
+                if (isMounted.current) setStatus('Error: No Sync Folder configured.');
                 return;
             }
         }
@@ -460,7 +467,10 @@ export const QuickCapturePanel: React.FC = () => {
         }
 
         const tagsString = tags.length > 0 ? ' ' + tags.map(t => `#${t}`).join(' ') : '';
-        let line = `\n${prefix}${text.trim()}${projectTag}${tagsString} 📅 ${timestamp}`;
+        let line = `\n${prefix}${text.trim()}${projectTag}${tagsString}`;
+        if (parsedDate) line += ` 📅 ${parsedDate}`;
+        if (parsedPriority) line += ` 🔺 ${parsedPriority}`;
+        line += ` 📅 ${timestamp}`;
         
         let result;
         const dest = destinations.find(d => d.id === selectedDestId);
@@ -477,21 +487,31 @@ export const QuickCapturePanel: React.FC = () => {
              // Use destination header if set, otherwise fallback to global setting
              const header = selectedHeader || dest.header || localStorage.getItem('focusflow_obsidian_header') || '';
              
-             result = await window.electronAPI?.updateDailyNote(currentBackupPath, filename, line, header, finalPosition);
+             if (window.electronAPI?.updateDailyNote) {
+                 result = await window.electronAPI.updateDailyNote(currentBackupPath, filename, line, header, finalPosition);
+             } else {
+                 result = { success: false, error: 'Desktop API missing' };
+             }
         } else if (dest) {
              // If header is specified for a file, use updateDailyNote logic which handles headers
-             result = await window.electronAPI?.updateDailyNote(currentBackupPath, dest.path, line, selectedHeader || dest.header || '', finalPosition);
+             if (window.electronAPI?.updateDailyNote) {
+                 result = await window.electronAPI.updateDailyNote(currentBackupPath, dest.path, line, selectedHeader || dest.header || '', finalPosition);
+             } else {
+                 result = { success: false, error: 'Desktop API missing' };
+             }
         }
 
-        if (result?.success) {
-            setStatus('Saved!');
-            const newHistory = [text.trim(), ...history].slice(0, 20);
-            setHistory(newHistory);
-            localStorage.setItem('focusflow_capture_history', JSON.stringify(newHistory));
-            setText('');
-            setTimeout(() => setStatus(''), 2000);
-        } else {
-            setStatus(`Error: ${result?.error}`);
+        if (isMounted.current) {
+            if (result?.success) {
+                setStatus('Saved!');
+                const newHistory = [text.trim(), ...history].slice(0, 20);
+                setHistory(newHistory);
+                localStorage.setItem('focusflow_capture_history', JSON.stringify(newHistory));
+                setText('');
+                setTimeout(() => { if (isMounted.current) setStatus(''); }, 2000);
+            } else {
+                setStatus(`Error: ${result?.error || 'Unknown'}`);
+            }
         }
     };
 
@@ -537,15 +557,20 @@ export const QuickCapturePanel: React.FC = () => {
     const handleSmartEnhance = async (type: string = 'enhance') => {
         if (!text.trim()) return;
         setShowPrompts(false);
+
+        if (!navigator.onLine) {
+            if (isMounted.current) setStatus('Error: Offline');
+            return;
+        }
         
         let apiKey = localStorage.getItem('gemini_api_key');
         if (!apiKey) {
-            setStatus('Error: Set API Key in Settings');
+            if (isMounted.current) setStatus('Error: Set API Key in Settings');
             return;
         }
 
-        setIsEnhancing(true);
-        setStatus('✨ Enhancing...');
+        if (isMounted.current) setIsEnhancing(true);
+        if (isMounted.current) setStatus('✨ Enhancing...');
 
         let prompt = "";
         switch (type) {
@@ -571,24 +596,28 @@ export const QuickCapturePanel: React.FC = () => {
             
             const data = await response.json();
 
-            if (!response.ok) {
-                console.error("Gemini API Error:", data);
-                setStatus(`Error: ${data.error?.message || response.statusText}`);
-                return;
-            }
+            if (isMounted.current) {
+                if (!response.ok) {
+                    console.error("Gemini API Error:", data);
+                    setStatus(`Error: ${data.error?.message || response.statusText}`);
+                    return;
+                }
 
-            if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                setText(data.candidates[0].content.parts[0].text.trim());
-                setStatus('✨ Enhanced!');
-            } else {
-                setStatus('Error: No response');
+                if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    setText(data.candidates[0].content.parts[0].text.trim());
+                    setStatus('✨ Enhanced!');
+                } else {
+                    setStatus('Error: No response');
+                }
             }
         } catch (e) {
             console.error(e);
-            setStatus('Error: Network');
+            if (isMounted.current) setStatus('Error: Network');
         } finally {
-            setIsEnhancing(false);
-            setTimeout(() => setStatus(''), 2000);
+            if (isMounted.current) {
+                setIsEnhancing(false);
+                setTimeout(() => { if (isMounted.current) setStatus(''); }, 2000);
+            }
         }
     };
 
@@ -789,7 +818,7 @@ export const QuickCapturePanel: React.FC = () => {
                 }
                 
                 if (!currentBackupPath) {
-                    setStatus('Error: No Sync Folder for audio.');
+                    if (isMounted.current) setStatus('Error: No Sync Folder for audio.');
                     return;
                 }
 
@@ -810,25 +839,29 @@ export const QuickCapturePanel: React.FC = () => {
                 }
                 const filename = `Voice Note ${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
                 const savePath = subfolder ? `${subfolder}/${filename}` : filename;
-                const result = await window.electronAPI?.saveBinaryFile(currentBackupPath, savePath, uint8Array);
+                const result = await window.electronAPI?.saveBinaryFile?.(currentBackupPath, savePath, uint8Array);
                 
-                if (result?.success) {
-                    insertText(`\n![[${filename}]]`);
-                    setStatus('Audio saved!');
-                } else {
-                    setStatus('Error saving audio.');
+                if (isMounted.current) {
+                    if (result?.success) {
+                        insertText(`\n![[${filename}]]`);
+                        setStatus('Audio saved!');
+                    } else {
+                        setStatus('Error saving audio.');
+                    }
                 }
                 
                 stream.getTracks().forEach(track => track.stop());
             };
 
             mediaRecorder.start();
-            setIsRecording(true);
-            setStatus('Recording...');
+            if (isMounted.current) {
+                setIsRecording(true);
+                setStatus('Recording...');
+            }
         } catch (err) {
             console.error('Error accessing microphone:', err);
-            setStatus('Error: Mic access denied.');
-            setIsRecording(false);
+            if (isMounted.current) setStatus('Error: Mic access denied.');
+            if (isMounted.current) setIsRecording(false);
         }
     };
 
@@ -898,8 +931,9 @@ export const QuickCapturePanel: React.FC = () => {
     };
 
     const handleSelectVault = async () => {
-        if (!window.electronAPI) return;
-        const path = await window.electronAPI.selectBackupFolder();
+        const api = (window as any).electronAPI;
+        if (!api?.selectBackupFolder) return;
+        const path = await api.selectBackupFolder();
         if (path) {
             setBackupPath(path);
             localStorage.setItem('focusflow_backup_path', path);

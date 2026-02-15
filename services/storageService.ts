@@ -1,4 +1,4 @@
-import { StudyLog, UserGoals, CountdownItem, SessionRecord, TimerSettings, Project, Task, CustomEvent, MenuBarConfig, CountdownGroup, CountdownType, SidebarConfig, ShopItem } from '../types';
+import { StudyLog, UserGoals, CountdownItem, SessionRecord, TimerSettings, Project, Task, CustomEvent, MenuBarConfig, CountdownGroup, CountdownType, SidebarConfig, ShopItem, Transaction } from '../types';
 
 const STORAGE_KEY = 'focusflow_logs_v1';
 const GOALS_KEY = 'focusflow_goals_v1';
@@ -10,6 +10,7 @@ const MENUBAR_CONFIG_KEY = 'focusflow_menubar_config_v1';
 const SIDEBAR_CONFIG_KEY = 'focusflow_sidebar_config_v1';
 const PROJECTS_KEY = 'focusflow_projects_v1';
 const TASKS_KEY = 'focusflow_tasks_v1'; // Added Key
+const TRANSACTIONS_KEY = 'focusflow_transactions_v1';
 const CUSTOM_EVENTS_KEY = 'focusflow_custom_events_v1';
 const INIT_KEY = 'focusflow_initialized_v1';
 const CUSTOM_SHOP_ITEMS_KEY = 'focusflow_custom_shop_items_v1';
@@ -380,6 +381,16 @@ export const deleteProject = async (id: string): Promise<Project[]> => {
 
 export const getTasks = async (): Promise<Task[]> => {
     return dbGet<Task[]>(TASKS_KEY, []);
+};
+
+export const getTransactions = async (): Promise<Transaction[]> => {
+    return dbGet<Transaction[]>(TRANSACTIONS_KEY, []);
+};
+
+export const addTransaction = async (transaction: Transaction): Promise<void> => {
+    const transactions = await getTransactions();
+    const newTransactions = [transaction, ...transactions];
+    await dbSet(TRANSACTIONS_KEY, newTransactions);
 };
 
 export const saveTask = async (task: Task): Promise<Task[]> => {
