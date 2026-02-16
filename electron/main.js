@@ -551,8 +551,16 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('update-tray-title', (event, title) => {
+    lastTrayTitle = title;
     if (tray) {
       tray.setTitle(title);
+      if (process.platform === 'darwin') {
+        if (title && title.length > 0) {
+          if (transparentIcon) tray.setImage(transparentIcon);
+        } else {
+          if (defaultIcon) tray.setImage(defaultIcon);
+        }
+      }
     }
   });
 
@@ -565,6 +573,11 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.on('quick-timer-set', (event, minutes) => {
+    console.log('[Timer Debug] Quick timer set:', minutes);
+    hideTrayWindow();
+    
+    if (!win || win.isDestroyed()) {
         const allWindows = BrowserWindow.getAllWindows();
         win = allWindows.find(w => w !== trayWindow && w !== miniCaptureWin && w !== ghostWin && !w.isDestroyed()) || null;
     }
@@ -1381,7 +1394,7 @@ app.whenReady().then(() => {
         defaultIcon = createTrayIcon();
         // Create transparent icon (1x1 transparent pixel) to hide icon when text is shown
         const buffer = Buffer.alloc(4); 
-        transparentIcon = nativeImage.createFromBuffer(buffer, { width: 1, height: 1 });
+        transparentIcon = nativeImage.createFromBitmap(buffer, { width: 1, height: 1 });
 
         tray = new Tray(defaultIcon);
         

@@ -117,6 +117,7 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
   const [manualType, setManualType] = useState<'POMO'|'STOPWATCH'>('POMO');
 
   const [alwaysOnTopActive, setAlwaysOnTopActive] = useState(false);
+  const prevAlwaysOnTopActive = useRef(false);
 
   useEffect(() => {
       const checkSetting = () => {
@@ -132,7 +133,12 @@ export const TimerPanel: React.FC<TimerPanelProps> = ({
       if (alwaysOnTopActive) {
           setIsPinned(isActive);
           (window.electronAPI as any)?.setAlwaysOnTop?.(isActive);
+      } else if (prevAlwaysOnTopActive.current) {
+          // If setting was just turned off, ensure we disable AOT and unpin
+          setIsPinned(false);
+          (window.electronAPI as any)?.setAlwaysOnTop?.(false);
       }
+      prevAlwaysOnTopActive.current = alwaysOnTopActive;
   }, [isActive, alwaysOnTopActive]);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);

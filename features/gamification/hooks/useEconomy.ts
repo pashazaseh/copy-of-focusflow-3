@@ -70,6 +70,10 @@ export const useEconomy = () => {
         return 0;
     });
 
+    useEffect(() => {
+        validateEconomy();
+    }, []);
+
     // Sync with localStorage changes (cross-tab or other components)
     useEffect(() => {
         const handleStorageUpdate = () => {

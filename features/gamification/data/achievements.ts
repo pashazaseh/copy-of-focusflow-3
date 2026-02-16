@@ -46,6 +46,70 @@ const STATIC_ACHIEVEMENTS: Omit<Achievement, 'isUnlocked'>[] = [
     { id: 'streak_30', title: 'Habitual', description: 'Maintain a 30-day streak', icon: '📅', reward: 3000, condition: (_, __, s) => s >= 30 },
     { id: 'marathoner', title: 'Marathoner', description: 'Study for 6+ hours in a day', icon: '🏃', reward: 500, condition: (logs) => logs.some(l => l.hours >= 6) },
     { id: 'iron_mind', title: 'Iron Mind', description: 'Study for 10+ hours in a day', icon: '🧠', reward: 1500, condition: (logs) => logs.some(l => l.hours >= 10) },
+
+    // 🧠 DIVERSITY & MANAGEMENT
+    { 
+        id: 'polymath', 
+        title: 'Polymath', 
+        description: 'Log time across 3 different projects', 
+        icon: '🎨', 
+        reward: 300, 
+        condition: (logs) => new Set(logs.map(l => l.projectId)).size >= 3 
+    },
+    { 
+        id: 'specialist', 
+        title: 'Deep Diver', 
+        description: 'Log 50+ hours in a single project', 
+        icon: '🤿', 
+        reward: 600, 
+        condition: (logs) => {
+            const projectHours: Record<string, number> = {};
+            logs.forEach(l => {
+                projectHours[l.projectId] = (projectHours[l.projectId] || 0) + l.hours;
+            });
+            return Object.values(projectHours).some(h => h >= 50);
+        }
+    },
+
+    // 🗓️ TIMING & CONSISTENCY
+    { 
+        id: 'weekend_warrior', 
+        title: 'Weekend Warrior', 
+        description: 'Log a session on a Saturday and Sunday', 
+        icon: '⛺', 
+        reward: 150, 
+        condition: (logs) => {
+            const hasSat = logs.some(l => new Date(l.date).getDay() === 6);
+            const hasSun = logs.some(l => new Date(l.date).getDay() === 0);
+            return hasSat && hasSun;
+        }
+    },
+    { 
+        id: 'centurion', 
+        title: 'Centurion', 
+        description: 'Complete 100 study sessions', 
+        icon: '💯', 
+        reward: 1000, 
+        condition: (logs) => logs.length >= 100 
+    },
+    { 
+        id: 'streak_60', 
+        title: 'Discipline Master', 
+        description: 'Maintain a 60-day streak', 
+        icon: '👑', 
+        reward: 5000, 
+        condition: (_, __, s) => s >= 60 
+    },
+
+    // 🏋️ ENDURANCE
+    { 
+        id: 'grind_lord', 
+        title: 'Grind Lord', 
+        description: 'Study for 12+ hours in a single day', 
+        icon: '🦾', 
+        reward: 2000, 
+        condition: (logs) => logs.some(l => l.hours >= 12) 
+    }
 ];
 
 const RANK_ACHIEVEMENTS: Omit<Achievement, 'isUnlocked'>[] = RANKS.filter(r => r.minHours > 0).map(rank => {

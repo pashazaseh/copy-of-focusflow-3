@@ -24,7 +24,7 @@ const CountdownPanel = lazy(() => import('./components/CountdownPanel').then(m =
 const SettingsPanel = lazy(() => import('./components/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
 const Heatmap = lazy(() => import('./components/Heatmap').then(m => ({ default: m.Heatmap })));
 const InsightsPanel = lazy(() => import('./components/InsightsPanel').then(m => ({ default: m.InsightsPanel })));
-const GamificationPanel = lazy(() => import('./components/GamificationPanel').then(m => ({ default: m.GamificationPanel })));
+const GamificationPanel = lazy(() => import('./features/gamification/GamificationPanel').then(m => ({ default: m.GamificationPanel })));
 const GoalsPanel = lazy(() => import('./components/GoalsPanel').then(m => ({ default: m.GoalsPanel })));
 const TaskPanel = lazy(() => import('./components/TaskPanel').then(m => ({ default: m.TaskPanel })));
 const QuickCapturePanel = lazy(() => import('./components/QuickCapturePanel').then(m => ({ default: m.QuickCapturePanel })));
@@ -766,7 +766,7 @@ function FocusFlowContent() {
       }
 
       // Listener for Tray Timer (Rubber Band)
-      if (window.electronAPI?.onQuickStart) {
+      if ((window.electronAPI as any)?.onQuickStart) {
           const cleanup = (window.electronAPI as any).onQuickStart((duration: number) => {
               setPendingQuickTimer({ duration, timestamp: Date.now() });
               setCurrentView(ViewMode.TIMER);
@@ -1424,7 +1424,6 @@ function FocusFlowContent() {
                   userState={{
                       totalFocusTime: globalTotalHours
                   }}
-                  isCyberpunk={appTheme === 'cyberpunk'}
                   projects={projects}
                   onSelectProject={setCurrentProjectId}
                   freezeDates={freezeDates}
@@ -1488,6 +1487,25 @@ const getNextDate = (item: CountdownItem): Date => {
 };
 
 export default function App() {
+    // Sanitize potentially corrupted quest data on startup
+    useState(() => {
+        if (typeof window !== 'undefined') {
+            const keys = ['focusflow_daily_quests', 'focusflow_quests'];
+            keys.forEach(key => {
+                try {
+                    const item = localStorage.getItem(key);
+                    if (!item) {
+                        localStorage.setItem(key, '[]');
+                    } else if (!Array.isArray(JSON.parse(item))) {
+                        localStorage.setItem(key, '[]');
+                    }
+                } catch (e) {
+                    localStorage.setItem(key, '[]');
+                }
+            });
+        }
+    });
+
     const [currentHash, setCurrentHash] = useState(window.location.hash);
 
     useEffect(() => {

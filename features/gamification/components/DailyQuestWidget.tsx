@@ -73,7 +73,8 @@ export const DailyQuestWidget: React.FC = () => {
                 return (
                     <div key={quest.id} className="bg-black/40 p-4 rounded-lg">
                         <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-3">
+\
+                          <div className="flex items-center gap-3">
                                 <span className="text-2xl">{quest.icon}</span>
                                 <p className="font-semibold text-white">{quest.title}</p>
                             </div>

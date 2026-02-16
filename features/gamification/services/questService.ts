@@ -43,6 +43,9 @@ export const generateDailyQuests = (): Quest[] => {
 };
 
 export const calculateQuestProgress = (quests: Quest[], logs: StudyLog[]): Quest[] => {
+    if (!quests || !Array.isArray(quests)) return [];
+    if (!logs || !Array.isArray(logs)) return quests;
+
     const today = new Date().toISOString().split('T')[0];
     const todayLogs = logs.filter(l => l.date === today);
     

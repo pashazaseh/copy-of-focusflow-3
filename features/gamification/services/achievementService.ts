@@ -1,56 +1,65 @@
-import { StudyLog } from '../../../types';
-import { ACHIEVEMENTS_LIST } from '../data/achievements';
-import { Achievement } from '../types';
+import { Achievement, StudyLog, SessionRecord } from '../../../types';
+import { ACHIEVEMENTS_LIST, RANKS } from '../data/achievements';
+import { checkSpecialBadges, SPECIAL_BADGES, AchievementWithProgress } from './badgeRules';
 
-/**
- * Takes a list of study logs and user stats and returns a full list of achievements with their unlocked status.
- * @param logs - Array of all study logs for the user.
- * @param totalHours - Total focused hours for the user.
- * @param currentStreak - The user's current daily streak.
- * @returns An array of all achievements, with an `isUnlocked` flag.
- */
+type ProcessedAchievement = Achievement & { isUnlocked: boolean; progress: number };
+
 export const getUnlockedAchievements = (
   logs: StudyLog[],
   totalHours: number,
-  currentStreak: number
-): Achievement[] => {
-  const safeLogs = Array.isArray(logs) ? logs : [];
-  
-  return ACHIEVEMENTS_LIST.map(achievement => ({
-    ...achievement,
-    isUnlocked: achievement.condition(safeLogs, totalHours, currentStreak),
+  streak: number,
+  sessions: SessionRecord[] = []
+): ProcessedAchievement[] => {
+  const regularAchievements = ACHIEVEMENTS_LIST.map(ach => {
+    const isUnlocked = ach.condition ? ach.condition(logs, totalHours, streak) : false;
+    
+    let progress = isUnlocked ? 100 : 0;
+
+    if (!isUnlocked) {
+        if (ach.id.startsWith('rank_badge_')) {
+            const rankTitle = ach.title;
+            const rankInfo = RANKS.find(r => r.title === rankTitle);
+            if (rankInfo && rankInfo.minHours > 0) {
+                progress = Math.floor(Math.min(100, (totalHours / rankInfo.minHours) * 100));
+            }
+        } else if (ach.id.startsWith('streak_')) {
+            const streakDays = parseInt(ach.id.split('_')[1], 10);
+            if (!isNaN(streakDays) && streakDays > 0) {
+                progress = Math.floor(Math.min(100, (streak / streakDays) * 100));
+            }
+        }
+    }
+    
+    return { ...ach, isUnlocked, progress } as ProcessedAchievement;
+  });
+
+  // For special badges, they need session records for more granular checks.
+  // The `logs` (StudyLog[]) are aggregates per day, not suitable for time-based checks.
+  const specialBadges: ProcessedAchievement[] = checkSpecialBadges(sessions, streak).map(b => ({
+      ...b,
+      isUnlocked: b.isUnlocked || false,
   }));
+
+  return [...regularAchievements, ...specialBadges];
 };
 
-export const getAchievementReward = (achievement: { id: string, title: string, description: string, reward?: number }) => {
-    if (achievement.reward !== undefined) {
-        let rarity = 'common';
-        if (achievement.reward >= 5000) rarity = 'legendary';
-        else if (achievement.reward >= 2500) rarity = 'mythic';
-        else if (achievement.reward >= 1000) rarity = 'epic';
-        else if (achievement.reward >= 500) rarity = 'rare';
-        else if (achievement.reward >= 250) rarity = 'uncommon';
-        return { gems: achievement.reward, rarity, label: rarity.charAt(0).toUpperCase() + rarity.slice(1) };
+const getRarityFromGems = (gems: number): string => {
+    if (gems >= 1000) return 'legendary';
+    if (gems >= 500) return 'epic';
+    if (gems >= 200) return 'rare';
+    if (gems >= 100) return 'uncommon';
+    return 'common';
+}
+
+export const getAchievementReward = (badge: Achievement): { gems: number; rarity: string } => {
+    const specialBadge = (SPECIAL_BADGES as AchievementWithProgress[]).find(b => b.id === badge.id);
+    if (specialBadge) {
+        return specialBadge.rewardConfig;
     }
 
-    const title = achievement.title.toLowerCase();
-    const desc = achievement.description.toLowerCase();
-    const id = achievement.id.toLowerCase();
-
-    if (title.includes('legend') || desc.includes('365-day') || id === 'rank_legend') {
-        return { gems: 5000, rarity: 'legendary', label: 'Legendary' };
-    }
-    if (title.includes('grandmaster') || title.includes('master') || desc.includes('100-day')) {
-        return { gems: 2500, rarity: 'mythic', label: 'Mythic' };
-    }
-    if (title.includes('expert') || desc.includes('30-day') || id === 'iron_mind') {
-        return { gems: 1000, rarity: 'epic', label: 'Epic' };
-    }
-    if (title.includes('journeyman') || desc.includes('14-day') || id === 'marathoner') {
-        return { gems: 500, rarity: 'rare', label: 'Rare' };
-    }
-    if (title.includes('apprentice') || desc.includes('7-day')) {
-        return { gems: 250, rarity: 'uncommon', label: 'Uncommon' };
-    }
-    return { gems: 50, rarity: 'common', label: 'Common' };
+    const gems = badge.reward || 0;
+    return {
+        gems,
+        rarity: getRarityFromGems(gems),
+    };
 };
