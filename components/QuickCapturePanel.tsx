@@ -16,7 +16,7 @@ export const QuickCapturePanel: React.FC = () => {
     const { appTheme } = useTheme();
     const { projects } = useProjects();
     const isCyberpunk = appTheme === 'cyberpunk';
-    const [text, setText] = useState('');
+    const [text, setText] = useState(() => localStorage.getItem('focusflow_scratchpad') || '');
     
     // Destinations State
     const [destinations, setDestinations] = useState<CaptureDestination[]>(() => {
@@ -57,6 +57,11 @@ export const QuickCapturePanel: React.FC = () => {
             setSelectedDestId(destinations[0].id);
         }
     }, [destinations, selectedDestId]);
+
+    // Save draft to scratchpad
+    useEffect(() => {
+        localStorage.setItem('focusflow_scratchpad', text);
+    }, [text]);
 
     // Management State
     const [isManagingDestinations, setIsManagingDestinations] = useState(false);

@@ -271,41 +271,6 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({ projects }) => {
         }
     };
 
-    const silentTickTickSync = useCallback(async () => {
-        if (!navigator.onLine) return;
-        const accessToken = localStorage.getItem('ticktick_access_token');
-        const refreshToken = localStorage.getItem('ticktick_refresh_token');
-        
-        if (!accessToken || !ttClientId || !ttClientSecret) return;
-
-        try {
-            const { tasks: importedTasks, newAccessToken } = await syncTickTickTasks(ttClientId, ttClientSecret, accessToken, refreshToken || '');
-            
-            if (newAccessToken) {
-                localStorage.setItem('ticktick_access_token', newAccessToken);
-            }
-
-            const { count } = await storage.mergeTasks(importedTasks.map(t => ({
-                ...t,
-                projectId: projects[0]?.id || undefined
-            })));
-            
-            if (count > 0) {
-                setTasks(await storage.getTasks());
-            }
-        } catch (e) {
-            console.error("Auto-sync failed", e);
-        }
-    }, [ttClientId, ttClientSecret, projects]);
-
-    useEffect(() => {
-        const autoSyncEnabled = localStorage.getItem('focusflow_ticktick_auto_sync') === 'true';
-        if (autoSyncEnabled) {
-            const interval = setInterval(silentTickTickSync, 15 * 60 * 1000);
-            return () => clearInterval(interval);
-        }
-    }, [silentTickTickSync]);
-
     const saveTickTickConfig = () => {
         localStorage.setItem('ticktick_client_id', ttClientId);
         localStorage.setItem('ticktick_client_secret', ttClientSecret);

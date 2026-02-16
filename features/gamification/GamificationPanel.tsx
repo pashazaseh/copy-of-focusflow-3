@@ -241,7 +241,7 @@ const DailyQuestWidget: React.FC<{ isCyberpunk: boolean; onClaim: (amount: numbe
     };
 
     return (
-        <div className={`p-5 rounded-2xl border mb-6 ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-white dark:bg-slate-800 border-gray-200'}`}>
+        <div className={`p-5 rounded-2xl border mb-6 ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'}`}>
             <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}><span>📜</span> Daily Quests</h3>
             <div className="space-y-3">
                 {Array.isArray(quests) && quests.map(q => (
@@ -363,7 +363,7 @@ const InventoryGrid: React.FC<{ inventory: Record<string, any>; items: ShopItem[
             {items.filter(item => (item.type === 'unlock' ? inventory[item.id] : (inventory[item.id] || 0) > 0)).map(item => {
                 let count = item.type !== 'unlock' ? inventory[item.id] : 1;
                 return (
-                    <div key={item.id} className={`flex items-center justify-between p-4 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-gray-50 dark:bg-black/20 border-gray-200'}`}>
+                    <div key={item.id} className={`flex items-center justify-between p-4 rounded-xl border ${isCyberpunk ? 'bg-black border-[#00f0ff]/30' : 'bg-gray-50 dark:bg-black/20 border-gray-200 dark:border-gray-700'}`}>
                         <div className="flex items-center gap-3">
                             <div className="text-2xl">{item.icon}</div>
                             <div><p className={`font-bold text-sm ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}>{item.name}</p>{item.type !== 'unlock' && <p className="text-xs opacity-60">Owned: {count}</p>}</div>
@@ -395,7 +395,7 @@ const ShopGrid: React.FC<{ inventory: Record<string, any>; items: ShopItem[]; cu
     };
 
     return (
-    <div className={`rounded-3xl p-8 border shadow-2xl relative overflow-hidden ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-slate-800 border-gray-200'}`}>
+    <div className={`rounded-3xl p-8 border shadow-2xl relative overflow-hidden ${isCyberpunk ? 'bg-[#0a0a0a] border-[#00f0ff]/20' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'}`}>
         <div className="flex justify-between items-center mb-8 relative z-10">
             <h3 className={`text-2xl font-bold flex items-center gap-3 ${isCyberpunk ? 'text-[#00f0ff]' : 'text-gray-900 dark:text-white'}`}><span className="text-3xl">🏦</span> Market</h3>
             {onAddCustom && <button onClick={onAddCustom} className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${isCyberpunk ? 'bg-[#00f0ff]/10 text-[#00f0ff]' : 'bg-gray-100 dark:bg-slate-700'}`}>+ Custom</button>}

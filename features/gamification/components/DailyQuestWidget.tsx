@@ -1,19 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useEconomy } from '../hooks/useEconomy';
-import { getDailyQuests } from '../services/questService';
+import { generateDailyQuests, calculateQuestProgress, Quest } from '../services/questService';
 import { useLogs } from '../../../AppContext';
-
-interface Quest {
-    id: number;
-    title: string;
-    desc: string;
-    target: number;
-    current: number;
-    icon: string;
-    color: string;
-    reward: number;
-    isClaimed?: boolean;
-}
 
 export const DailyQuestWidget: React.FC = () => {
     const [quests, setQuests] = useState<Quest[]>([]);
@@ -24,25 +12,27 @@ export const DailyQuestWidget: React.FC = () => {
         const today = new Date().toISOString().split('T')[0];
         const storedQuestsItem = localStorage.getItem('focusflow_daily_quests');
         
-        if (storedQuestsItem) {
-            const { date, quests: storedQuests } = JSON.parse(storedQuestsItem);
-            if (date === today) {
-                // To ensure progress is updated, re-evaluate `current` property
-                const dailyQuests = getDailyQuests(logs);
-                const updatedQuests = storedQuests.map((sq: Quest) => {
-                    const freshQuest = dailyQuests.find(q => q.id === sq.id);
-                    return { ...sq, current: freshQuest ? freshQuest.current : sq.current };
-                });
+        let currentQuests: Quest[] = [];
 
-                setQuests(updatedQuests);
-                return;
+        if (storedQuestsItem) {
+            try {
+                const parsed = JSON.parse(storedQuestsItem);
+                if (parsed.date === today && Array.isArray(parsed.quests)) {
+                    currentQuests = parsed.quests;
+                }
+            } catch (e) {
+                console.error("Failed to parse daily quests", e);
             }
         }
 
-        // No valid quests for today, generate new ones
-        const newQuests = getDailyQuests(logs).map(q => ({ ...q, isClaimed: false }));
-        localStorage.setItem('focusflow_daily_quests', JSON.stringify({ date: today, quests: newQuests }));
-        setQuests(newQuests);
+        if (currentQuests.length === 0) {
+            currentQuests = generateDailyQuests();
+            localStorage.setItem('focusflow_daily_quests', JSON.stringify({ date: today, quests: currentQuests }));
+        }
+
+        // Update progress based on logs
+        const updatedQuests = calculateQuestProgress(currentQuests, logs);
+        setQuests(updatedQuests);
     }, [logs]);
 
     useEffect(() => {
@@ -68,7 +58,7 @@ export const DailyQuestWidget: React.FC = () => {
             <h2 className="text-lg font-bold text-purple-300 text-center">Daily Quests</h2>
             {quests.map(quest => {
                 const isComplete = quest.current >= quest.target;
-                const progress = isComplete ? 100 : (quest.current / quest.target) * 100;
+                const progress = isComplete ? 100 : (quest.target > 0 ? (quest.current / quest.target) * 100 : 0);
                 
                 return (
                     <div key={quest.id} className="bg-black/40 p-4 rounded-lg">
@@ -90,7 +80,7 @@ export const DailyQuestWidget: React.FC = () => {
                         </div>
                         
                         <div className="flex items-center justify-between">
-                             <p className="text-xs text-gray-400">{quest.desc}</p>
+                             <p className="text-xs text-gray-400">{quest.description}</p>
                              <button
                                 onClick={() => handleClaim(quest)}
                                 disabled={!isComplete || quest.isClaimed}

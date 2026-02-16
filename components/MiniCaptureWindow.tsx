@@ -1,5 +1,5 @@
 /// <reference path="../electron.d.ts" />
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTheme, useProjects } from '../AppContext';
 import { CustomPrompt, CaptureDestination, Project } from '../types';
 import { PromptManager } from './PromptManager';
@@ -111,6 +111,16 @@ export const MiniCaptureWindow: React.FC = () => {
         parseInput(text);
     }, [text, projects]);
 
+    const isMiniCapture = typeof window !== 'undefined' && window.location.hash === '#minicapture';
+
+    const handleClose = useCallback(() => {
+        if (isMiniCapture && window.electronAPI?.closeMiniCapture) {
+            window.electronAPI.closeMiniCapture();
+        } else {
+            window.electronAPI?.close?.();
+        }
+    }, [isMiniCapture]);
+
     // Save draft to scratchpad
     useEffect(() => {
         localStorage.setItem('focusflow_scratchpad', text);
@@ -120,12 +130,12 @@ export const MiniCaptureWindow: React.FC = () => {
     useEffect(() => {
         const handleBlur = () => {
             if (!isPinned) {
-                window.electronAPI?.close?.();
+                handleClose();
             }
         };
         window.addEventListener('blur', handleBlur);
         return () => window.removeEventListener('blur', handleBlur);
-    }, [isPinned]);
+    }, [isPinned, isMiniCapture]);
 
     // Sync autocomplete state to ref for global event handler
     useEffect(() => { isAutocompleteOpenRef.current = autocomplete.isOpen; }, [autocomplete.isOpen]);
@@ -138,12 +148,12 @@ export const MiniCaptureWindow: React.FC = () => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 if (isAutocompleteOpenRef.current) return; // Let component handle it
-                window.electronAPI?.close?.();
+                handleClose();
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
+    }, [handleClose]);
 
     useEffect(() => {
         // Load tags for autocomplete
@@ -495,6 +505,12 @@ export const MiniCaptureWindow: React.FC = () => {
         try {
             let result;
             const dest = destinations.find(d => d.id === selectedDestId);
+            
+            if (!dest) {
+                if (isMounted.current) setStatus('Error: Destination not found');
+                return;
+            }
+
             const position = dest?.position || localStorage.getItem('focusflow_obsidian_position') || 'append';
 
             if (dest && dest.type === 'daily') {
@@ -525,7 +541,7 @@ export const MiniCaptureWindow: React.FC = () => {
                     setText('');
                     if (autoClose) {
                         setTimeout(() => {
-                            window.electronAPI?.close?.();
+                            handleClose();
                         }, 500);
                     }
                 } else {
@@ -562,7 +578,10 @@ export const MiniCaptureWindow: React.FC = () => {
             }
         }
 
-        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        if (e.key === 'Enter') {
+            if (e.shiftKey && !e.metaKey && !e.ctrlKey) {
+                return;
+            }
             e.preventDefault();
             handleCapture();
         }
@@ -636,7 +655,7 @@ export const MiniCaptureWindow: React.FC = () => {
                         <svg className="w-3.5 h-3.5" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
                     </button>
                     <button 
-                        onClick={() => window.electronAPI?.close?.()} 
+                        onClick={handleClose} 
                         className={`w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200/50 dark:hover:bg-white/10 transition-colors cursor-pointer ${isCyberpunk ? 'text-[#00f0ff] hover:bg-[#00f0ff]/20' : 'text-gray-400 dark:text-gray-500'}`}
                     >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AppTheme } from '../../types';
 import * as storage from '../../services/storageService';
 import { useCountdowns } from '../../AppContext';
-import { exchangeCodeForToken, fetchTickTickTasks, getTickTickAuthUrl } from '../../services/tickTickService';
+import { exchangeCodeForToken, syncTickTickTasks, getTickTickAuthUrl } from '../../services/tickTickService';
 import { getGoogleAuthUrl, exchangeGoogleCode, GOOGLE_REDIRECT_URI } from '../../services/googleService';
 import ObsidianSection from '../Settings/sync/ObsidianSection';
 
@@ -51,16 +51,42 @@ export const SyncSettings: React.FC<SyncSettingsProps> = ({ appTheme, setLastBac
     const [restoreFileCandidate, setRestoreFileCandidate] = useState<{id: string, name: string} | null>(null);
     const [driveSearchQuery, setDriveSearchQuery] = useState('');
     const [driveSortOrder, setDriveSortOrder] = useState<'newest' | 'oldest' | 'name'>('newest');
+    const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+    const [isTickTickConnected, setIsTickTickConnected] = useState(false);
     
     const googleActionRef = useRef<'calendar' | 'drive' | 'login' | 'restore' | 'none'>('none');
+    const tickTickActionRef = useRef<'connect' | 'none'>('none');
     const isMounted = useRef(true);
 
     useEffect(() => {
         isMounted.current = true;
+        setIsGoogleConnected(!!localStorage.getItem('google_access_token'));
+        setIsTickTickConnected(!!localStorage.getItem('ticktick_access_token'));
         return () => { isMounted.current = false; };
     }, []);
 
     const handleGoogleCodeRef = useRef((code: string) => {});
+    const handleTickTickCodeRef = useRef((code: string) => {});
+
+    const handleTickTickCode = async (code: string) => {
+        try {
+            const tokenData = await exchangeCodeForToken(tickTickClientId, tickTickClientSecret, code, tickTickRedirectUri);
+            if (tokenData.access_token) {
+                localStorage.setItem('ticktick_access_token', tokenData.access_token);
+                if (tokenData.refresh_token) {
+                    localStorage.setItem('ticktick_refresh_token', tokenData.refresh_token);
+                }
+                if (isMounted.current) setIsTickTickConnected(true);
+                alert("TickTick Linked Successfully!");
+                setManualAuthCode('');
+                window.dispatchEvent(new Event('focusflow-task-update'));
+            }
+        } catch (e: any) {
+            console.error(e);
+            alert(`Link failed: ${e.message}`);
+        }
+        tickTickActionRef.current = 'none';
+    };
     
 
     const handleGoogleCode = async (code: string) => {
@@ -68,7 +94,14 @@ export const SyncSettings: React.FC<SyncSettingsProps> = ({ appTheme, setLastBac
             const data = await exchangeGoogleCode(googleClientId, googleClientSecret, code, GOOGLE_REDIRECT_URI);
             
             if (data.access_token) {
-                if (isMounted.current) setAccessToken(data.access_token);
+                localStorage.setItem('google_access_token', data.access_token);
+                if (data.refresh_token) {
+                    localStorage.setItem('google_refresh_token', data.refresh_token);
+                }
+                if (isMounted.current) {
+                    setAccessToken(data.access_token);
+                    setIsGoogleConnected(true);
+                }
                 
                 if (googleActionRef.current === 'drive') uploadToDrive(data.access_token);
                 else if (googleActionRef.current === 'login') alert("Google Account connected successfully.");
@@ -84,12 +117,14 @@ export const SyncSettings: React.FC<SyncSettingsProps> = ({ appTheme, setLastBac
     };
 
     useEffect(() => { handleGoogleCodeRef.current = handleGoogleCode; }, [handleGoogleCode]);
+    useEffect(() => { handleTickTickCodeRef.current = handleTickTickCode; }, [handleTickTickCode]);
 
     // Listen for OAuth Code (Electron / Loopback)
     useEffect(() => {
+        let cleanup: (() => void) | undefined;
         if (window.electronAPI?.onOAuthCode) {
-            window.electronAPI.onOAuthCode((codeOrUrl) => {
-                if (googleActionRef.current === 'none') return;
+            cleanup = window.electronAPI.onOAuthCode((codeOrUrl) => {
+                if (googleActionRef.current === 'none' && tickTickActionRef.current === 'none') return;
                 
                 let code = codeOrUrl;
                 if (codeOrUrl.includes('code=')) {
@@ -97,7 +132,10 @@ export const SyncSettings: React.FC<SyncSettingsProps> = ({ appTheme, setLastBac
                     if (match) code = match[1];
                 }
 
-                if (code) handleGoogleCodeRef.current(code);
+                if (code) {
+                    if (googleActionRef.current !== 'none') handleGoogleCodeRef.current(code);
+                    else if (tickTickActionRef.current !== 'none') handleTickTickCodeRef.current(code);
+                }
             });
         }
         
@@ -111,6 +149,10 @@ export const SyncSettings: React.FC<SyncSettingsProps> = ({ appTheme, setLastBac
             }
         } else if (cloudKitContainerId && cloudKitApiToken) {
             initCloudKit();
+        }
+
+        return () => {
+            if (cleanup) cleanup();
         }
     }, []);
 
@@ -152,8 +194,31 @@ export const SyncSettings: React.FC<SyncSettingsProps> = ({ appTheme, setLastBac
             alert("Please enter Client ID and Secret first.");
             return;
         }
+        tickTickActionRef.current = 'connect';
         const url = getTickTickAuthUrl(tickTickClientId, tickTickRedirectUri);
         window.open(url, '_blank');
+    };
+
+    const handleTickTickSyncOrLogin = async () => {
+        if (isTickTickConnected) {
+            const accessToken = localStorage.getItem('ticktick_access_token');
+            if (accessToken) {
+                try {
+                    alert("Syncing TickTick tasks...");
+                    const refreshToken = localStorage.getItem('ticktick_refresh_token') || '';
+                    const { tasks, newAccessToken } = await syncTickTickTasks(tickTickClientId, tickTickClientSecret, accessToken, refreshToken);
+                    if (newAccessToken) localStorage.setItem('ticktick_access_token', newAccessToken);
+                    
+                    const projects = await storage.getProjects();
+                    const defaultProjectId = projects[0]?.id;
+                    const { count } = await storage.mergeTasks(tasks.map(t => ({ ...t, projectId: defaultProjectId })));
+                    window.dispatchEvent(new Event('focusflow-task-update'));
+                    alert(`Synced ${count} tasks from TickTick.`);
+                } catch (e: any) { alert(`Sync failed: ${e.message}`); }
+            }
+        } else {
+            handleConnectTickTick();
+        }
     };
 
     const handleManualTickTickCode = async () => {
@@ -189,6 +254,15 @@ export const SyncSettings: React.FC<SyncSettingsProps> = ({ appTheme, setLastBac
         if (!googleClientId || !googleClientSecret) return alert("Please enter Google Client ID and Secret first.");
         googleActionRef.current = 'login';
         startGoogleAuth();
+    };
+
+    const handleGoogleSyncOrLogin = () => {
+        if (isGoogleConnected) {
+            window.dispatchEvent(new Event('focusflow-force-calendar-sync'));
+            alert("Syncing calendars...");
+        } else {
+            handleGoogleLogin();
+        }
     };
 
     const handleDriveBackupClick = () => {
@@ -476,8 +550,8 @@ ${todaySessions.length === 0 ? '_No sessions yet today._' : todaySessions.map(s 
                                     <button onClick={handleSaveTickTickConfig} className="px-5 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-white dark:text-gray-900 dark:border-transparent dark:hover:bg-gray-200 text-gray-900 text-sm font-bold rounded-xl transition-colors">Save</button>
                                 </div>
                             <div className="mt-2 flex justify-end">
-                                <button onClick={handleConnectTickTick} className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
-                                    <span>Open Authorization Page</span>
+                                <button onClick={handleTickTickSyncOrLogin} className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
+                                    <span>{isTickTickConnected ? 'Sync Tasks Now' : 'Open Authorization Page'}</span>
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                 </button>
                             </div>
@@ -524,9 +598,9 @@ ${todaySessions.length === 0 ? '_No sessions yet today._' : todaySessions.map(s 
                         </div>
                         <div className="flex justify-between items-center mt-3">
                             <p className="text-xs text-gray-400">Required for Drive backups and Calendar sync.</p>
-                            <button onClick={handleGoogleLogin} className="flex items-center space-x-2 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
+                            <button onClick={handleGoogleSyncOrLogin} className="flex items-center space-x-2 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
                                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/></svg>
-                                <span>Connect Account</span>
+                                <span>{isGoogleConnected ? 'Sync Calendars' : 'Connect Account'}</span>
                             </button>
                         </div>
                     </div>

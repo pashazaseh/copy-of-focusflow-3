@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { Project, StudyLog, UserGoals, ViewMode, SettingsTab, SidebarConfig, MenuBarConfig, HeatmapTheme, AppTheme, CountdownItem, Transaction } from './types';
 import { NAV_ITEMS_DEF } from './components/Sidebar';
 import * as storage from './services/storageService';
-import { fetchTickTickTasks } from './services/tickTickService';
+import { syncTickTickTasks } from './services/tickTickService';
 
 // --- Theme Context ---
 interface ThemeContextType {
@@ -489,10 +489,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const syncTickTick = async () => {
             const autoSync = localStorage.getItem('focusflow_ticktick_auto_sync') === 'true';
             const token = localStorage.getItem('ticktick_access_token');
+            const refreshToken = localStorage.getItem('ticktick_refresh_token');
+            const clientId = localStorage.getItem('ticktick_client_id');
+            const clientSecret = localStorage.getItem('ticktick_client_secret');
             
-            if (autoSync && token) {
+            if (autoSync && token && clientId && clientSecret) {
                 try {
-                    const importedTasks = await fetchTickTickTasks(token);
+                    const { tasks: importedTasks, newAccessToken } = await syncTickTickTasks(clientId, clientSecret, token, refreshToken || '');
+                    
+                    if (newAccessToken) {
+                        localStorage.setItem('ticktick_access_token', newAccessToken);
+                    }
+
                     const projects = await storage.getProjects();
                     const defaultPid = projects[0]?.id;
                     
